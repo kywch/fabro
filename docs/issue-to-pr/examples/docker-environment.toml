@@ -1,0 +1,4 @@
+provider = "docker"
+
+[image]
+docker = "buildpack-deps:noble"

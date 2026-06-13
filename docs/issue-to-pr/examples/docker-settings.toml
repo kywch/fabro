@@ -1,0 +1,30 @@
+_version = 1
+
+[server.listen]
+type = "tcp"
+address = "0.0.0.0:32276"
+
+[server.api]
+url = "http://127.0.0.1:32276/api/v1"
+
+[server.web]
+enabled = true
+url = "http://127.0.0.1:32276"
+
+[server.auth]
+methods = ["dev-token"]
+
+[server.storage]
+root = "/storage"
+
+[server.sandbox.providers.local]
+enabled = false
+
+[server.sandbox.providers.docker]
+enabled = true
+
+[server.sandbox.providers.daytona]
+enabled = false
+
+[run.environment]
+id = "docker"

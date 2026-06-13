@@ -26,6 +26,7 @@ from swebench.harness.constants import MAP_REPO_VERSION_TO_SPECS
 
 from attempt_artifacts import (
     DEFAULT_ATTEMPT_ID,
+    build_candidate_record,
     build_prediction_record,
     load_or_init_manifest,
     run_id_for_task,
@@ -47,7 +48,9 @@ from workflow_generator import (  # noqa: E402
     VERIFY_DIFF_CHECK,
     VERIFY_NONE,
     default_verify_mode,
+    escape_goal_for_template,
     generate_issue_to_pr_workflow,
+    validate_generated_workflow,
 )
 
 # ---------------------------------------------------------------------------
@@ -293,8 +296,34 @@ def find_stage_output(run_dir: Path, node_id: str) -> str | None:
 
 
 def find_patch(run_dir: Path) -> str | None:
-    """Find the latest extract_patch stdout log in a local or dumped run dir."""
-    return find_stage_output(run_dir, "extract_patch")
+    """Find the latest exported or pre-review patch in a local/dumped run dir."""
+    return find_stage_output(run_dir, "extract_patch") or find_stage_output(
+        run_dir,
+        "snapshot_patch",
+    )
+
+
+def find_stage_status(run_dir: Path, node_id: str) -> dict | None:
+    """Find the latest status.json for a node in a Fabro run dir."""
+    candidates = []
+    for root_name in ("nodes", "stages"):
+        root = run_dir / root_name
+        if root.exists():
+            candidates.extend(path for path in root.iterdir() if path.is_dir())
+
+    for stage_dir in sorted(candidates, key=_stage_sort_key, reverse=True):
+        if node_id not in stage_dir.name:
+            continue
+        path = stage_dir / "status.json"
+        if not path.exists():
+            continue
+        try:
+            status = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(status, dict):
+            return status
+    return None
 
 
 def find_verify_record(run_dir: Path) -> dict | None:
@@ -311,6 +340,43 @@ def find_verify_record(run_dir: Path) -> dict | None:
         except json.JSONDecodeError:
             continue
         if isinstance(value, dict) and "status" in value:
+            return value
+    return None
+
+
+def find_audit_record(run_dir: Path) -> dict | None:
+    """Parse the latest audit JSON object printed by the audit stage."""
+    output = find_stage_output(run_dir, "audit")
+    if not output:
+        return None
+    return _last_json_object(output)
+
+
+def find_review_record(run_dir: Path) -> dict | None:
+    """Return the latest structured review status, if the workflow ran review."""
+    status = find_stage_status(run_dir, "review")
+    if not status:
+        return None
+    response = find_stage_output(run_dir, "review")
+    routing = _last_json_object(response) if response else None
+    if isinstance(routing, dict):
+        merged = {**routing, **status}
+        if status.get("failure_reason") is None and routing.get("failure_reason"):
+            merged["failure_reason"] = routing["failure_reason"]
+        return {key: value for key, value in merged.items() if value is not None}
+    return {key: value for key, value in status.items() if value is not None}
+
+
+def _last_json_object(text: str) -> dict | None:
+    for line in reversed(text.splitlines()):
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            value = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
             return value
     return None
 
@@ -507,12 +573,16 @@ def run_instance(
     try:
         goal_text = build_goal(instance)
         goal_file = config_dir / "goal.txt"
-        goal_file.write_text(goal_text)
+        goal_file.write_text(escape_goal_for_template(goal_text))
 
         fabro_content = generate_workflow_fabro(
             instance,
             workflow_profile=workflow_profile,
             verify_mode=verify_mode,
+        )
+        validate_generated_workflow(
+            fabro_content,
+            workflow_profile=workflow_profile,
         )
         (config_dir / "workflow.fabro").write_text(fabro_content)
         toml_content = generate_workflow_toml(
@@ -567,6 +637,14 @@ def run_instance(
             if not verify and dumped:
                 verify = find_verify_record(dumped)
             result["verify"] = verify
+            audit = find_audit_record(fabro_run_dir) if fabro_run_dir else None
+            if not audit and dumped:
+                audit = find_audit_record(dumped)
+            result["audit"] = audit
+            review = find_review_record(fabro_run_dir) if fabro_run_dir else None
+            if not review and dumped:
+                review = find_review_record(dumped)
+            result["review"] = review
 
         # Extract patch from the fabro run dir
         patch = find_patch(fabro_run_dir) if fabro_run_dir else None
@@ -581,7 +659,7 @@ def run_instance(
             ):
                 result["status"] = "verify_failed"
                 result["error"] = verify.get("failure_reason") or "Verify failed"
-            else:
+            elif proc.returncode == 0:
                 result["status"] = "completed"
         elif workflow_profile == STRUCTURED_PROFILE and verify and verify.get("status") != "passed":
             result["status"] = "verify_failed"
@@ -607,6 +685,11 @@ def run_instance(
             config_dir=config_dir,
             sandbox_provider=sandbox_provider,
             attempt_id=DEFAULT_ATTEMPT_ID,
+        )
+        result["candidate"] = build_candidate_record(
+            result,
+            config_dir / "patch.diff",
+            config_dir,
         )
         if _writes_runs_layout(output_layout):
             run_id = run_id_for_task(instance_id, DEFAULT_ATTEMPT_ID)
@@ -967,12 +1050,20 @@ def main():
         "timeout": 0,
         "error": 0,
     }
+    continuation_candidates = 0
+    failed_with_patch = 0
     all_total = 0
     with open(results_file) as f:
         for line in f:
             if line.strip():
                 r = json.loads(line)
                 all_counters[r["status"]] = all_counters.get(r["status"], 0) + 1
+                candidate = r.get("candidate")
+                if isinstance(candidate, dict):
+                    if candidate.get("reuse") == "continuation_candidate":
+                        continuation_candidates += 1
+                    if candidate.get("state") == "failed_with_patch":
+                        failed_with_patch += 1
                 all_total += 1
 
     summary = {
@@ -982,6 +1073,8 @@ def main():
         "verify_mode": args.verify_mode,
         "total": all_total,
         **all_counters,
+        "failed_with_patch": failed_with_patch,
+        "continuation_candidates": continuation_candidates,
         "total_duration_s": wall_duration,
     }
     summary_file = args.output_dir / "summary.json"
@@ -1003,6 +1096,8 @@ def main():
     log.info(f"  No patch:    {all_counters.get('no_patch', 0)}")
     log.info(f"  Verify fail: {all_counters.get('verify_failed', 0)}")
     log.info(f"  Failed:      {all_counters.get('failed', 0)}")
+    log.info(f"  Failed+patch:{failed_with_patch:4d}")
+    log.info(f"  Continue:    {continuation_candidates:4d}")
     log.info(f"  Timeout:     {all_counters.get('timeout', 0)}")
     log.info(f"  Error:       {all_counters.get('error', 0)}")
     log.info(f"  Wall time:   {wall_duration}s")

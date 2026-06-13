@@ -25,6 +25,7 @@ sys.path.insert(0, str(SWE_BENCH_DIR))
 from attempt_artifacts import (  # noqa: E402
     DEFAULT_ATTEMPT_ID,
     RUNS_LAYOUT,
+    build_candidate_record,
     load_or_init_manifest,
     run_id_for_task,
     update_manifest_for_run,
@@ -37,7 +38,9 @@ from workflow_generator import (  # noqa: E402
     VERIFY_DIFF_CHECK,
     VERIFY_NONE,
     default_verify_mode,
+    escape_goal_for_template,
     generate_issue_to_pr_workflow,
+    validate_generated_workflow,
 )
 
 
@@ -194,7 +197,31 @@ def find_stage_output(run_dir: Path, node_id: str) -> str | None:
 
 
 def find_patch(run_dir: Path) -> str | None:
-    return find_stage_output(run_dir, "extract_patch")
+    return find_stage_output(run_dir, "extract_patch") or find_stage_output(
+        run_dir,
+        "snapshot_patch",
+    )
+
+
+def find_stage_status(run_dir: Path, node_id: str) -> dict | None:
+    candidates = []
+    for root_name in ("nodes", "stages"):
+        root = run_dir / root_name
+        if root.exists():
+            candidates.extend(path for path in root.iterdir() if path.is_dir())
+    for stage_dir in sorted(candidates, key=_stage_sort_key, reverse=True):
+        if node_id not in stage_dir.name:
+            continue
+        path = stage_dir / "status.json"
+        if not path.exists():
+            continue
+        try:
+            status = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(status, dict):
+            return status
+    return None
 
 
 def find_verify_record(run_dir: Path) -> dict | None:
@@ -210,6 +237,41 @@ def find_verify_record(run_dir: Path) -> dict | None:
         except json.JSONDecodeError:
             continue
         if isinstance(value, dict) and "status" in value:
+            return value
+    return None
+
+
+def find_audit_record(run_dir: Path) -> dict | None:
+    output = find_stage_output(run_dir, "audit")
+    if not output:
+        return None
+    return _last_json_object(output)
+
+
+def find_review_record(run_dir: Path) -> dict | None:
+    status = find_stage_status(run_dir, "review")
+    if not status:
+        return None
+    response = find_stage_output(run_dir, "review")
+    routing = _last_json_object(response) if response else None
+    if isinstance(routing, dict):
+        merged = {**routing, **status}
+        if status.get("failure_reason") is None and routing.get("failure_reason"):
+            merged["failure_reason"] = routing["failure_reason"]
+        return {key: value for key, value in merged.items() if value is not None}
+    return {key: value for key, value in status.items() if value is not None}
+
+
+def _last_json_object(text: str) -> dict | None:
+    for line in reversed(text.splitlines()):
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            value = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
             return value
     return None
 
@@ -352,15 +414,18 @@ def main() -> int:
     config_dir.mkdir(parents=True, exist_ok=True)
 
     goal_file = config_dir / "goal.txt"
-    goal_file.write_text(task_goal(task))
+    goal_file.write_text(escape_goal_for_template(task_goal(task)))
     workflow_path = config_dir / "workflow.fabro"
-    workflow_path.write_text(
-        generate_workflow_fabro(
-            task,
-            workflow_profile=args.workflow_profile,
-            verify_mode=args.verify_mode,
-        )
+    workflow_content = generate_workflow_fabro(
+        task,
+        workflow_profile=args.workflow_profile,
+        verify_mode=args.verify_mode,
     )
+    validate_generated_workflow(
+        workflow_content,
+        workflow_profile=args.workflow_profile,
+    )
+    workflow_path.write_text(workflow_content)
     toml_path = config_dir / "workflow.toml"
     toml_path.write_text(generate_workflow_toml(task, workflow_path, args.sandbox_provider))
 
@@ -397,6 +462,16 @@ def main() -> int:
         verify = find_verify_record(fabro_run_dir) if fabro_run_dir else None
         if not verify and dumped:
             verify = find_verify_record(dumped)
+    audit = None
+    if args.workflow_profile == STRUCTURED_PROFILE:
+        audit = find_audit_record(fabro_run_dir) if fabro_run_dir else None
+        if not audit and dumped:
+            audit = find_audit_record(dumped)
+    review = None
+    if args.workflow_profile == STRUCTURED_PROFILE:
+        review = find_review_record(fabro_run_dir) if fabro_run_dir else None
+        if not review and dumped:
+            review = find_review_record(dumped)
     patch = find_patch(fabro_run_dir) if fabro_run_dir else None
     if not patch and dumped:
         patch = find_patch(dumped)
@@ -427,6 +502,8 @@ def main() -> int:
         "events_path": str(dumped / "events.jsonl") if dumped else None,
         "trajectory_path": str(trajectory_path) if trajectory_path else None,
         "verify": verify,
+        "audit": audit,
+        "review": review,
     }
 
     instance = {
@@ -443,6 +520,11 @@ def main() -> int:
         sandbox_provider=args.sandbox_provider,
         run_id=run_id,
         attempt_id=args.attempt_id,
+    )
+    result["candidate"] = build_candidate_record(
+        result,
+        output_dir / "runs" / run_id / "output" / "patch.diff",
+        output_dir / "runs" / run_id,
     )
     manifest = load_or_init_manifest(output_dir, layout=RUNS_LAYOUT, exports={})
     update_manifest_for_run(

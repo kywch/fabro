@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -21,10 +22,13 @@ DEFAULT_ATTEMPT_ID = "001"
 
 def build_prediction_record(result: dict[str, Any]) -> dict[str, Any]:
     """Return the single-instance equivalent of predictions.jsonl."""
+    model_patch = result.get("model_patch", "")
+    if result.get("status") != "completed":
+        model_patch = ""
     return {
         "instance_id": result["instance_id"],
         "model_name_or_path": result["model_name_or_path"],
-        "model_patch": result.get("model_patch", ""),
+        "model_patch": model_patch,
     }
 
 
@@ -84,6 +88,7 @@ def build_attempt_record(
     patch_path = config_dir / "patch.diff"
     prediction_path = config_dir / "prediction.json"
     verify_path = config_dir / "verify.json"
+    audit_path = config_dir / "audit.json"
     exported_trajectory_path = config_dir / "trajectory.jsonl"
     dump_path = _optional_path(result.get("fabro_dump_dir"))
     run_dir = _optional_path(result.get("fabro_run_dir"))
@@ -108,10 +113,12 @@ def build_attempt_record(
                 "patch_path": _relative_to(patch_path, config_dir),
             },
             "verify": _verify_phase(result, verify_path, config_dir),
-            "review": {"status": "not_run"},
+            "audit": _audit_phase(result, audit_path, config_dir),
+            "review": _review_phase(result),
             "publish": {"status": "not_run"},
             "grade": {"status": "not_run"},
         },
+        "candidate": build_candidate_record(result, patch_path, config_dir),
         "fabro": {
             "run_id": result.get("fabro_run_id"),
             "run_dir": _relative_to(run_dir, output_dir) if run_dir else None,
@@ -143,12 +150,14 @@ def write_attempt_sidecars(
     patch_path = config_dir / "patch.diff"
     prediction_path = config_dir / "prediction.json"
     verify_path = config_dir / "verify.json"
+    audit_path = config_dir / "audit.json"
     trajectory_export_path = config_dir / "trajectory.jsonl"
     task_path = config_dir / "task.json"
     attempt_path = config_dir / "attempt.json"
 
     patch_path.write_text(result.get("model_patch", ""))
     _write_verify_artifact(verify_path, result)
+    _write_audit_artifact(audit_path, result)
     _copy_optional(result.get("trajectory_path"), trajectory_export_path)
     _write_json_atomic(
         task_path,
@@ -172,6 +181,7 @@ def write_attempt_sidecars(
         "patch": _relative_to(patch_path, output_dir),
         "prediction": _relative_to(prediction_path, output_dir),
         **_maybe_artifact("verify", verify_path, output_dir),
+        **_maybe_artifact("audit", audit_path, output_dir),
         **_maybe_artifact("trajectory", trajectory_export_path, output_dir),
     }
 
@@ -188,6 +198,7 @@ def build_run_record(
     patch_path = run_dir / "output" / "patch.diff"
     prediction_path = run_dir / "output" / "prediction.json"
     verify_path = run_dir / "output" / "verify.json"
+    audit_path = run_dir / "output" / "audit.json"
     exported_trajectory_path = run_dir / "output" / "trajectory.jsonl"
     dump_path = run_dir / "fabro" / "dump"
     events_path = dump_path / "events.jsonl"
@@ -217,10 +228,12 @@ def build_run_record(
                 "patch_path": _relative_to(patch_path, run_dir),
             },
             "verify": _verify_phase(result, verify_path, run_dir),
-            "review": {"status": "not_run"},
+            "audit": _audit_phase(result, audit_path, run_dir),
+            "review": _review_phase(result),
             "publish": {"status": "not_run"},
             "grade": {"status": "not_run"},
         },
+        "candidate": build_candidate_record(result, patch_path, run_dir),
         "fabro": {
             "run_id": result.get("fabro_run_id"),
             "dump_path": _relative_to(dump_path, run_dir) if dump_path.exists() else None,
@@ -283,6 +296,8 @@ def write_run_bundle(
     _write_json_atomic(prediction_path, build_prediction_record(result))
     verify_path = output_out_dir / "verify.json"
     _write_verify_artifact(verify_path, result)
+    audit_path = output_out_dir / "audit.json"
+    _write_audit_artifact(audit_path, result)
     trajectory_export_path = output_out_dir / "trajectory.jsonl"
     _copy_optional(result.get("trajectory_path"), trajectory_export_path)
 
@@ -306,6 +321,7 @@ def write_run_bundle(
         "patch": _relative_to(patch_path, output_dir),
         "prediction": _relative_to(prediction_path, output_dir),
         **_maybe_artifact("verify", verify_path, output_dir),
+        **_maybe_artifact("audit", audit_path, output_dir),
         **_maybe_artifact("trajectory", trajectory_export_path, output_dir),
         "fabro_dump": _relative_to(dump_out_dir, output_dir) if dump_out_dir.exists() else "",
     }
@@ -454,10 +470,109 @@ def _verify_phase(result: dict[str, Any], verify_path: Path, base: Path) -> dict
     return {key: value for key, value in phase.items() if value is not None}
 
 
+def _audit_phase(result: dict[str, Any], audit_path: Path, base: Path) -> dict[str, Any]:
+    audit = result.get("audit")
+    if not isinstance(audit, dict):
+        return {"status": "not_run"}
+
+    phase = {
+        "status": "completed" if audit.get("patch_nonempty") is not None else "failed",
+        "patch_nonempty": audit.get("patch_nonempty"),
+        "changed_files": audit.get("changed_files"),
+        "test_files_changed": audit.get("test_files_changed"),
+    }
+    if audit_path.exists():
+        phase["artifact_path"] = _relative_to(audit_path, base)
+    return {key: value for key, value in phase.items() if value is not None}
+
+
+def _review_phase(result: dict[str, Any]) -> dict[str, Any]:
+    review = result.get("review")
+    if not isinstance(review, dict):
+        return {"status": "not_run"}
+
+    raw_status = review.get("status")
+    outcome = review.get("outcome")
+    if raw_status in {"succeeded", "passed"} or (
+        raw_status is None and outcome in {"succeeded", "passed"}
+    ):
+        status = "completed"
+    elif raw_status in {"failed", "error"} or (
+        raw_status is None and outcome in {"failed", "error"}
+    ):
+        status = "failed"
+    else:
+        status = raw_status or "failed"
+
+    phase = {
+        "status": status,
+        "outcome": outcome,
+        "preferred_next_label": review.get("preferred_next_label"),
+        "failure_class": review.get("failure_class"),
+        "failure_reason": review.get("failure_reason"),
+        "context_updates": review.get("context_updates"),
+    }
+    return {key: value for key, value in phase.items() if value is not None}
+
+
+def build_candidate_record(
+    result: dict[str, Any],
+    patch_path: Path,
+    base: Path,
+) -> dict[str, Any]:
+    has_patch = bool(result.get("model_patch", "").strip())
+    patch_text = result.get("model_patch", "")
+    status = result.get("status", "error")
+    review = result.get("review") if isinstance(result.get("review"), dict) else {}
+    context_updates = review.get("context_updates") if isinstance(review, dict) else None
+    if not isinstance(context_updates, dict):
+        context_updates = {}
+
+    if not has_patch:
+        return {
+            "state": "absent",
+            "reuse": "none",
+        }
+
+    if status == "completed":
+        state = "ready"
+        reuse = "merge_candidate"
+        warning = None
+    else:
+        state = "failed_with_patch"
+        reuse = "continuation_candidate"
+        warning = "Do not merge as-is; use this patch as a starting point with the review lesson."
+
+    record = {
+        "state": state,
+        "reuse": reuse,
+        "patch_path": _relative_to(patch_path, base),
+        "patch_bytes": len(patch_text),
+        "patch_sha256": hashlib.sha256(patch_text.encode()).hexdigest(),
+        "warning": warning,
+        "failure_class": review.get("failure_class") if isinstance(review, dict) else None,
+        "failure_reason": (
+            review.get("failure_reason") if isinstance(review, dict) else None
+        )
+        or result.get("error"),
+        "do_not_repeat": context_updates.get("do_not_repeat"),
+        "next_agent_guidance": context_updates.get("next_agent_guidance"),
+    }
+    return {key: value for key, value in record.items() if value is not None}
+
+
 def _write_verify_artifact(path: Path, result: dict[str, Any]) -> None:
     verify = result.get("verify")
     if isinstance(verify, dict):
         _write_json_atomic(path, verify)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _write_audit_artifact(path: Path, result: dict[str, Any]) -> None:
+    audit = result.get("audit")
+    if isinstance(audit, dict):
+        _write_json_atomic(path, audit)
     else:
         path.unlink(missing_ok=True)
 
