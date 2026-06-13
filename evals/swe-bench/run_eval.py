@@ -24,9 +24,31 @@ from pathlib import Path
 from datasets import load_dataset
 from swebench.harness.constants import MAP_REPO_VERSION_TO_SPECS
 
+from attempt_artifacts import (
+    DEFAULT_ATTEMPT_ID,
+    build_prediction_record,
+    load_or_init_manifest,
+    run_id_for_task,
+    update_manifest_for_attempt,
+    update_manifest_for_run,
+    write_attempt_sidecars,
+    write_run_bundle,
+    write_manifest,
+)
 from gen_dockerfile import generate_dockerfile, repo_version_key
 
 EVAL_DIR = Path(__file__).parent.resolve()
+ISSUE_TO_PR_DIR = EVAL_DIR.parent / "issue-to-pr"
+sys.path.insert(0, str(ISSUE_TO_PR_DIR))
+
+from workflow_generator import (  # noqa: E402
+    SIMPLE_PROFILE,
+    STRUCTURED_PROFILE,
+    VERIFY_DIFF_CHECK,
+    VERIFY_NONE,
+    default_verify_mode,
+    generate_issue_to_pr_workflow,
+)
 
 # ---------------------------------------------------------------------------
 # Logging — dual output: file (DEBUG) + terminal (INFO)
@@ -141,19 +163,20 @@ def toml_literal_string(text: str) -> str:
     return f"'''\n{text}'''"
 
 
-def generate_workflow_fabro(instance: dict) -> str:
+def generate_workflow_fabro(
+    instance: dict,
+    workflow_profile: str = SIMPLE_PROFILE,
+    verify_mode: str | None = None,
+) -> str:
     """Generate a per-instance .fabro DOT graph with properly escaped values."""
     setup_script = build_setup_script(instance)
-    return f'''digraph SWEBench {{
-    rankdir=LR
-    start [shape=Mdiamond]
-    exit  [shape=Msquare]
-    setup         [label="Setup", shape=parallelogram, script="{dot_escape(setup_script)}"]
-    solve         [label="Solve", prompt="Fix this GitHub issue in the repository. Make the minimal code change needed."]
-    extract_patch [label="Extract Patch", shape=parallelogram, script="git diff"]
-    start -> setup -> solve -> extract_patch -> exit
-}}
-'''
+    return generate_issue_to_pr_workflow(
+        graph_name="SWEBench",
+        setup_script=setup_script,
+        workflow_profile=workflow_profile,
+        verify_mode=verify_mode,
+        solve_prompt="Fix this GitHub issue in the repository. Make the minimal code change needed.",
+    )
 
 
 def ensure_local_docker_image(instance: dict, output_dir: Path) -> str:
@@ -250,16 +273,16 @@ def generate_workflow_toml(
     return "\n".join(lines)
 
 
-def find_patch(run_dir: Path) -> str | None:
-    """Find the extract_patch stdout log in a local or dumped Fabro run dir."""
+def find_stage_output(run_dir: Path, node_id: str) -> str | None:
+    """Find the latest stdout-like output for a node in a Fabro run dir."""
     candidates = []
     for root_name in ("nodes", "stages"):
         root = run_dir / root_name
         if root.exists():
-            candidates.extend(root.iterdir())
+            candidates.extend(path for path in root.iterdir() if path.is_dir())
 
-    for stage_dir in candidates:
-        if "extract_patch" not in stage_dir.name:
+    for stage_dir in sorted(candidates, key=_stage_sort_key, reverse=True):
+        if node_id not in stage_dir.name:
             continue
         for name in ("stdout.log", "output.log", "response.md"):
             path = stage_dir / name
@@ -267,6 +290,39 @@ def find_patch(run_dir: Path) -> str | None:
                 return path.read_text()
 
     return None
+
+
+def find_patch(run_dir: Path) -> str | None:
+    """Find the latest extract_patch stdout log in a local or dumped run dir."""
+    return find_stage_output(run_dir, "extract_patch")
+
+
+def find_verify_record(run_dir: Path) -> dict | None:
+    """Parse the latest verify JSON object printed by the verify stage."""
+    output = find_stage_output(run_dir, "verify")
+    if not output:
+        return None
+    for line in reversed(output.splitlines()):
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            value = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and "status" in value:
+            return value
+    return None
+
+
+def _stage_sort_key(path: Path) -> tuple[int, int, str]:
+    match = re.search(r"(\d+)-.*@(\d+)$", path.name)
+    if match:
+        return int(match.group(2)), int(match.group(1)), path.name
+    match = re.search(r"(\d+)", path.name)
+    if match:
+        return 0, int(match.group(1)), path.name
+    return 0, 0, path.name
 
 
 def parse_run_ref(stdout: str, stderr: str) -> tuple[str | None, Path | None]:
@@ -421,6 +477,9 @@ def run_instance(
     timeout: int,
     sandbox_provider: str,
     fabro_bin: str,
+    output_layout: str,
+    workflow_profile: str,
+    verify_mode: str,
 ) -> dict:
     """Run Fabro agent on a single SWE-bench instance."""
     instance_id = instance["instance_id"]
@@ -439,6 +498,8 @@ def run_instance(
         "fabro_dump_dir": None,
         "events_path": None,
         "trajectory_path": None,
+        "verify": None,
+        "artifacts": {},
     }
 
     start_time = time.time()
@@ -448,7 +509,11 @@ def run_instance(
         goal_file = config_dir / "goal.txt"
         goal_file.write_text(goal_text)
 
-        fabro_content = generate_workflow_fabro(instance)
+        fabro_content = generate_workflow_fabro(
+            instance,
+            workflow_profile=workflow_profile,
+            verify_mode=verify_mode,
+        )
         (config_dir / "workflow.fabro").write_text(fabro_content)
         toml_content = generate_workflow_toml(
             instance, config_dir, sandbox_provider, output_dir,
@@ -496,13 +561,31 @@ def run_instance(
         else:
             result["status"] = "completed"
 
+        verify = None
+        if workflow_profile == STRUCTURED_PROFILE:
+            verify = find_verify_record(fabro_run_dir) if fabro_run_dir else None
+            if not verify and dumped:
+                verify = find_verify_record(dumped)
+            result["verify"] = verify
+
         # Extract patch from the fabro run dir
         patch = find_patch(fabro_run_dir) if fabro_run_dir else None
         if not patch and dumped:
             patch = find_patch(dumped)
         if patch and patch.strip():
             result["model_patch"] = patch
-            result["status"] = "completed"
+            if (
+                workflow_profile == STRUCTURED_PROFILE
+                and verify
+                and verify.get("status") not in {"passed", "skipped"}
+            ):
+                result["status"] = "verify_failed"
+                result["error"] = verify.get("failure_reason") or "Verify failed"
+            else:
+                result["status"] = "completed"
+        elif workflow_profile == STRUCTURED_PROFILE and verify and verify.get("status") != "passed":
+            result["status"] = "verify_failed"
+            result["error"] = verify.get("failure_reason") or "Verify failed"
         elif result["status"] == "completed":
             result["status"] = "no_patch"
             result["error"] = "No patch produced"
@@ -516,6 +599,29 @@ def run_instance(
         log.debug(f"[{instance_id}] Exception: {e}")
 
     result["duration_s"] = round(time.time() - start_time, 1)
+    try:
+        result["artifacts"] = write_attempt_sidecars(
+            instance=instance,
+            result=result,
+            output_dir=output_dir,
+            config_dir=config_dir,
+            sandbox_provider=sandbox_provider,
+            attempt_id=DEFAULT_ATTEMPT_ID,
+        )
+        if _writes_runs_layout(output_layout):
+            run_id = run_id_for_task(instance_id, DEFAULT_ATTEMPT_ID)
+            result["artifacts"]["run_bundle"] = write_run_bundle(
+                instance=instance,
+                result=result,
+                output_dir=output_dir,
+                config_dir=config_dir,
+                sandbox_provider=sandbox_provider,
+                run_id=run_id,
+                attempt_id=DEFAULT_ATTEMPT_ID,
+            )
+    except Exception as e:
+        result["artifact_error"] = str(e)
+        log.debug(f"[{instance_id}] Artifact sidecar write failed: {e}")
     return result
 
 
@@ -603,6 +709,10 @@ def preflight_docker():
     print("Preflight OK: Docker daemon reachable")
 
 
+def _writes_runs_layout(output_layout: str) -> bool:
+    return output_layout in {"runs-v1", "both"}
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -645,7 +755,36 @@ def main():
         default=EVAL_DIR / "results" / "default",
         help="Output directory for results",
     )
+    parser.add_argument(
+        "--output-layout",
+        choices=["swebench-compat", "runs-v1", "both"],
+        default="swebench-compat",
+        help=(
+            "Artifact layout to write. swebench-compat preserves the current "
+            "configs/<instance_id> tree; runs-v1 additionally writes "
+            "runs/<task_id>--001; both writes both layouts."
+        ),
+    )
+    parser.add_argument(
+        "--workflow-profile",
+        choices=[SIMPLE_PROFILE, STRUCTURED_PROFILE],
+        default=SIMPLE_PROFILE,
+        help=(
+            "Workflow profile to run. simple preserves setup->solve->extract_patch; "
+            "structured runs research->implement->verify with one fixup loop."
+        ),
+    )
+    parser.add_argument(
+        "--verify-mode",
+        choices=[VERIFY_NONE, VERIFY_DIFF_CHECK],
+        default=None,
+        help=(
+            "Verification mode for the generated workflow. Defaults to none for "
+            "simple and diff-check for structured."
+        ),
+    )
     args = parser.parse_args()
+    args.verify_mode = default_verify_mode(args.workflow_profile, args.verify_mode)
 
     fabro_path = Path(args.fabro_bin).expanduser()
     if fabro_path.is_absolute() or len(fabro_path.parts) > 1:
@@ -672,6 +811,9 @@ def main():
     log.info(f"  Sandbox:     {args.sandbox_provider}")
     log.info(f"  Fabro bin:   {args.fabro_bin}")
     log.info(f"  Timeout:     {args.timeout}s")
+    log.info(f"  Layout:      {args.output_layout}")
+    log.info(f"  Workflow:    {args.workflow_profile}")
+    log.info(f"  Verify:      {args.verify_mode}")
     log.info(f"  Output:      {args.output_dir}")
     log.info("")
 
@@ -690,10 +832,23 @@ def main():
     # --- Run instances ----------------------------------------------------
     predictions_file = args.output_dir / "predictions.jsonl"
     results_file = args.output_dir / "results.jsonl"
+    exports_dir = args.output_dir / "exports" / "swebench"
+    export_predictions_file = exports_dir / "predictions.jsonl"
+    export_results_file = exports_dir / "results.jsonl"
+    if _writes_runs_layout(args.output_layout):
+        exports_dir.mkdir(parents=True, exist_ok=True)
+    manifest = load_or_init_manifest(args.output_dir)
 
     # Counters (thread-safe via lock)
     lock = threading.Lock()
-    counters = {"completed": 0, "no_patch": 0, "failed": 0, "timeout": 0, "error": 0}
+    counters = {
+        "completed": 0,
+        "no_patch": 0,
+        "verify_failed": 0,
+        "failed": 0,
+        "timeout": 0,
+        "error": 0,
+    }
     done_count = 0
     total = len(instances)
     wall_start = time.time()
@@ -706,61 +861,112 @@ def main():
             executor.submit(
                 run_instance, inst, args.model, args.provider,
                 args.output_dir, args.timeout, args.sandbox_provider,
-                args.fabro_bin,
+                args.fabro_bin, args.output_layout, args.workflow_profile,
+                args.verify_mode,
             ): inst
             for inst in instances
         }
 
         with open(predictions_file, "a") as pf, open(results_file, "a") as rf:
-            for future in as_completed(futures):
-                result = future.result()
-                iid = result["instance_id"]
-                status = result["status"]
-                dur = result["duration_s"]
-                has_patch = bool(result["model_patch"].strip())
+            export_pf = (
+                open(export_predictions_file, "a")
+                if _writes_runs_layout(args.output_layout)
+                else None
+            )
+            export_rf = (
+                open(export_results_file, "a")
+                if _writes_runs_layout(args.output_layout)
+                else None
+            )
+            try:
+                for future in as_completed(futures):
+                    result = future.result()
+                    iid = result["instance_id"]
+                    status = result["status"]
+                    dur = result["duration_s"]
+                    has_patch = bool(result["model_patch"].strip())
 
-                with lock:
-                    counters[status] = counters.get(status, 0) + 1
-                    done_count += 1
-                    n = done_count
+                    with lock:
+                        counters[status] = counters.get(status, 0) + 1
+                        done_count += 1
+                        n = done_count
 
-                    # Write prediction
-                    pf.write(json.dumps({
-                        "instance_id": iid,
-                        "model_name_or_path": result["model_name_or_path"],
-                        "model_patch": result["model_patch"],
-                    }) + "\n")
-                    pf.flush()
+                        # Write prediction
+                        prediction_record = build_prediction_record(result)
+                        prediction_line = json.dumps(prediction_record) + "\n"
+                        pf.write(prediction_line)
+                        pf.flush()
+                        if export_pf:
+                            export_pf.write(prediction_line)
+                            export_pf.flush()
 
-                    # Write detailed result
-                    rf.write(json.dumps(result) + "\n")
-                    rf.flush()
+                        # Write detailed result
+                        result_line = json.dumps(result) + "\n"
+                        rf.write(result_line)
+                        rf.flush()
+                        if export_rf:
+                            export_rf.write(result_line)
+                            export_rf.flush()
 
-                # Log every result
-                patch_info = f"patch={len(result['model_patch'])}b" if has_patch else "no patch"
-                err_info = f"  err={result['error'][:80]}" if result["error"] else ""
-                elapsed = round(time.time() - wall_start)
-                log.info(
-                    f"[{n:3d}/{total}]  {status:<10s}  {dur:6.0f}s  "
-                    f"{patch_info:<14s}  {iid}{err_info}"
-                )
+                        update_manifest_for_attempt(
+                            manifest,
+                            task_id=iid,
+                            attempt_id=DEFAULT_ATTEMPT_ID,
+                            output_dir=args.output_dir,
+                            config_dir=args.output_dir / "configs" / iid,
+                        )
+                        if _writes_runs_layout(args.output_layout):
+                            update_manifest_for_run(
+                                manifest,
+                                task_id=iid,
+                                run_id=run_id_for_task(iid, DEFAULT_ATTEMPT_ID),
+                                attempt_id=DEFAULT_ATTEMPT_ID,
+                                output_dir=args.output_dir,
+                            )
+                        write_manifest(args.output_dir, manifest)
 
-                # Print running totals every 10 completions
-                if n % 10 == 0 or n == total:
-                    log.info(
-                        f"  --- progress: {n}/{total}  "
-                        f"completed={counters.get('completed',0)}  "
-                        f"no_patch={counters.get('no_patch',0)}  "
-                        f"failed={counters.get('failed',0)}  "
-                        f"timeout={counters.get('timeout',0)}  "
-                        f"error={counters.get('error',0)}  "
-                        f"elapsed={elapsed}s ---"
+                    # Log every result
+                    patch_info = (
+                        f"patch={len(result['model_patch'])}b"
+                        if has_patch
+                        else "no patch"
                     )
+                    err_info = f"  err={result['error'][:80]}" if result["error"] else ""
+                    elapsed = round(time.time() - wall_start)
+                    log.info(
+                        f"[{n:3d}/{total}]  {status:<10s}  {dur:6.0f}s  "
+                        f"{patch_info:<14s}  {iid}{err_info}"
+                    )
+
+                    # Print running totals every 10 completions
+                    if n % 10 == 0 or n == total:
+                        log.info(
+                            f"  --- progress: {n}/{total}  "
+                            f"completed={counters.get('completed',0)}  "
+                            f"no_patch={counters.get('no_patch',0)}  "
+                            f"verify_failed={counters.get('verify_failed',0)}  "
+                            f"failed={counters.get('failed',0)}  "
+                            f"timeout={counters.get('timeout',0)}  "
+                            f"error={counters.get('error',0)}  "
+                            f"elapsed={elapsed}s ---"
+                        )
+            finally:
+                if export_pf:
+                    export_pf.close()
+                if export_rf:
+                    export_rf.close()
 
     wall_duration = round(time.time() - wall_start, 1)
 
     # --- Final summary (recompute from full results file) -----------------
-    all_counters = {"completed": 0, "no_patch": 0, "failed": 0, "timeout": 0, "error": 0}
+    all_counters = {
+        "completed": 0,
+        "no_patch": 0,
+        "verify_failed": 0,
+        "failed": 0,
+        "timeout": 0,
+        "error": 0,
+    }
     all_total = 0
     with open(results_file) as f:
         for line in f:
@@ -772,12 +978,17 @@ def main():
     summary = {
         "model": args.model,
         "provider": args.provider,
+        "workflow_profile": args.workflow_profile,
+        "verify_mode": args.verify_mode,
         "total": all_total,
         **all_counters,
         "total_duration_s": wall_duration,
     }
     summary_file = args.output_dir / "summary.json"
     summary_file.write_text(json.dumps(summary, indent=2))
+    if _writes_runs_layout(args.output_layout):
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        (exports_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
     skipped = len(completed_ids)
     log.info("")
@@ -790,6 +1001,7 @@ def main():
     log.info(f"  Total:       {all_total}")
     log.info(f"  Completed:   {all_counters.get('completed', 0)}")
     log.info(f"  No patch:    {all_counters.get('no_patch', 0)}")
+    log.info(f"  Verify fail: {all_counters.get('verify_failed', 0)}")
     log.info(f"  Failed:      {all_counters.get('failed', 0)}")
     log.info(f"  Timeout:     {all_counters.get('timeout', 0)}")
     log.info(f"  Error:       {all_counters.get('error', 0)}")

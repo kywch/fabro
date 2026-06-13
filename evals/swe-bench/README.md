@@ -127,12 +127,104 @@ View the leaderboard:
 cat scoreboard/leaderboard.json | python3 -m json.tool
 ```
 
+## Generation outputs
+
+`run_eval.py` keeps the root SWE-bench exports for compatibility:
+
+```text
+<output>/
+├── manifest.json
+├── predictions.jsonl
+├── results.jsonl
+├── summary.json
+└── configs/<instance_id>/
+    ├── task.json
+    ├── attempt.json
+    ├── patch.diff
+    ├── prediction.json
+    ├── verify.json          # only when a verify stage ran
+    ├── trajectory.jsonl     # promoted agent trajectory when dump is available
+    ├── goal.txt
+    ├── workflow.fabro
+    ├── workflow.toml
+    └── run_dump/
+```
+
+When `--output-layout both` or `--output-layout runs-v1` is used, `run_eval.py`
+also writes a runs-first mirror:
+
+```text
+<output>/
+├── exports/swebench/
+│   ├── predictions.jsonl
+│   ├── results.jsonl
+│   └── summary.json
+└── runs/<instance_id>--001/
+    ├── run.json
+    ├── task.json
+    ├── input/
+    │   ├── goal.md
+    │   └── envelope.json
+    ├── config/
+    │   ├── workflow.fabro
+    │   └── workflow.toml
+    ├── fabro/dump/
+    └── output/
+        ├── patch.diff
+        ├── prediction.json
+        ├── verify.json
+        ├── trajectory.jsonl
+        └── envelope.json
+```
+
+`predictions.jsonl`, `results.jsonl`, and `summary.json` are SWE-bench export
+files. New tooling should prefer `manifest.json` and the per-instance
+`task.json` / `attempt.json` / `patch.diff` sidecars, which are shaped as a
+general issue-to-PR solve-attempt record.
+
+By default, generation uses the compatibility workflow:
+
+```text
+setup -> solve -> extract_patch
+```
+
+For a more structured issue-to-PR loop, use:
+
+```bash
+python run_eval.py \
+  --workflow-profile structured \
+  --verify-mode diff-check \
+  --output-layout both \
+  --sandbox-provider docker \
+  --instance-ids django__django-11099
+```
+
+The structured profile runs:
+
+```text
+setup -> research -> implement -> verify
+verify -> extract_patch  # on success
+verify -> fixup -> verify  # on failure, capped at one fixup visit
+```
+
+`diff-check` verification is intentionally light: it fails empty patches and
+`git diff --check` whitespace errors. It does not run SWE-bench held-out grading
+tests during generation. Grading remains a separate evaluation step.
+
+Agent trajectory is derived from Fabro `events.jsonl` after `fabro dump`. The
+raw dump remains under `fabro/dump/`; a promoted `trajectory.jsonl` is also
+written beside generation outputs so issue-to-PR tooling can find it without
+knowing Fabro dump internals.
+
 ## File inventory
 
 | File | Purpose |
 |------|---------|
 | `status.py` | Check progress of a running or completed generation/evaluation |
 | `run_eval.py` | Generate patches (step 1) |
+| `attempt_artifacts.py` | Write generic task/attempt sidecars and manifest entries |
+| `test_attempt_artifacts.py` | Unit tests for generation sidecar artifacts |
+| `../issue-to-pr/run_attempt.py` | Run one normalized task envelope into a `runs/<run_id>/` bundle |
 | `evaluate_daytona.py` | Evaluate patches on Daytona (step 2) |
 | `evaluate.py` | Evaluate patches via official swebench Docker harness (alternative to step 2) |
 | `record_results.py` | Record results to scoreboard (step 3) |
