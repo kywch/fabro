@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "source": "swebench",
+  "task_id": "django__django-11099",
+  "repo": "django/django",
+  "base_commit": "redacted",
+  "goal_path": "input/goal.md"
+}

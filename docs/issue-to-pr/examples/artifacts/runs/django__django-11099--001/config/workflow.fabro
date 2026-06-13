@@ -1,0 +1,10 @@
+digraph IssueToPr {
+    start [shape=Mdiamond]
+    exit [shape=Msquare]
+    research [label="Research"]
+    implement [label="Implement"]
+    verify [label="Verify", shape=parallelogram]
+    audit [label="Audit", shape=parallelogram]
+    review [label="Review"]
+    start -> research -> implement -> verify -> audit -> review -> exit
+}

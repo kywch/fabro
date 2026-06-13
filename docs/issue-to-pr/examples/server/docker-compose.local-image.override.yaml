@@ -1,0 +1,3 @@
+services:
+  fabro:
+    image: fabro-smoke-local:latest

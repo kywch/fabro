@@ -1,9 +1,12 @@
 _version = 1
 
 [workflow]
-graph = "../../docs/internal/demo/01-hello.fabro"
+graph = "workflow.fabro"
 
 [run.pull_request]
+enabled = false
+
+[run.clone]
 enabled = false
 
 [run.run_branch]
@@ -11,6 +14,3 @@ enabled = false
 
 [run.meta_branch]
 enabled = false
-
-[run.environment]
-id = "docker"

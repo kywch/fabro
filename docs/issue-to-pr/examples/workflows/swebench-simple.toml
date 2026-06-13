@@ -1,7 +1,7 @@
 _version = 1
 
 [workflow]
-graph = "workflow.fabro"
+graph = "swebench-simple.fabro"
 
 [run.pull_request]
 enabled = false

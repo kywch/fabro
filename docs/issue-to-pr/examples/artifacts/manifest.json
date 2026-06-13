@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "layout": "issue-to-pr-runs-v1",
+  "created_by": "redacted-example",
+  "exports": {
+    "swebench_predictions_export": "exports/swebench/predictions.jsonl",
+    "swebench_results_export": "exports/swebench/results.jsonl",
+    "swebench_summary_export": "exports/swebench/summary.json"
+  },
+  "runs": {
+    "django__django-11099--001": {
+      "run_id": "django__django-11099--001",
+      "task_id": "django__django-11099",
+      "run_path": "runs/django__django-11099--001/run.json",
+      "task_path": "runs/django__django-11099--001/task.json",
+      "attempt_id": "001",
+      "selected": true,
+      "candidate_state": "failed_with_patch",
+      "exports": {
+        "swebench_prediction": "exports/swebench/predictions.jsonl"
+      }
+    }
+  },
+  "tasks": {
+    "django__django-11099": {
+      "selected_run": "django__django-11099--001",
+      "runs": {
+        "django__django-11099--001": {
+          "run_path": "runs/django__django-11099--001/run.json",
+          "task_path": "runs/django__django-11099--001/task.json"
+        }
+      }
+    }
+  }
+}

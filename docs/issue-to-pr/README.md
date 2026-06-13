@@ -1,67 +1,48 @@
-# Issue-to-PR Operations Notes
+# Issue-to-PR
 
-This directory collects the tracked runbooks for turning issue-to-PR experiments
-into repeatable Fabro workflows. The first focus is local Docker SWE-bench runs
-using OpenAI/Codex auth, because that path exercises the same pieces a VPS
-factory needs: a Fabro server, Docker sandboxes, provider credentials, run
-artifacts, patches, and trajectories.
+This directory is the tracked home for the issue-to-PR workflow area: how to run
+it, how the staged process is expected to behave, what the output artifacts
+mean, and what experiment cycles have taught us.
 
-## Operator Path
+Raw run outputs, trajectories, prompts, logs, checkpoints, provider payloads,
+and generated SWE-bench result trees do not belong in this directory. Keep those
+in `tmp/`, CI artifacts, or another artifact store; track distilled summaries,
+contracts, decisions, and redacted examples here.
 
-Use this order when bringing up or debugging the pipeline:
+This directory should remain self-sufficient even though `tmp/` is gitignored:
+tracked examples show the artifact shape, while full raw evidence is preserved
+as external archives with checksums and redaction notes.
 
-1. Start a Fabro server with the Docker sandbox provider enabled.
-2. Log the CLI into that server.
-3. Configure OpenAI/Codex auth in the server vault.
-4. Prove the provider with `fabro model test`.
-5. Run a no-push tutorial smoke.
-6. Run one SWE-bench task through local Docker with `--max-workers 1`.
-7. Inspect the output bundle: `run.json`, `patch.diff`, `verify.json`,
-   `audit.json`, `review` metadata, `fabro/dump/events.jsonl`, and
-   `trajectory.jsonl`.
-8. Only then scale the task count or change workflow prompts.
+## Start Here
 
-Useful docs:
+- Run one Docker/Codex SWE-bench task:
+  [runbooks/docker-codex-swebench.md](runbooks/docker-codex-swebench.md)
+- Avoid accidental pushes and inspect dumps:
+  [runbooks/no-push-and-artifacts.md](runbooks/no-push-and-artifacts.md)
+- Understand the current staged workflow lanes:
+  [process/README.md](process/README.md) and
+  [process/staged-workflow.md](process/staged-workflow.md)
+- Interpret run bundles and candidate states:
+  [artifacts/README.md](artifacts/README.md)
+- Review curated workflow-improvement experiments:
+  [experiments/README.md](experiments/README.md) and
+  [experiments/template.md](experiments/template.md)
+- Copy sanitized example config:
+  [examples/server](examples/server) and [examples/workflows](examples/workflows)
+- Inspect sanitized artifact examples:
+  [examples/artifacts](examples/artifacts)
 
-- [Docker + Codex SWE-bench](swebench-docker-codex.md)
-- [No-push and Artifact Lessons](no-push-and-artifacts.md)
-
-## Product Boundary
-
-Fabro should own the staged attempt:
+## Directory Map
 
 ```text
-setup -> research -> implement -> verify -> snapshot -> audit -> review -> fixup -> candidate
+docs/issue-to-pr/
+  runbooks/     # executable operator procedures
+  process/      # staged workflow and auto-research mechanics
+  artifacts/    # output layout and candidate/trajectory contracts
+  experiments/  # curated historical improvement cycles
+  examples/     # sanitized config and workflow snippets
 ```
 
-The surrounding harness or VPS service should own intake, queueing, credentials
-policy, Docker daemon policy, grading, and artifact retention.
-
-## Safety Defaults
-
-For smoke tests and evals, disable repository side effects unless a scratch fork
-is intentionally configured:
-
-```toml
-[run.pull_request]
-enabled = false
-
-[run.clone]
-enabled = false
-
-[run.run_branch]
-enabled = false
-
-[run.meta_branch]
-enabled = false
-```
-
-`run.clone.enabled = false` is especially important for SWE-bench local Docker:
-the generated workflow clones the target repository inside the sandbox setup
-stage, and Fabro should not also clone or push branches for the product repo.
-
-## Artifact Rule
-
-Treat `runs/<run_id>/` as the product-facing shape. SWE-bench root JSONL files
-are compatibility exports. A failed patch can be useful, but only
-`candidate.state = "ready"` should be considered publishable.
+The short version: runbooks tell you how to operate the system; process docs
+tell you how it should behave; artifacts docs tell consumers what the output
+means; experiments docs preserve what changed future behavior.

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "kind": "issue_to_pr_task",
+  "task_id": "django__django-11099",
+  "source": "swebench",
+  "repo": "django/django",
+  "goal_path": "goal.md"
+}

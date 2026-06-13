@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "patch_nonempty": true,
+  "changed_files": ["example.py"],
+  "test_files_changed": [],
+  "diff_stat": ["example.py | 2 +-"]
+}

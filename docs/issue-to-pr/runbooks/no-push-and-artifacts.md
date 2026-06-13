@@ -13,7 +13,7 @@ evals and local smoke tests, use wrapper TOML that disables side effects:
 _version = 1
 
 [workflow]
-graph = "../../docs/internal/demo/01-hello.fabro"
+graph = "../../../internal/demo/01-hello.fabro"
 
 [run.pull_request]
 enabled = false
@@ -56,6 +56,31 @@ Top-level success can hide route-level failures if a later node selects a
 successful branch. Always inspect stage-level artifacts before using a run as a
 quality example.
 
+## Preserve a Run for Later Study
+
+`tmp/` is gitignored, so do not rely on it as the durable record. For a run that
+should be studied later:
+
+1. Keep the canonical run bundle under `runs/<run_id>/` intact.
+2. Copy or export a redacted study bundle outside git, for example under an
+   artifact bucket or `tmp/issue-to-pr-studies/<study_id>/`.
+3. Include a manifest with `study_id`, `workflow_version_id`, `task_panel_id`,
+   run IDs, patch hashes, redaction status, and raw archive checksum.
+4. Keep small redacted examples or summaries in git under
+   `docs/issue-to-pr/experiments/`.
+5. Do not commit full dumps, full trajectories, provider payloads, checkpoints,
+   `.env`, or generated SWE-bench output trees.
+
+For local archives, prefer:
+
+```bash
+tar --zstd -cf issue-to-pr-artifacts-<date>-<study_id>.tar.zst <study_dir>
+sha256sum issue-to-pr-artifacts-<date>-<study_id>.tar.zst > checksums.sha256
+```
+
+Use `tar -czf ...tar.gz` if `zstd` is unavailable. Use zip only for consumers
+who need a desktop-friendly archive.
+
 ## Trajectory Caveat
 
 The current trajectory export is a derived projection from durable run events.
@@ -93,7 +118,7 @@ patches belong in run artifacts, not in SWE-bench `predictions.jsonl`.
 
 ## Do Not Commit Scratch State
 
-Do not copy these from `tmp/fabro-docker-smoke` into tracked files:
+Do not copy these from scratch directories into tracked files:
 
 - real `.env` values;
 - OAuth access or refresh tokens;

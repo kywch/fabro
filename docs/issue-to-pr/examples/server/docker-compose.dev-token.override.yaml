@@ -1,0 +1,5 @@
+services:
+  fabro:
+    environment:
+      SESSION_SECRET: "${SESSION_SECRET}"
+      FABRO_DEV_TOKEN: "${FABRO_DEV_TOKEN}"

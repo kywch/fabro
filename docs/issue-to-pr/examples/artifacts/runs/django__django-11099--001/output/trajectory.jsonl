@@ -1,0 +1,4 @@
+{"type":"agent_input","stage":"research","content":"Redacted issue prompt."}
+{"type":"assistant_message","stage":"research","content":"Redacted research summary."}
+{"type":"tool_call","stage":"implement","tool":"shell","redacted":true}
+{"type":"assistant_message","stage":"review","content":"Fix: missing regression test."}

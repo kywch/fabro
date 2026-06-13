@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "layout": "issue-to-pr-runs-v1",
+  "run_id": "django__django-11099--001",
+  "task_id": "django__django-11099",
+  "status": "failed",
+  "phases": {
+    "solve": {"status": "completed"},
+    "verify": {"status": "completed", "artifact_path": "output/verify.json"},
+    "audit": {"status": "completed", "artifact_path": "output/audit.json"},
+    "review": {
+      "status": "failed",
+      "failure_class": "test_blocking",
+      "failure_reason": "Patch lacks a focused regression test."
+    }
+  },
+  "candidate": {
+    "state": "failed_with_patch",
+    "reuse": "continuation_candidate",
+    "patch_path": "output/patch.diff",
+    "patch_sha256": "redacted-example-sha256",
+    "warning": "Do not merge as-is; use this patch as a starting point with the review lesson.",
+    "failure_class": "test_blocking",
+    "failure_reason": "Patch lacks a focused regression test.",
+    "do_not_repeat": [
+      "Do not claim a regression test exists when it is absent from the diff."
+    ],
+    "next_agent_guidance": "Add the regression test first, then rerun verification."
+  },
+  "artifacts": {
+    "patch": "output/patch.diff",
+    "verify": "output/verify.json",
+    "audit": "output/audit.json",
+    "trajectory": "output/trajectory.jsonl",
+    "events": "fabro/dump/events.jsonl"
+  }
+}

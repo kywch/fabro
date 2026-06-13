@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "run_id": "django__django-11099--001",
+  "status": "failed",
+  "candidate_state": "failed_with_patch",
+  "publishable": false
+}
