@@ -214,14 +214,134 @@
     }
   },
   "web_url": "http://127.0.0.1:32276/runs/01KV017KH9G2RZNJAQ332QPYV6",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-06-13T08:23:34.426150142Z",
+    "run_branch": "fabro/run/01KV017KH9G2RZNJAQ332QPYV6",
+    "base_sha": "64ece23473b3efee369f1bdd0f0398963a38f98d"
   },
-  "status_updated_at": "2026-06-13T08:23:04.374280666Z",
-  "last_event_at": "2026-06-13T08:23:33.047565643Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-06-13T08:23:34.426957009Z",
+  "last_event_at": "2026-06-13T08:23:35.731480555Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 22,
+      "checkpoint": {
+        "timestamp": "2026-06-13T08:23:35.670370520Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.work_dir": "/workspace/fabro",
+          "failure_signature": "",
+          "outcome": "succeeded",
+          "graph.goal": "Write a haiku about software workflows",
+          "internal.retry_count.start": 0,
+          "internal.thread_id": null,
+          "internal.node_visit_count": 1,
+          "failure_class": "",
+          "current_node": "start",
+          "graph.rankdir": "LR",
+          "internal.fidelity": "compact",
+          "internal.run_id": "01KV017KH9G2RZNJAQ332QPYV6"
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "compose",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-06-13T08:23:42.617844415Z",
+        "current_node": "compose",
+        "completed_nodes": [
+          "start",
+          "compose"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.fidelity": "compact",
+          "graph.goal": "Write a haiku about software workflows",
+          "internal.thread_id": "start",
+          "failure_signature": "",
+          "internal.retry_count.start": 0,
+          "outcome": "succeeded",
+          "last_response": "Silent commits bloom  \nWorkflows hum through tests and builds  \nBugs fall softly",
+          "internal.work_dir": "/workspace/fabro",
+          "last_stage": "compose",
+          "internal.run_id": "01KV017KH9G2RZNJAQ332QPYV6",
+          "graph.rankdir": "LR",
+          "current_node": "compose",
+          "internal.node_visit_count": 1,
+          "thread.start.current_node": "compose",
+          "internal.retry_count.compose": 0,
+          "response.compose": "Silent commits bloom  \nWorkflows hum through tests and builds  \nBugs fall softly",
+          "failure_class": ""
+        },
+        "node_outcomes": {
+          "compose": {
+            "status": "succeeded",
+            "context_updates": {
+              "last_response": "Silent commits bloom  \nWorkflows hum through tests and builds  \nBugs fall softly",
+              "response.compose": "Silent commits bloom  \nWorkflows hum through tests and builds  \nBugs fall softly",
+              "last_stage": "compose"
+            },
+            "notes": "Stage completed: compose",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.4-mini"
+                  },
+                  "tokens": {
+                    "input_tokens": 4122,
+                    "output_tokens": 22,
+                    "reasoning_tokens": 444,
+                    "cache_read_tokens": 0,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 5188
+            },
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 6843,
+              "tool_time_ms": 0,
+              "active_time_ms": 6843
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "exit",
+        "node_visits": {
+          "start": 1,
+          "compose": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -248,5 +368,68 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "compose@1": {
+      "first_event_seq": 23,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": {
+        "mode": "prompt",
+        "provider": "openai",
+        "model": "gpt-5.4-mini",
+        "reasoning_effort": "low"
+      },
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-06-13T08:23:35.670619776Z",
+      "handler": "prompt",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    },
+    "start@1": {
+      "first_event_seq": 19,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-06-13T08:23:35.666974267Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-06-13T08:23:35.657178241Z",
+      "handler": "start",
+      "timing": {
+        "wall_time_ms": 4,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    }
+  }
 }
