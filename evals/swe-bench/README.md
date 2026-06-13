@@ -1,6 +1,6 @@
 # SWE-Bench-Lite Evaluation
 
-Evaluates Fabro's agent on [SWE-Bench-Lite](https://www.swebench.com/) (300 Python bug-fix tasks across 12 repos). Two phases: generate patches, then evaluate them. Both run on Daytona cloud sandboxes — no local Docker needed.
+Evaluates Fabro's agent on [SWE-Bench-Lite](https://www.swebench.com/) (300 Python bug-fix tasks across 12 repos). Two phases: generate patches, then evaluate them. Generation supports Daytona cloud sandboxes and local Docker sandboxes.
 
 ## Setup
 
@@ -26,9 +26,40 @@ python run_eval.py \
 **Options:**
 - `--model` — LLM model (default: `claude-haiku-4-5`)
 - `--provider` — LLM provider (default: `anthropic`)
-- `--max-workers` — max concurrent Daytona sandboxes (default: 100)
-- `--timeout` — per-instance timeout in seconds (default: 600)
+- `--sandbox-provider` — sandbox provider, `daytona` or `docker` (default: `daytona`)
+- `--fabro-bin` — Fabro CLI binary to execute (default: `fabro`)
+- `--max-workers` — max concurrent sandboxes (default: 75)
+- `--timeout` — per-instance timeout in seconds (default: 1200)
 - `--instance-ids` — run only specific instances (e.g. `--instance-ids django__django-11099`)
+
+### Local Docker + Codex smoke
+
+For a one-instance local smoke using OpenAI/Codex credentials already stored in
+Fabro's server vault:
+
+```bash
+../../tmp/swebench-venv/bin/python run_eval.py \
+    --model gpt-5.4-mini \
+    --provider openai \
+    --sandbox-provider docker \
+    --fabro-bin ../../target/debug/fabro \
+    --max-workers 1 \
+    --instance-ids django__django-11099 \
+    --output-dir ../../tmp/swebench-results/gpt54-mini-django-11099
+```
+
+The Docker path builds and reuses one local image per `(repo, version)`. It
+generates workflow configs with cloning, PRs, and managed run/meta branches
+disabled, so it does not push `fabro/run/*` or `fabro/meta/*` refs to the
+current origin.
+
+For server-backed Fabro runs, each result row also records:
+
+- `fabro_run_id` — the Fabro run id
+- `fabro_dump_dir` — the local `fabro dump` directory for that instance
+- `events_path` — the dumped `events.jsonl` event stream
+- `trajectory_path` — a derived `trajectory.jsonl` with agent input, assistant
+  message, tool call, and tool result events extracted from the dump
 
 **Monitor:**
 ```bash

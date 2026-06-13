@@ -1,26 +1,32 @@
 ---
 title: "Ensemble"
-description: "Multi-provider fan-out, error policies, and result synthesis"
+description: "Multi-model fan-out, error policies, and best-route selection"
 ---
 
-This tutorial combines parallel execution with multi-model routing to get independent opinions from four different LLM providers, then synthesizes the results. This is the ensemble pattern — useful when you want diverse perspectives, consensus-based decisions, or protection against any single model's blind spots.
+This tutorial combines parallel execution with multi-model routing to get
+independent attempts from four Codex model routes, then selects the best
+successful route with a fan-in node. This is the ensemble pattern — useful when
+you want resilience, route comparison, or protection against any single model
+route failing. It works with the ChatGPT/Codex subscription login from the
+[Quick Start](/getting-started/quick-start), so no provider API key is required
+for this version.
 
 ## The workflow
 
 <Frame>
-  <img src="/images/tutorial-ensemble.svg" alt="Ensemble workflow: Start → Fan Out → Opus, Gemini, Codex, Mercury → Merge → Synthesize → Exit" />
+  <img src="/images/tutorial-ensemble.svg" alt="Ensemble workflow: Start → Fan Out → Mini, Codex, Deep Codex, Latest → Merge → Summarize → Exit" />
 </Frame>
 
 ```dot title="ensemble.fabro"
 digraph Ensemble {
     graph [
-        goal="Get independent opinions from multiple providers, then synthesize",
+        goal="Fan out to multiple Codex model routes, then select and summarize the best successful route",
         model_stylesheet="
-            #opus    { model: claude-opus-4-6;      }
-            #gemini  { model: gemini-3.1-pro-preview;}
-            #codex   { model: gpt-5.4;              }
-            #mercury { model: mercury-2;             provider: inception; }
-            #synth   { model: claude-opus-4-6;      reasoning_effort: high; }
+            #mini    { model: gpt-5.4-mini; reasoning_effort: low; }
+            #codex   { model: gpt-5.4;      reasoning_effort: medium; }
+            #deep    { model: gpt-5.4;      reasoning_effort: high; }
+            #latest  { model: gpt-5.5;      reasoning_effort: high; }
+            #synth   { model: gpt-5.5;      reasoning_effort: high; }
         "
     ]
     rankdir=LR
@@ -30,85 +36,101 @@ digraph Ensemble {
 
     fork [label="Fan Out", shape=component, join_policy="wait_all"]
 
-    opus    [label="Opus",    prompt="Analyze the goal. Provide your independent assessment, recommendations, and any code or prose needed. Be thorough.", shape=tab]
-    gemini  [label="Gemini",  prompt="Analyze the goal. Provide your independent assessment, recommendations, and any code or prose needed. Be thorough.", shape=tab]
-    codex   [label="Codex",   prompt="Analyze the goal. Provide your independent assessment, recommendations, and any code or prose needed. Be thorough.", shape=tab]
-    mercury [label="Mercury", prompt="Analyze the goal. Provide your independent assessment, recommendations, and any code or prose needed. Be thorough.", shape=tab]
+    mini   [label="Mini",       prompt="Analyze the goal quickly. Provide a concise independent recommendation.", shape=tab]
+    codex  [label="Codex",      prompt="Analyze the goal. Provide a thorough independent recommendation. Be precise.", shape=tab]
+    deep   [label="Deep Codex", prompt="Analyze the goal carefully. Focus on edge cases, risks, and tradeoffs.", shape=tab]
+    latest [label="Latest",     prompt="Analyze the goal with a fresh perspective. Look for alternatives and practical tradeoffs.", shape=tab]
 
     merge [label="Merge", shape=tripleoctagon]
-    synth [label="Synthesize", prompt="You have received independent analyses from four different models (Opus, Gemini, Codex, Mercury). Compare their perspectives: identify consensus, highlight disagreements, and synthesize the strongest ideas into a single coherent recommendation. Note where models agreed and where they diverged.", shape=tab]
+    synth [label="Summarize Selection", prompt="Use the parallel branch metadata in context. Report which routes succeeded, which route fan-in selected as best, and what to do next if a full prose synthesis is required.", shape=tab]
 
     start -> fork
-    fork -> opus
-    fork -> gemini
+    fork -> mini
     fork -> codex
-    fork -> mercury
-    opus    -> merge
-    gemini  -> merge
-    codex   -> merge
-    mercury -> merge
+    fork -> deep
+    fork -> latest
+    mini   -> merge
+    codex  -> merge
+    deep   -> merge
+    latest -> merge
     merge -> synth -> exit
 }
 ```
 
 ```bash
-fabro run docs/internal/demo/11-ensemble.fabro
+fabro run docs/internal/demo/11-ensemble.fabro \
+  --provider openai \
+  --model gpt-5.4
 ```
 
 <Note>
-This workflow requires API keys for all four providers (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `INCEPTION_API_KEY`). If a provider key is missing, that branch will fail — but the remaining branches still complete.
+This version intentionally stays within the OpenAI/Codex provider so it can run
+from the ChatGPT subscription login. To build a true cross-provider ensemble,
+replace any branch model with another provider's model after adding that
+provider credential.
 </Note>
 
 ## How it works
 
 The workflow has three phases:
 
-### 1. Fan-out to four providers
+### 1. Fan-out to four model routes
 
-The `fork` node spawns four parallel branches, each assigned to a different provider via the stylesheet:
+The `fork` node spawns four parallel branches, each assigned to a model and
+reasoning-effort route via the stylesheet:
 
 ```
-#opus    { model: claude-opus-4-6;      }
-#gemini  { model: gemini-3.1-pro-preview;}
-#codex   { model: gpt-5.4;              }
-#mercury { model: mercury-2;             provider: inception; }
+#mini    { model: gpt-5.4-mini; reasoning_effort: low; }
+#codex   { model: gpt-5.4;      reasoning_effort: medium; }
+#deep    { model: gpt-5.4;      reasoning_effort: high; }
+#latest  { model: gpt-5.5;      reasoning_effort: high; }
 ```
 
-Each branch receives the same prompt but runs on a completely different model. The branches execute concurrently and have no knowledge of each other's responses.
+Each branch receives the same task but runs with a different model or reasoning
+profile. The branches execute concurrently and have no knowledge of each
+other's responses.
 
 ### 2. Merge results
 
-The `merge` node collects all four responses. It waits for every branch — even if some fail. A missing API key or provider outage doesn't cancel the entire workflow.
+The `merge` node receives the branch result metadata, waits for every branch,
+and selects the best successful route. A missing provider credential or provider
+outage doesn't cancel the entire workflow when at least one route succeeds.
 
-### 3. Synthesize
+### 3. Summarize
 
-The `synth` node receives all four perspectives in its preamble and produces a unified recommendation. It uses `reasoning_effort: high` because comparing and synthesizing multiple viewpoints is a harder task than generating any single one.
+The final node reports which routes succeeded and which route fan-in selected.
+When you need a full prose synthesis of branch content, persist each branch's
+output to isolated artifacts or run the synthesis as a follow-up workflow.
 
 ## Combining patterns
 
 This workflow combines two patterns from earlier tutorials:
 
 - **Parallel execution** from [Parallel Review](/tutorials/parallel-review) — fan-out/fan-in with join policies
-- **Model routing** from [Multi-Model Routing](/tutorials/multi-model) — stylesheet selectors assigning different providers to each node
+- **Model routing** from [Multi-Model Routing](/tutorials/multi-model) — stylesheet selectors assigning different model routes to each node
 
-The key difference from the parallel review tutorial is that here each branch uses a _different provider_, not just a different prompt. This gives you genuinely independent perspectives — each model has different training data, different reasoning patterns, and different blind spots.
+The key difference from the parallel review tutorial is that here each branch
+uses a different model route, not just a different prompt. This gives you route
+diversity while staying within a single credential.
 
 ## When to use ensembles
 
 The ensemble pattern is most valuable when:
 
-- **Correctness matters more than speed** — e.g., security audits, architectural decisions, spec reviews
-- **You want to detect model-specific blind spots** — if three models agree and one disagrees, the disagreement is worth investigating
-- **You need confidence in a judgment call** — consensus across models is stronger than any single model's opinion
+- **Reliability matters more than speed** — one route can fail while another succeeds
+- **You want to compare model routes** — fan-in records which route won
+- **You need a fallback path** — cheaper or faster routes can run beside deeper routes
 
-The tradeoff is cost and latency — you're making 4x the LLM calls. Use single-model workflows for routine tasks and ensembles for high-stakes decisions.
+The tradeoff is cost and latency — you're making 4x the LLM calls. Use
+single-model workflows for routine tasks and ensembles when route diversity is
+worth the extra calls.
 
 ## What you've learned
 
-- **Ensemble workflows** fan out the same task to multiple providers
-- **ID selectors** (`#opus`, `#gemini`) assign each branch to a specific model
-- A **synthesis node** compares perspectives and produces a unified result
-- Combine parallel execution and model routing for diverse, independent analysis
+- **Ensemble workflows** fan out the same task to multiple model routes
+- **ID selectors** (`#mini`, `#deep`) assign each branch to a specific model route
+- A **fan-in node** selects the best successful route
+- Combine parallel execution and model routing for resilient route selection
 
 ## Next
 

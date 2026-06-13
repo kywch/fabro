@@ -2,7 +2,7 @@
 """SWE-bench evaluation orchestrator for Fabro.
 
 Loads SWE-bench Lite instances, generates per-instance workflow configs,
-runs Fabro agent in Daytona sandboxes, and collects patches.
+runs Fabro agent in Daytona or Docker sandboxes, and collects patches.
 
 Usage:
     cd evals/swe-bench
@@ -13,6 +13,7 @@ import argparse
 import json
 import logging
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -64,7 +65,7 @@ def dot_escape(s: str) -> str:
 
 
 def load_completed_ids(output_dir: Path) -> set[str]:
-    """Load instance IDs that have already been completed from prior runs."""
+    """Load instance IDs that already produced a terminal usable result."""
     completed = set()
     for jsonl_file in [output_dir / "results.jsonl"]:
         if jsonl_file.exists():
@@ -72,7 +73,9 @@ def load_completed_ids(output_dir: Path) -> set[str]:
                 for line in f:
                     if line.strip():
                         try:
-                            completed.add(json.loads(line)["instance_id"])
+                            result = json.loads(line)
+                            if result.get("status") in {"completed", "no_patch"}:
+                                completed.add(result["instance_id"])
                         except (json.JSONDecodeError, KeyError):
                             pass
     return completed
@@ -153,7 +156,41 @@ def generate_workflow_fabro(instance: dict) -> str:
 '''
 
 
-def generate_workflow_toml(instance: dict, run_dir: Path) -> str:
+def ensure_local_docker_image(instance: dict, output_dir: Path) -> str:
+    """Build or reuse the local Docker image for an instance environment."""
+    repo = instance["repo"]
+    version = instance["version"]
+    image = repo_version_key(repo, version)
+
+    inspect = subprocess.run(
+        ["docker", "image", "inspect", image],
+        capture_output=True,
+        text=True,
+    )
+    if inspect.returncode == 0:
+        log.debug(f"[{instance['instance_id']}] Reusing Docker image {image}")
+        return image
+
+    dockerfile_dir = output_dir / "dockerfiles"
+    dockerfile_dir.mkdir(parents=True, exist_ok=True)
+    dockerfile_path = dockerfile_dir / f"{image}.Dockerfile"
+    dockerfile_path.write_text(generate_dockerfile(repo, version))
+
+    log.info(f"[{instance['instance_id']}] Building Docker image {image}")
+    subprocess.run(
+        ["docker", "build", "-t", image, "-f", str(dockerfile_path), "."],
+        cwd=EVAL_DIR,
+        check=True,
+    )
+    return image
+
+
+def generate_workflow_toml(
+    instance: dict,
+    run_dir: Path,
+    sandbox_provider: str,
+    output_dir: Path,
+) -> str:
     """Generate a workflow.toml config for a single instance."""
     repo = instance["repo"]
     version = instance["version"]
@@ -162,42 +199,213 @@ def generate_workflow_toml(instance: dict, run_dir: Path) -> str:
     fabro_path = run_dir / "workflow.fabro"
 
     lines = [
-        'version = 1',
+        '_version = 1',
+        '',
+        '[workflow]',
         f'graph = "{fabro_path}"',
         '',
-        '[pull_request]',
+        '[run.pull_request]',
         'enabled = false',
         '',
-        '[sandbox]',
-        'provider = "daytona"',
+        '[run.clone]',
+        'enabled = false',
         '',
-        '[sandbox.env]',
+        '[run.run_branch]',
+        'enabled = false',
+        '',
+        '[run.meta_branch]',
+        'enabled = false',
+        '',
+        '[run.environment]',
+        f'id = "swebench-{sandbox_provider}"',
+        '',
+        f'[environments.swebench-{sandbox_provider}]',
+        f'provider = "{sandbox_provider}"',
+        '',
+        f'[environments.swebench-{sandbox_provider}.env]',
         'PATH = "/opt/miniconda3/envs/testbed/bin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"',
         '',
-        '[sandbox.daytona.snapshot]',
-        f'name = "{snapshot_name}"',
+        f'[environments.swebench-{sandbox_provider}.resources]',
         'cpu = 2',
-        'memory = 4',
-        'disk = 10',
-        f'dockerfile = {toml_literal_string(dockerfile)}',
+        'memory = "4GB"',
+        'disk = "10GB"',
     ]
+
+    if sandbox_provider == "daytona":
+        lines.extend([
+            '',
+            f'[environments.swebench-{sandbox_provider}.image]',
+            f'dockerfile = {{ contents = {toml_literal_string(dockerfile)} }}',
+        ])
+    elif sandbox_provider == "docker":
+        image = ensure_local_docker_image(instance, output_dir)
+        lines.extend([
+            '',
+            f'[environments.swebench-{sandbox_provider}.image]',
+            f'docker = "{image}"',
+        ])
+    else:
+        raise ValueError(f"unsupported sandbox provider: {sandbox_provider}")
 
     return "\n".join(lines)
 
 
 def find_patch(run_dir: Path) -> str | None:
-    """Find the extract_patch stdout.log in a Fabro run directory."""
-    nodes_dir = run_dir / "nodes"
-    if not nodes_dir.exists():
-        return None
+    """Find the extract_patch stdout log in a local or dumped Fabro run dir."""
+    candidates = []
+    for root_name in ("nodes", "stages"):
+        root = run_dir / root_name
+        if root.exists():
+            candidates.extend(root.iterdir())
 
-    for node_dir in nodes_dir.iterdir():
-        if node_dir.name.startswith("extract_patch"):
-            stdout_log = node_dir / "stdout.log"
-            if stdout_log.exists():
-                return stdout_log.read_text()
+    for stage_dir in candidates:
+        if "extract_patch" not in stage_dir.name:
+            continue
+        for name in ("stdout.log", "output.log", "response.md"):
+            path = stage_dir / name
+            if path.exists():
+                return path.read_text()
 
     return None
+
+
+def parse_run_ref(stdout: str, stderr: str) -> tuple[str | None, Path | None]:
+    """Parse either a server run ID or a local run dir from fabro output."""
+    run_id = None
+    run_dir = None
+    for line in (stdout + "\n" + stderr).splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("Run:"):
+            continue
+        value = stripped.split("Run:", 1)[1].strip()
+        if "/" in value:
+            run_dir = Path(value.replace("~", str(Path.home())))
+        elif value:
+            run_id = value
+    return run_id, run_dir
+
+
+def dump_run(fabro_bin: str, run_id: str, config_dir: Path, timeout: int) -> Path | None:
+    """Dump a server-backed run to local files and return the dump path."""
+    dump_dir = config_dir / "run_dump"
+    if dump_dir.exists():
+        shutil.rmtree(dump_dir)
+    proc = subprocess.run(
+        [fabro_bin, "dump", "--output", str(dump_dir), run_id],
+        timeout=timeout,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        log.debug(f"[{run_id}] fabro dump failed: {proc.stderr[-500:]}")
+        return None
+    return dump_dir
+
+
+TRAJECTORY_EVENTS = {
+    "agent.input",
+    "agent.message",
+    "agent.tool.started",
+    "agent.tool.completed",
+    "agent.error",
+    "agent.warning",
+    "agent.loop_detected",
+    "agent.turn_limit_reached",
+    "agent.steering_injected",
+    "agent.compaction.started",
+    "agent.compaction.completed",
+    "agent.processing_end",
+}
+
+
+def trajectory_entry(event: dict) -> dict | None:
+    """Convert one durable event into the eval trajectory shape."""
+    event_name = event.get("event")
+    if event_name not in TRAJECTORY_EVENTS:
+        return None
+
+    props = event.get("properties") or {}
+    entry = {
+        "seq": event.get("seq"),
+        "ts": event.get("ts"),
+        "run_id": event.get("run_id"),
+        "event": event_name,
+        "stage_id": event.get("stage_id"),
+        "node_id": event.get("node_id"),
+        "node_label": event.get("node_label"),
+        "session_id": event.get("session_id"),
+        "parallel_group_id": event.get("parallel_group_id"),
+        "parallel_branch_id": event.get("parallel_branch_id"),
+        "visit": props.get("visit"),
+    }
+
+    if event_name == "agent.input":
+        entry.update({
+            "role": "user",
+            "text": props.get("text", ""),
+        })
+    elif event_name == "agent.message":
+        entry.update({
+            "role": "assistant",
+            "text": props.get("text", ""),
+            "model": props.get("model"),
+            "billing": props.get("billing"),
+            "tool_call_count": props.get("tool_call_count"),
+            "message": props.get("message"),
+            "context_window": props.get("context_window"),
+        })
+    elif event_name == "agent.tool.started":
+        entry.update({
+            "role": "tool_call",
+            "tool_name": props.get("tool_name"),
+            "tool_call_id": props.get("tool_call_id") or event.get("tool_call_id"),
+            "arguments": props.get("arguments"),
+            "tool_call": props.get("tool_call"),
+            "turn_id": props.get("turn_id"),
+            "parent_message_id": props.get("parent_message_id"),
+        })
+    elif event_name == "agent.tool.completed":
+        entry.update({
+            "role": "tool_result",
+            "tool_name": props.get("tool_name"),
+            "tool_call_id": props.get("tool_call_id") or event.get("tool_call_id"),
+            "output": props.get("output"),
+            "is_error": props.get("is_error"),
+            "tool_result": props.get("tool_result"),
+            "turn_id": props.get("turn_id"),
+        })
+    else:
+        entry["properties"] = props
+
+    return {key: value for key, value in entry.items() if value is not None}
+
+
+def write_trajectory_from_events(dump_dir: Path) -> Path | None:
+    """Write a best-effort agent trajectory JSONL file from a Fabro dump."""
+    events_path = dump_dir / "events.jsonl"
+    if not events_path.exists():
+        return None
+
+    trajectory_path = dump_dir / "trajectory.jsonl"
+    count = 0
+    with events_path.open() as events, trajectory_path.open("w") as trajectory:
+        for line in events:
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            entry = trajectory_entry(event)
+            if entry is None:
+                continue
+            trajectory.write(json.dumps(entry) + "\n")
+            count += 1
+
+    if count == 0:
+        trajectory_path.unlink(missing_ok=True)
+        return None
+    return trajectory_path
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +419,8 @@ def run_instance(
     provider: str,
     output_dir: Path,
     timeout: int,
+    sandbox_provider: str,
+    fabro_bin: str,
 ) -> dict:
     """Run Fabro agent on a single SWE-bench instance."""
     instance_id = instance["instance_id"]
@@ -226,6 +436,9 @@ def run_instance(
         "error": None,
         "duration_s": 0,
         "fabro_run_dir": None,
+        "fabro_dump_dir": None,
+        "events_path": None,
+        "trajectory_path": None,
     }
 
     start_time = time.time()
@@ -237,12 +450,14 @@ def run_instance(
 
         fabro_content = generate_workflow_fabro(instance)
         (config_dir / "workflow.fabro").write_text(fabro_content)
-        toml_content = generate_workflow_toml(instance, config_dir)
+        toml_content = generate_workflow_toml(
+            instance, config_dir, sandbox_provider, output_dir,
+        )
         toml_file = config_dir / "workflow.toml"
         toml_file.write_text(toml_content)
 
         cmd = [
-            "fabro", "run", str(toml_file),
+            fabro_bin, "run", str(toml_file),
             "--auto-approve",
             "--model", model,
             "--provider", provider,
@@ -259,28 +474,32 @@ def run_instance(
             text=True,
         )
 
-        # Parse the fabro run dir from stderr (format: "    Run:  <path>")
-        fabro_run_dir = None
-        for line in proc.stderr.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("Run:") and "/" in stripped:
-                fabro_run_dir = Path(stripped.split("Run:", 1)[1].strip().replace("~", str(Path.home())))
-                break
+        run_id, fabro_run_dir = parse_run_ref(proc.stdout, proc.stderr)
         result["fabro_run_dir"] = str(fabro_run_dir) if fabro_run_dir else None
+        result["fabro_run_id"] = run_id
+        dumped = dump_run(fabro_bin, run_id, config_dir, timeout=120) if run_id else None
+        if dumped:
+            result["fabro_dump_dir"] = str(dumped)
+            events_path = dumped / "events.jsonl"
+            if events_path.exists():
+                result["events_path"] = str(events_path)
+            trajectory_path = write_trajectory_from_events(dumped)
+            if trajectory_path:
+                result["trajectory_path"] = str(trajectory_path)
 
         if proc.returncode != 0:
             result["error"] = f"fabro exited with code {proc.returncode}"
             result["status"] = "failed"
             (config_dir / "fabro_stderr.log").write_text(proc.stderr)
+            (config_dir / "fabro_stdout.log").write_text(proc.stdout)
             log.debug(f"[{instance_id}] fabro stderr: {proc.stderr[-300:]}")
         else:
             result["status"] = "completed"
 
         # Extract patch from the fabro run dir
-        if fabro_run_dir:
-            patch = find_patch(fabro_run_dir)
-        else:
-            patch = None
+        patch = find_patch(fabro_run_dir) if fabro_run_dir else None
+        if not patch and dumped:
+            patch = find_patch(dumped)
         if patch and patch.strip():
             result["model_patch"] = patch
             result["status"] = "completed"
@@ -291,7 +510,7 @@ def run_instance(
     except subprocess.TimeoutExpired:
         result["status"] = "timeout"
         result["error"] = f"Timed out after {timeout}s"
-        _cleanup_sandbox(instance_id)
+        _cleanup_sandbox(instance_id, sandbox_provider, fabro_bin)
     except Exception as e:
         result["error"] = str(e)
         log.debug(f"[{instance_id}] Exception: {e}")
@@ -300,15 +519,17 @@ def run_instance(
     return result
 
 
-def _cleanup_sandbox(label_value: str):
+def _cleanup_sandbox(label_value: str, sandbox_provider: str, fabro_bin: str):
     """Best-effort delete of orphaned Daytona sandbox after timeout.
 
     Finds the sandbox via `fabro ps --label --json` to get the run ID,
     then deletes any Daytona sandbox whose name contains that run ID.
     """
+    if sandbox_provider != "daytona":
+        return
     try:
         ps = subprocess.run(
-            ["fabro", "ps", "--label", f"swe-bench={label_value}", "--json"],
+            [fabro_bin, "ps", "--label", f"swe-bench={label_value}", "--json"],
             capture_output=True, text=True, timeout=10,
         )
         runs = json.loads(ps.stdout) if ps.stdout.strip() else []
@@ -371,6 +592,17 @@ def preflight_daytona(max_workers: int, sandbox_cpu: int):
           f"({used_cpus} in use, {DAYTONA_CPU_LIMIT} limit)")
 
 
+def preflight_docker():
+    """Check that the local Docker daemon is reachable."""
+    subprocess.run(
+        ["docker", "info"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=True,
+    )
+    print("Preflight OK: Docker daemon reachable")
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -388,7 +620,18 @@ def main():
     )
     parser.add_argument(
         "--max-workers", type=int, default=75,
-        help="Max concurrent sandboxes (default 100)",
+        help="Max concurrent sandboxes (default 75)",
+    )
+    parser.add_argument(
+        "--sandbox-provider",
+        choices=["daytona", "docker"],
+        default="daytona",
+        help="Sandbox provider to use (default: daytona)",
+    )
+    parser.add_argument(
+        "--fabro-bin",
+        default="fabro",
+        help="Fabro CLI binary to execute (default: fabro)",
     )
     parser.add_argument(
         "--instance-ids", nargs="+", help="Run only these instance IDs",
@@ -404,12 +647,21 @@ def main():
     )
     args = parser.parse_args()
 
+    fabro_path = Path(args.fabro_bin).expanduser()
+    if fabro_path.is_absolute() or len(fabro_path.parts) > 1:
+        args.fabro_bin = str(fabro_path.resolve())
+    else:
+        args.fabro_bin = shutil.which(args.fabro_bin) or args.fabro_bin
+
     args.output_dir = args.output_dir.resolve()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(args.output_dir)
 
-    # --- Preflight: check Daytona capacity --------------------------------
-    preflight_daytona(args.max_workers, sandbox_cpu=4)
+    # --- Preflight --------------------------------------------------------
+    if args.sandbox_provider == "daytona":
+        preflight_daytona(args.max_workers, sandbox_cpu=4)
+    else:
+        preflight_docker()
 
     log.info("=" * 64)
     log.info("SWE-bench Evaluation")
@@ -417,6 +669,8 @@ def main():
     log.info(f"  Model:       {args.model}")
     log.info(f"  Provider:    {args.provider}")
     log.info(f"  Workers:     {args.max_workers}")
+    log.info(f"  Sandbox:     {args.sandbox_provider}")
+    log.info(f"  Fabro bin:   {args.fabro_bin}")
     log.info(f"  Timeout:     {args.timeout}s")
     log.info(f"  Output:      {args.output_dir}")
     log.info("")
@@ -451,7 +705,8 @@ def main():
         futures = {
             executor.submit(
                 run_instance, inst, args.model, args.provider,
-                args.output_dir, args.timeout,
+                args.output_dir, args.timeout, args.sandbox_provider,
+                args.fabro_bin,
             ): inst
             for inst in instances
         }

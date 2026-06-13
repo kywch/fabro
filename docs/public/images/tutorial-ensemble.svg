@@ -50,31 +50,31 @@
 <polyline fill="none" stroke="#357f9e" points="577.17,-105.12 565.17,-117.12"/>
 <text xml:space="preserve" text-anchor="middle" x="559.04" y="-93.97" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Exit</text>
 </g>
-<!-- opus -->
+<!-- mini -->
 <g id="node4" class="node">
-<title>opus</title>
+<title>mini</title>
 <polygon fill="none" stroke="#357f9e" points="275.77,-198 213.27,-198 213.27,-202 201.27,-202 201.27,-162 275.77,-162 275.77,-198"/>
 <polyline fill="none" stroke="#357f9e" points="201.27,-198 213.27,-198"/>
-<text xml:space="preserve" text-anchor="middle" x="238.52" y="-181.35" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Opus</text>
-<text xml:space="preserve" text-anchor="middle" x="238.52" y="-168.6" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(Anthropic)</text>
+<text xml:space="preserve" text-anchor="middle" x="238.52" y="-181.35" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Mini</text>
+<text xml:space="preserve" text-anchor="middle" x="238.52" y="-168.6" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(GPT-5.4 Mini)</text>
 </g>
-<!-- fork&#45;&gt;opus -->
+<!-- fork&#45;&gt;mini -->
 <g id="edge2" class="edge">
-<title>fork&#45;&gt;opus</title>
+<title>fork&#45;&gt;mini</title>
 <path fill="none" stroke="#666666" d="M158.1,-117.31C170.53,-127.92 186.63,-141.42 201.27,-153 201.94,-153.53 202.62,-154.06 203.3,-154.6"/>
 <polygon fill="#666666" stroke="#666666" points="201.15,-157.36 211.22,-160.67 205.42,-151.81 201.15,-157.36"/>
 </g>
-<!-- gemini -->
+<!-- deep -->
 <g id="node5" class="node">
-<title>gemini</title>
+<title>deep</title>
 <polygon fill="none" stroke="#357f9e" points="269.77,-144 219.27,-144 219.27,-148 207.27,-148 207.27,-108 269.77,-108 269.77,-144"/>
 <polyline fill="none" stroke="#357f9e" points="207.27,-144 219.27,-144"/>
-<text xml:space="preserve" text-anchor="middle" x="238.52" y="-127.35" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Gemini</text>
-<text xml:space="preserve" text-anchor="middle" x="238.52" y="-114.6" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(Google)</text>
+<text xml:space="preserve" text-anchor="middle" x="238.52" y="-127.35" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Deep Codex</text>
+<text xml:space="preserve" text-anchor="middle" x="238.52" y="-114.6" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(GPT-5.4 High)</text>
 </g>
-<!-- fork&#45;&gt;gemini -->
+<!-- fork&#45;&gt;deep -->
 <g id="edge3" class="edge">
-<title>fork&#45;&gt;gemini</title>
+<title>fork&#45;&gt;deep</title>
 <path fill="none" stroke="#666666" d="M165.73,-106.74C175.2,-109.28 185.92,-112.15 196.13,-114.89"/>
 <polygon fill="#666666" stroke="#666666" points="194.9,-118.19 205.47,-117.4 196.71,-111.43 194.9,-118.19"/>
 </g>
@@ -84,7 +84,7 @@
 <polygon fill="none" stroke="#357f9e" points="270.52,-90 218.52,-90 218.52,-94 206.52,-94 206.52,-54 270.52,-54 270.52,-90"/>
 <polyline fill="none" stroke="#357f9e" points="206.52,-90 218.52,-90"/>
 <text xml:space="preserve" text-anchor="middle" x="238.52" y="-73.35" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Codex</text>
-<text xml:space="preserve" text-anchor="middle" x="238.52" y="-60.6" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(OpenAI)</text>
+<text xml:space="preserve" text-anchor="middle" x="238.52" y="-60.6" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(GPT-5.4)</text>
 </g>
 <!-- fork&#45;&gt;codex -->
 <g id="edge4" class="edge">
@@ -92,17 +92,17 @@
 <path fill="none" stroke="#666666" d="M165.73,-91.26C174.93,-88.79 185.31,-86.01 195.26,-83.34"/>
 <polygon fill="#666666" stroke="#666666" points="196,-86.76 204.76,-80.79 194.19,-80 196,-86.76"/>
 </g>
-<!-- mercury -->
+<!-- latest -->
 <g id="node7" class="node">
-<title>mercury</title>
+<title>latest</title>
 <polygon fill="none" stroke="#357f9e" points="274.65,-36 214.4,-36 214.4,-40 202.4,-40 202.4,0 274.65,0 274.65,-36"/>
 <polyline fill="none" stroke="#357f9e" points="202.4,-36 214.4,-36"/>
-<text xml:space="preserve" text-anchor="middle" x="238.52" y="-19.35" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Mercury</text>
-<text xml:space="preserve" text-anchor="middle" x="238.52" y="-6.6" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(Inception)</text>
+<text xml:space="preserve" text-anchor="middle" x="238.52" y="-19.35" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Latest</text>
+<text xml:space="preserve" text-anchor="middle" x="238.52" y="-6.6" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(GPT-5.5)</text>
 </g>
-<!-- fork&#45;&gt;mercury -->
+<!-- fork&#45;&gt;latest -->
 <g id="edge5" class="edge">
-<title>fork&#45;&gt;mercury</title>
+<title>fork&#45;&gt;latest</title>
 <path fill="none" stroke="#666666" d="M158.1,-80.69C170.53,-70.08 186.63,-56.58 201.27,-45 201.94,-44.47 202.62,-43.94 203.3,-43.4"/>
 <polygon fill="#666666" stroke="#666666" points="205.42,-46.19 211.22,-37.33 201.15,-40.64 205.42,-46.19"/>
 </g>
@@ -114,15 +114,15 @@
 <polygon fill="none" stroke="#357f9e" points="393.67,-86.8 393.67,-111.2 368.41,-125 337.03,-125 311.77,-111.2 311.77,-86.8 337.03,-73 368.41,-73 393.67,-86.8"/>
 <text xml:space="preserve" text-anchor="middle" x="352.72" y="-93.97" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Merge</text>
 </g>
-<!-- opus&#45;&gt;merge -->
+<!-- mini&#45;&gt;merge -->
 <g id="edge6" class="edge">
-<title>opus&#45;&gt;merge</title>
+<title>mini&#45;&gt;merge</title>
 <path fill="none" stroke="#666666" d="M264.98,-161.62C280.04,-150.75 299.34,-136.81 315.92,-124.85"/>
 <polygon fill="#666666" stroke="#666666" points="317.51,-128.01 323.57,-119.32 313.41,-122.34 317.51,-128.01"/>
 </g>
-<!-- gemini&#45;&gt;merge -->
+<!-- deep&#45;&gt;merge -->
 <g id="edge7" class="edge">
-<title>gemini&#45;&gt;merge</title>
+<title>deep&#45;&gt;merge</title>
 <path fill="none" stroke="#666666" d="M270.18,-118.62C279.52,-116.37 290.05,-113.84 300.37,-111.36"/>
 <polygon fill="#666666" stroke="#666666" points="301.04,-114.8 309.94,-109.05 299.4,-107.99 301.04,-114.8"/>
 </g>
@@ -132,9 +132,9 @@
 <path fill="none" stroke="#666666" d="M270.78,-79.52C279.92,-81.72 290.16,-84.19 300.2,-86.6"/>
 <polygon fill="#666666" stroke="#666666" points="299.38,-90 309.92,-88.94 301.02,-83.2 299.38,-90"/>
 </g>
-<!-- mercury&#45;&gt;merge -->
+<!-- latest&#45;&gt;merge -->
 <g id="edge9" class="edge">
-<title>mercury&#45;&gt;merge</title>
+<title>latest&#45;&gt;merge</title>
 <path fill="none" stroke="#666666" d="M264.98,-36.38C280.04,-47.25 299.34,-61.19 315.92,-73.15"/>
 <polygon fill="#666666" stroke="#666666" points="313.41,-75.66 323.57,-78.68 317.51,-69.99 313.41,-75.66"/>
 </g>
@@ -143,7 +143,7 @@
 <title>synth</title>
 <polygon fill="none" stroke="#357f9e" points="504.92,-117 441.67,-117 441.67,-121 429.67,-121 429.67,-81 504.92,-81 504.92,-117"/>
 <polyline fill="none" stroke="#357f9e" points="429.67,-117 441.67,-117"/>
-<text xml:space="preserve" text-anchor="middle" x="467.29" y="-93.97" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Synthesize</text>
+<text xml:space="preserve" text-anchor="middle" x="467.29" y="-93.97" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Summarize</text>
 </g>
 <!-- merge&#45;&gt;synth -->
 <g id="edge10" class="edge">

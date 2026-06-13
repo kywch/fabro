@@ -40,7 +40,9 @@ digraph Parallel {
 ```
 
 ```bash
-fabro run docs/internal/demo/06-parallel.fabro
+fabro run docs/internal/demo/06-parallel.fabro \
+  --provider openai \
+  --model gpt-5.4-mini
 ```
 
 ## Fan-out with the fork node

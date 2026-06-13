@@ -2,9 +2,9 @@ digraph MultiModel {
     graph [
         goal="Build and review a utility function using multiple models",
         model_stylesheet="
-            * { model: claude-haiku-4-5;reasoning_effort: low; }
-            .coding { model: claude-sonnet-4-5;reasoning_effort: high; }
-            #review { model: claude-sonnet-4-5;reasoning_effort: high; }
+            * { model: gpt-5.4-mini; reasoning_effort: low; }
+            .coding { model: gpt-5.4; reasoning_effort: high; }
+            #review { model: gpt-5.4; reasoning_effort: high; }
         "
     ]
     rankdir=LR

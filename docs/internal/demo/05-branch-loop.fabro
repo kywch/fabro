@@ -7,7 +7,7 @@ digraph BranchLoop {
 
     plan      [label="Plan", prompt="Plan a small Python script (fizzbuzz.py) and a test file (test_fizzbuzz.py) using pytest. Describe what you will create.", shape=tab, reasoning_effort="low"]
     implement [label="Implement", prompt="Create fizzbuzz.py and test_fizzbuzz.py as planned. Write the files to disk."]
-    validate  [label="Validate", shape=parallelogram, script="python3 -m pytest test_fizzbuzz.py -v 2>&1 || true"]
+    validate  [label="Validate", shape=parallelogram, script="python3 - <<'PY'\nimport importlib.util\nimport subprocess\nimport sys\nif importlib.util.find_spec('pytest') is None:\n    subprocess.run(['apt-get', 'update'], check=True)\n    subprocess.run(['apt-get', 'install', '-y', 'python3-pytest'], check=True)\nsys.exit(subprocess.run([sys.executable, '-m', 'pytest', 'test_fizzbuzz.py', '-v']).returncode)\nPY"]
     gate      [shape=diamond, label="Tests passing?"]
 
     start -> plan -> implement -> validate -> gate

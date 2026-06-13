@@ -146,6 +146,17 @@ fn context_diff(
     diff
 }
 
+fn propagated_context_diff(
+    before: &HashMap<String, serde_json::Value>,
+    after: &HashMap<String, serde_json::Value>,
+) -> HashMap<String, serde_json::Value> {
+    context_diff(before, after)
+        .into_iter()
+        .filter(|(key, _)| !keys::is_engine_internal_key(key))
+        .filter(|(key, _)| key != keys::COMMAND_OUTPUT)
+        .collect()
+}
+
 #[async_trait]
 impl Handler for SubWorkflowHandler {
     async fn execute(
@@ -298,11 +309,7 @@ impl Handler for SubWorkflowHandler {
 
                     // Compute context diff, filtering engine-internal keys
                     let after_snapshot = child_final_context.snapshot();
-                    let raw_diff = context_diff(&before_snapshot, &after_snapshot);
-                    let diff: HashMap<String, serde_json::Value> = raw_diff
-                        .into_iter()
-                        .filter(|(key, _)| !keys::is_engine_internal_key(key))
-                        .collect();
+                    let diff = propagated_context_diff(&before_snapshot, &after_snapshot);
 
                     tracing::debug!(
                         node = %node.id,
@@ -858,7 +865,7 @@ mod tests {
     }
 
     #[test]
-    fn context_diff_excludes_engine_internal_keys() {
+    fn propagated_context_diff_excludes_engine_internal_and_command_output_keys() {
         let before = HashMap::new();
         let mut after = HashMap::new();
         after.insert("graph.goal".to_string(), serde_json::json!("child goal"));
@@ -871,18 +878,19 @@ mod tests {
             serde_json::json!("exit"),
         );
         after.insert("current_node".to_string(), serde_json::json!("exit"));
+        after.insert(
+            keys::COMMAND_OUTPUT.to_string(),
+            serde_json::json!("blob://sha256/abc123"),
+        );
         after.insert("response.plan".to_string(), serde_json::json!("the plan"));
         after.insert("review.result".to_string(), serde_json::json!("approved"));
 
-        let raw_diff = context_diff(&before, &after);
-        let filtered: HashMap<String, serde_json::Value> = raw_diff
-            .into_iter()
-            .filter(|(key, _)| !keys::is_engine_internal_key(key))
-            .collect();
+        let filtered = propagated_context_diff(&before, &after);
 
         assert_eq!(filtered.len(), 2);
         assert!(filtered.contains_key("response.plan"));
         assert!(filtered.contains_key("review.result"));
+        assert!(!filtered.contains_key(keys::COMMAND_OUTPUT));
     }
 
     #[tokio::test]

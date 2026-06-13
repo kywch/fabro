@@ -1,0 +1,15 @@
+digraph ImplementAndTest {
+    graph [goal="Implement the plan and make tests pass"]
+    rankdir=LR
+
+    start [shape=Mdiamond, label="Start"]
+    exit  [shape=Msquare, label="Exit"]
+
+    implement [label="Implement", prompt="Read plan.md and implement every step. Write the code and tests to disk."]
+    validate  [label="Validate", shape=parallelogram, script="python3 - <<'PY'\nimport importlib.util\nimport subprocess\nimport sys\nif importlib.util.find_spec('pytest') is None:\n    subprocess.run(['apt-get', 'update'], check=True)\n    subprocess.run(['apt-get', 'install', '-y', 'python3-pytest'], check=True)\nsys.exit(subprocess.run([sys.executable, '-m', 'pytest', '-v']).returncode)\nPY"]
+    gate      [shape=diamond, label="Tests passing?"]
+
+    start -> implement -> validate -> gate
+    gate -> exit      [label="Pass", condition="outcome=succeeded"]
+    gate -> implement [label="Fix", max_visits=5]
+}

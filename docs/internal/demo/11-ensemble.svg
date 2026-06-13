@@ -43,27 +43,27 @@
 <polyline fill="none" stroke="black" points="639.67,-106.25 627.67,-118.25"/>
 <text xml:space="preserve" text-anchor="middle" x="620.42" y="-93.95" font-family="Times,serif" font-size="14.00">Exit</text>
 </g>
-<!-- opus -->
+<!-- mini -->
 <g id="node4" class="node">
-<title>opus</title>
+<title>mini</title>
 <ellipse fill="none" stroke="black" cx="255.51" cy="-180" rx="30.37" ry="18"/>
-<text xml:space="preserve" text-anchor="middle" x="255.51" y="-174.95" font-family="Times,serif" font-size="14.00">Opus</text>
+<text xml:space="preserve" text-anchor="middle" x="255.51" y="-174.95" font-family="Times,serif" font-size="14.00">Mini</text>
 </g>
-<!-- fork&#45;&gt;opus -->
+<!-- fork&#45;&gt;mini -->
 <g id="edge2" class="edge">
-<title>fork&#45;&gt;opus</title>
+<title>fork&#45;&gt;mini</title>
 <path fill="none" stroke="black" d="M168.11,-117.43C180.63,-128.2 197.05,-141.82 212.35,-153 216.14,-155.77 220.21,-158.57 224.27,-161.27"/>
 <polygon fill="black" stroke="black" points="222.02,-163.99 232.32,-166.49 225.83,-158.11 222.02,-163.99"/>
 </g>
-<!-- gemini -->
+<!-- deep -->
 <g id="node5" class="node">
-<title>gemini</title>
+<title>deep</title>
 <ellipse fill="none" stroke="black" cx="255.51" cy="-126" rx="39.07" ry="18"/>
-<text xml:space="preserve" text-anchor="middle" x="255.51" y="-120.95" font-family="Times,serif" font-size="14.00">Gemini</text>
+<text xml:space="preserve" text-anchor="middle" x="255.51" y="-120.95" font-family="Times,serif" font-size="14.00">Deep Codex</text>
 </g>
-<!-- fork&#45;&gt;gemini -->
+<!-- fork&#45;&gt;deep -->
 <g id="edge3" class="edge">
-<title>fork&#45;&gt;gemini</title>
+<title>fork&#45;&gt;deep</title>
 <path fill="none" stroke="black" d="M176.83,-106.45C186.97,-109 198.55,-111.92 209.63,-114.7"/>
 <polygon fill="black" stroke="black" points="208.44,-118.01 218.99,-117.06 210.15,-111.23 208.44,-118.01"/>
 </g>
@@ -79,15 +79,15 @@
 <path fill="none" stroke="black" d="M176.83,-91.55C187.83,-88.78 200.52,-85.59 212.43,-82.59"/>
 <polygon fill="black" stroke="black" points="213.2,-86.01 222.04,-80.17 211.49,-79.22 213.2,-86.01"/>
 </g>
-<!-- mercury -->
+<!-- latest -->
 <g id="node7" class="node">
-<title>mercury</title>
+<title>latest</title>
 <ellipse fill="none" stroke="black" cx="255.51" cy="-18" rx="43.16" ry="18"/>
-<text xml:space="preserve" text-anchor="middle" x="255.51" y="-12.95" font-family="Times,serif" font-size="14.00">Mercury</text>
+<text xml:space="preserve" text-anchor="middle" x="255.51" y="-12.95" font-family="Times,serif" font-size="14.00">Latest</text>
 </g>
-<!-- fork&#45;&gt;mercury -->
+<!-- fork&#45;&gt;latest -->
 <g id="edge5" class="edge">
-<title>fork&#45;&gt;mercury</title>
+<title>fork&#45;&gt;latest</title>
 <path fill="none" stroke="black" d="M168.11,-80.57C180.63,-69.8 197.05,-56.18 212.35,-45 214.98,-43.08 217.75,-41.14 220.55,-39.23"/>
 <polygon fill="black" stroke="black" points="222.42,-42.19 228.83,-33.76 218.56,-36.35 222.42,-42.19"/>
 </g>
@@ -99,15 +99,15 @@
 <polygon fill="none" stroke="black" points="427.49,-86.46 427.49,-111.54 398.78,-125 363.39,-125 334.68,-111.54 334.68,-86.46 363.39,-73 398.78,-73 427.49,-86.46"/>
 <text xml:space="preserve" text-anchor="middle" x="381.09" y="-93.95" font-family="Times,serif" font-size="14.00">Merge</text>
 </g>
-<!-- opus&#45;&gt;merge -->
+<!-- mini&#45;&gt;merge -->
 <g id="edge6" class="edge">
-<title>opus&#45;&gt;merge</title>
+<title>mini&#45;&gt;merge</title>
 <path fill="none" stroke="black" d="M277.14,-166.88C284.01,-162.49 291.69,-157.56 298.68,-153 312.4,-144.06 327.35,-134.18 340.65,-125.34"/>
 <polygon fill="black" stroke="black" points="342.36,-128.41 348.75,-119.96 338.48,-122.58 342.36,-128.41"/>
 </g>
-<!-- gemini&#45;&gt;merge -->
+<!-- deep&#45;&gt;merge -->
 <g id="edge7" class="edge">
-<title>gemini&#45;&gt;merge</title>
+<title>deep&#45;&gt;merge</title>
 <path fill="none" stroke="black" d="M291.26,-118.41C301.22,-116.23 312.35,-113.8 323.27,-111.41"/>
 <polygon fill="black" stroke="black" points="324.02,-114.83 333.04,-109.28 322.52,-107.99 324.02,-114.83"/>
 </g>
@@ -117,9 +117,9 @@
 <path fill="none" stroke="black" d="M288.34,-78.95C299.07,-81.3 311.39,-83.99 323.45,-86.63"/>
 <polygon fill="black" stroke="black" points="322.4,-89.98 332.92,-88.69 323.89,-83.14 322.4,-89.98"/>
 </g>
-<!-- mercury&#45;&gt;merge -->
+<!-- latest&#45;&gt;merge -->
 <g id="edge9" class="edge">
-<title>mercury&#45;&gt;merge</title>
+<title>latest&#45;&gt;merge</title>
 <path fill="none" stroke="black" d="M280.19,-33.07C286.23,-36.94 292.7,-41.11 298.68,-45 312.4,-53.94 327.35,-63.82 340.65,-72.66"/>
 <polygon fill="black" stroke="black" points="338.48,-75.42 348.75,-78.04 342.36,-69.59 338.48,-75.42"/>
 </g>
@@ -127,7 +127,7 @@
 <g id="node9" class="node">
 <title>synth</title>
 <ellipse fill="none" stroke="black" cx="514.33" cy="-99" rx="50.84" ry="18"/>
-<text xml:space="preserve" text-anchor="middle" x="514.33" y="-93.95" font-family="Times,serif" font-size="14.00">Synthesize</text>
+<text xml:space="preserve" text-anchor="middle" x="514.33" y="-93.95" font-family="Times,serif" font-size="14.00">Summarize</text>
 </g>
 <!-- merge&#45;&gt;synth -->
 <g id="edge10" class="edge">

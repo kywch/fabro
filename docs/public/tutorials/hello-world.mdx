@@ -7,7 +7,26 @@ This tutorial walks through three minimal workflows that introduce the building 
 
 ## Prerequisites
 
-Complete the [Quick Start](/getting-started/quick-start) so you have a working `fabro` binary and at least one LLM API key configured.
+Complete the [Quick Start](/getting-started/quick-start) so you have a working
+`fabro` CLI and at least one model credential configured.
+
+For the no-API-key OpenAI path, sign in with your ChatGPT/Codex subscription:
+
+```bash
+fabro provider login --provider openai
+```
+
+If your Fabro server is running in Docker, log the CLI into that server first:
+
+```bash
+fabro auth login \
+  --server http://127.0.0.1:32276/api/v1 \
+  --dev-token <FABRO_DEV_TOKEN>
+fabro provider login --provider openai
+```
+
+Use the same `FABRO_DEV_TOKEN` you set for the container, or the token printed
+by the install wizard.
 
 ## 1. One-shot prompt
 
@@ -34,7 +53,9 @@ digraph Hello {
 Run it:
 
 ```bash
-fabro run docs/internal/demo/01-hello.fabro
+fabro run docs/internal/demo/01-hello.fabro \
+  --provider openai \
+  --model gpt-5.4-mini
 ```
 
 ### What's happening
@@ -68,7 +89,9 @@ digraph ToolUse {
 ```
 
 ```bash
-fabro run docs/internal/demo/02-tool-use.fabro
+fabro run docs/internal/demo/02-tool-use.fabro \
+  --provider openai \
+  --model gpt-5.4
 ```
 
 ### What's happening
@@ -108,7 +131,9 @@ digraph SubAgent {
 ```
 
 ```bash
-fabro run docs/internal/demo/03-subagent.fabro
+fabro run docs/internal/demo/03-subagent.fabro \
+  --provider openai \
+  --model gpt-5.4
 ```
 
 ### What's happening

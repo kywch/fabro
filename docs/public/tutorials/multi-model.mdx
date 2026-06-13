@@ -3,12 +3,16 @@ title: "Multi-Model Routing"
 description: "Model stylesheets, CSS selectors, and per-node reasoning effort"
 ---
 
-This tutorial assigns different models to different tasks in a single workflow — a cheap, fast model for the spec, a capable model for coding, and a different model for review. The routing is controlled by a CSS-like stylesheet.
+This tutorial assigns different OpenAI/Codex models to different tasks in a
+single workflow — a fast model for the spec, a stronger model for coding, and
+the same stronger model for review. The routing is controlled by a CSS-like
+stylesheet and works with the ChatGPT/Codex subscription login from the
+[Quick Start](/getting-started/quick-start).
 
 ## The workflow
 
 <Frame>
-  <img src="/images/tutorial-multi-model.svg" alt="Multi-Model workflow: Start → Write Spec (Haiku) → Implement (Sonnet) → Write Tests (Sonnet) → Code Review (Sonnet) → Exit" />
+  <img src="/images/tutorial-multi-model.svg" alt="Multi-Model workflow: Start → Write Spec (GPT-5.4 Mini) → Implement (GPT-5.4) → Write Tests (GPT-5.4) → Code Review (GPT-5.4) → Exit" />
 </Frame>
 
 ```dot title="multi-model.fabro"
@@ -16,9 +20,9 @@ digraph MultiModel {
     graph [
         goal="Build and review a utility function using multiple models",
         model_stylesheet="
-            * { model: claude-haiku-4-5;reasoning_effort: low; }
-            .coding { model: claude-sonnet-4-5;reasoning_effort: high; }
-            #review { model: claude-sonnet-4-5;reasoning_effort: high; }
+            * { model: gpt-5.4-mini; reasoning_effort: low; }
+            .coding { model: gpt-5.4; reasoning_effort: high; }
+            #review { model: gpt-5.4; reasoning_effort: high; }
         "
     ]
     rankdir=LR
@@ -36,7 +40,9 @@ digraph MultiModel {
 ```
 
 ```bash
-fabro run docs/internal/demo/08-multi-model.fabro
+fabro run docs/internal/demo/08-multi-model.fabro \
+  --provider openai \
+  --model gpt-5.4
 ```
 
 ## Model stylesheets
@@ -44,9 +50,9 @@ fabro run docs/internal/demo/08-multi-model.fabro
 The `model_stylesheet` graph attribute contains CSS-like rules that assign models to nodes:
 
 ```
-* { model: claude-haiku-4-5;reasoning_effort: low; }
-.coding { model: claude-sonnet-4-5;reasoning_effort: high; }
-#review { model: claude-sonnet-4-5;reasoning_effort: high; }
+* { model: gpt-5.4-mini; reasoning_effort: low; }
+.coding { model: gpt-5.4; reasoning_effort: high; }
+#review { model: gpt-5.4; reasoning_effort: high; }
 ```
 
 ### Selectors
@@ -64,10 +70,10 @@ Higher specificity wins. If two rules have the same specificity, the last one in
 
 | Node | Matches | Model | Why |
 |---|---|---|---|
-| `spec` | `*` (universal) | Haiku | Simple generation task — fast and cheap |
-| `implement` | `.coding` (class) | Sonnet | Coding requires a capable model |
-| `test` | `.coding` (class) | Sonnet | Test writing also needs coding capability |
-| `review` | `#review` (ID) | Sonnet | Review needs careful analysis |
+| `spec` | `*` (universal) | GPT-5.4 Mini | Simple generation task — fast and inexpensive |
+| `implement` | `.coding` (class) | GPT-5.4 | Coding requires a capable model |
+| `test` | `.coding` (class) | GPT-5.4 | Test writing also needs coding capability |
+| `review` | `#review` (ID) | GPT-5.4 | Review needs careful analysis |
 
 ### Assigning classes
 
@@ -85,30 +91,32 @@ Stylesheets support four properties:
 
 | Property | Description |
 |---|---|
-| `model` | Model ID or alias (e.g. `claude-sonnet-4-5`, `opus`, `gemini-pro`) |
+| `model` | Model ID or alias (e.g. `gpt-5.4`, `gpt-5.4-mini`, `codex`) |
 | `provider` | Provider name (optional — auto-inferred from the model catalog when omitted) |
 | `reasoning_effort` | `low`, `medium`, or `high` |
 | `backend` | `api` (default), `cli`, or `acp` |
 
 ## Why route models?
 
-Not every task needs a frontier model:
+Not every task needs the strongest available model:
 
-- **Spec writing, classification, summarization** — use a fast, cheap model (Haiku, Flash Lite)
-- **Code implementation, complex reasoning** — use a capable model (Sonnet, Opus, GPT-5.4)
-- **Cross-critique** — use a _different provider_ so the reviewer brings fresh eyes
+- **Spec writing, classification, summarization** — use a fast model such as GPT-5.4 Mini
+- **Code implementation, complex reasoning** — use a capable model such as GPT-5.4
+- **Cross-critique** — route review to a different model or provider when you have those credentials configured
 
-Model routing lets you optimize cost and latency without changing the workflow structure. Swap `claude-haiku-4-5` to `gemini-3-flash-preview` in the stylesheet and the workflow behaves the same — just with a different model underneath.
+Model routing lets you optimize cost and latency without changing the workflow
+structure. Swap `gpt-5.4-mini` to another configured model in the stylesheet and
+the workflow behaves the same — just with a different model underneath.
 
 ## Explicit overrides
 
 A model set directly on a node attribute always beats the stylesheet:
 
 ```dot
-implement [label="Implement", class="coding", model="claude-opus-4-6"]
+implement [label="Implement", class="coding", model="gpt-5.5"]
 ```
 
-This node uses Opus regardless of what `.coding` says.
+This node uses GPT-5.5 regardless of what `.coding` says.
 
 See [Model Stylesheets](/workflows/stylesheets) for the full reference and [Models](/core-concepts/models) for available model IDs.
 
@@ -122,5 +130,5 @@ See [Model Stylesheets](/workflows/stylesheets) for the full reference and [Mode
 ## Next
 
 <Card title="Ensemble" icon="arrow-right" href="/tutorials/ensemble">
-  Fan out to multiple providers and synthesize their independent opinions.
+  Fan out to multiple model routes and synthesize their independent opinions.
 </Card>

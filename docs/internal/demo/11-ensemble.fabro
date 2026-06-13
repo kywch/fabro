@@ -1,12 +1,12 @@
 digraph Ensemble {
     graph [
-        goal="Get independent opinions from multiple providers, then synthesize",
+        goal="Fan out to multiple Codex model routes, then select and summarize the best successful route",
         model_stylesheet="
-            #opus    { model: claude-opus-4-6;      }
-            #gemini  { model: gemini-3.1-pro-preview;}
-            #codex   { model: gpt-5.3-codex;       }
-            #mercury { model: mercury-2;             provider: inception; }
-            #synth   { model: claude-opus-4-6;      reasoning_effort: high; }
+            #mini    { model: gpt-5.4-mini; reasoning_effort: low; }
+            #codex   { model: gpt-5.4;      reasoning_effort: medium; }
+            #deep    { model: gpt-5.4;      reasoning_effort: high; }
+            #latest  { model: gpt-5.5;      reasoning_effort: high; }
+            #synth   { model: gpt-5.5;      reasoning_effort: high; }
         "
     ]
     rankdir=LR
@@ -16,22 +16,22 @@ digraph Ensemble {
 
     fork [label="Fan Out", shape=component, join_policy="wait_all"]
 
-    opus    [label="Opus",    prompt="Analyze the goal. Provide your independent assessment, recommendations, and any code or prose needed. Be thorough.", shape=tab]
-    gemini  [label="Gemini",  prompt="Analyze the goal. Provide your independent assessment, recommendations, and any code or prose needed. Be thorough.", shape=tab]
-    codex   [label="Codex",   prompt="Analyze the goal. Provide your independent assessment, recommendations, and any code or prose needed. Be thorough.", shape=tab]
-    mercury [label="Mercury", prompt="Analyze the goal. Provide your independent assessment, recommendations, and any code or prose needed. Be thorough.", shape=tab]
+    mini   [label="Mini",       prompt="Analyze the goal quickly. Provide a concise independent recommendation.", shape=tab]
+    codex  [label="Codex",      prompt="Analyze the goal. Provide a thorough independent recommendation. Be precise.", shape=tab]
+    deep   [label="Deep Codex", prompt="Analyze the goal carefully. Focus on edge cases, risks, and tradeoffs.", shape=tab]
+    latest [label="Latest",     prompt="Analyze the goal with a fresh perspective. Look for alternatives and practical tradeoffs.", shape=tab]
 
     merge [label="Merge", shape=tripleoctagon]
-    synth [label="Synthesize", prompt="You have received independent analyses from four different models (Opus, Gemini, Codex, Mercury). Compare their perspectives: identify consensus, highlight disagreements, and synthesize the strongest ideas into a single coherent recommendation. Note where models agreed and where they diverged.", shape=tab]
+    synth [label="Summarize Selection", prompt="Use the parallel branch metadata in context. Report which routes succeeded, which route fan-in selected as best, and what to do next if a full prose synthesis is required.", shape=tab]
 
     start -> fork
-    fork -> opus
-    fork -> gemini
+    fork -> mini
     fork -> codex
-    fork -> mercury
-    opus    -> merge
-    gemini  -> merge
-    codex   -> merge
-    mercury -> merge
+    fork -> deep
+    fork -> latest
+    mini   -> merge
+    codex  -> merge
+    deep   -> merge
+    latest -> merge
     merge -> synth -> exit
 }

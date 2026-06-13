@@ -63,9 +63,21 @@ fabro repo init
 
 This creates `.fabro/project.toml` and a starter workflow under `.fabro/workflows/hello/`.
 
-## Configure API keys
+## Configure model access
 
-For local CLI runs, export at least one LLM provider key in your shell:
+For OpenAI/Codex, you can sign in with your ChatGPT subscription instead of
+creating an API key:
+
+```bash
+fabro provider login --provider openai
+```
+
+Choose the device-code login when prompted. Fabro stores the OAuth credential in
+the server vault and uses it for OpenAI models such as `gpt-5.4`,
+`gpt-5.4-mini`, and `gpt-5.5`.
+
+You can also use provider API keys. For local CLI runs, export at least one LLM
+provider key in your shell:
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...
@@ -74,7 +86,8 @@ GEMINI_API_KEY=AI...
 ```
 
 <Note>
-You only need one provider key to get started. Add more to enable multi-model workflows.
+You only need one provider credential to get started. Add more to enable
+multi-provider workflows.
 
 For server-backed runs, store provider keys in the server vault instead:
 

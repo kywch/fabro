@@ -32,7 +32,7 @@
 <polygon fill="none" stroke="#357f9e" points="181.02,-41.69 118.52,-41.69 118.52,-45.69 106.52,-45.69 106.52,-5.69 181.02,-5.69 181.02,-41.69"/>
 <polyline fill="none" stroke="#357f9e" points="106.52,-41.69 118.52,-41.69"/>
 <text xml:space="preserve" text-anchor="middle" x="143.77" y="-25.04" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Write Spec</text>
-<text xml:space="preserve" text-anchor="middle" x="143.77" y="-12.29" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(Haiku)</text>
+<text xml:space="preserve" text-anchor="middle" x="143.77" y="-12.29" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(GPT-5.4 Mini)</text>
 </g>
 <!-- start&#45;&gt;spec -->
 <g id="edge1" class="edge">
@@ -55,7 +55,7 @@
 <title>implement</title>
 <ellipse fill="none" stroke="#357f9e" cx="267.58" cy="-23.69" rx="50.56" ry="23.69"/>
 <text xml:space="preserve" text-anchor="middle" x="267.58" y="-25.04" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Implement</text>
-<text xml:space="preserve" text-anchor="middle" x="267.58" y="-12.29" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(Sonnet)</text>
+<text xml:space="preserve" text-anchor="middle" x="267.58" y="-12.29" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(GPT-5.4)</text>
 </g>
 <!-- spec&#45;&gt;implement -->
 <g id="edge2" class="edge">
@@ -68,7 +68,7 @@
 <title>test</title>
 <ellipse fill="none" stroke="#357f9e" cx="406.82" cy="-23.69" rx="52.68" ry="23.69"/>
 <text xml:space="preserve" text-anchor="middle" x="406.82" y="-25.04" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Write Tests</text>
-<text xml:space="preserve" text-anchor="middle" x="406.82" y="-12.29" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(Sonnet)</text>
+<text xml:space="preserve" text-anchor="middle" x="406.82" y="-12.29" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(GPT-5.4)</text>
 </g>
 <!-- implement&#45;&gt;test -->
 <g id="edge3" class="edge">
@@ -82,7 +82,7 @@
 <polygon fill="none" stroke="#357f9e" points="584.25,-41.69 507.5,-41.69 507.5,-45.69 495.5,-45.69 495.5,-5.69 584.25,-5.69 584.25,-41.69"/>
 <polyline fill="none" stroke="#357f9e" points="495.5,-41.69 507.5,-41.69"/>
 <text xml:space="preserve" text-anchor="middle" x="539.87" y="-25.04" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">Code Review</text>
-<text xml:space="preserve" text-anchor="middle" x="539.87" y="-12.29" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(Sonnet)</text>
+<text xml:space="preserve" text-anchor="middle" x="539.87" y="-12.29" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#1a1a1a">(GPT-5.4)</text>
 </g>
 <!-- test&#45;&gt;review -->
 <g id="edge4" class="edge">
