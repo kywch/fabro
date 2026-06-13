@@ -223,7 +223,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-06-13T08:23:34.426957009Z",
-  "last_event_at": "2026-06-13T08:23:35.731480555Z",
+  "last_event_at": "2026-06-13T08:23:45.560477123Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -263,9 +263,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 30,
       "checkpoint": {
-        "timestamp": "2026-06-13T08:23:42.617844415Z",
+        "timestamp": "2026-06-13T08:23:45.560110629Z",
         "current_node": "compose",
         "completed_nodes": [
           "start",
@@ -273,23 +273,23 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.fidelity": "compact",
-          "graph.goal": "Write a haiku about software workflows",
-          "internal.thread_id": "start",
           "failure_signature": "",
-          "internal.retry_count.start": 0,
-          "outcome": "succeeded",
-          "last_response": "Silent commits bloom  \nWorkflows hum through tests and builds  \nBugs fall softly",
-          "internal.work_dir": "/workspace/fabro",
-          "last_stage": "compose",
-          "internal.run_id": "01KV017KH9G2RZNJAQ332QPYV6",
-          "graph.rankdir": "LR",
-          "current_node": "compose",
-          "internal.node_visit_count": 1,
-          "thread.start.current_node": "compose",
+          "internal.fidelity": "compact",
           "internal.retry_count.compose": 0,
+          "internal.thread_id": "start",
+          "internal.run_id": "01KV017KH9G2RZNJAQ332QPYV6",
+          "thread.start.current_node": "compose",
+          "outcome": "succeeded",
+          "current_node": "compose",
+          "failure_class": "",
+          "internal.node_visit_count": 1,
+          "last_stage": "compose",
+          "last_response": "Silent commits bloom  \nWorkflows hum through tests and builds  \nBugs fall softly",
           "response.compose": "Silent commits bloom  \nWorkflows hum through tests and builds  \nBugs fall softly",
-          "failure_class": ""
+          "graph.rankdir": "LR",
+          "internal.work_dir": "/workspace/fabro",
+          "internal.retry_count.start": 0,
+          "graph.goal": "Write a haiku about software workflows"
         },
         "node_outcomes": {
           "compose": {
@@ -334,15 +334,68 @@
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "9c4a597f4562796201627542857a1e4508c1e9ee",
         "node_visits": {
-          "start": 1,
-          "compose": 1
+          "compose": 1,
+          "start": 1
         }
       },
-      "diff": {}
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-06-13T08:23:45.588177989Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 11164,
+      "inference_time_ms": 6843,
+      "tool_time_ms": 0,
+      "active_time_ms": 6843
+    },
+    "final_git_commit_sha": "9c4a597f4562796201627542857a1e4508c1e9ee",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "compose",
+        "stage_label": "compose",
+        "timing": {
+          "wall_time_ms": 6938,
+          "inference_time_ms": 6843,
+          "tool_time_ms": 0,
+          "active_time_ms": 6843
+        },
+        "billing_usd_micros": 5188,
+        "retries": 0
+      }
+    ],
+    "billing": {
+      "input_tokens": 4122,
+      "output_tokens": 22,
+      "total_tokens": 4588,
+      "reasoning_tokens": 444,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_usd_micros": 5188
+    },
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -373,7 +426,12 @@
       "first_event_seq": 23,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Stage completed: compose",
+        "failure_reason": null,
+        "timestamp": "2026-06-13T08:23:42.616176650Z"
+      },
       "provider_used": {
         "mode": "prompt",
         "provider": "openai",
@@ -387,15 +445,26 @@
       "output": null,
       "started_at": "2026-06-13T08:23:35.670619776Z",
       "handler": "prompt",
-      "usage": {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "total_tokens": 0,
-        "reasoning_tokens": 0,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0
+      "timing": {
+        "wall_time_ms": 6938,
+        "inference_time_ms": 6843,
+        "tool_time_ms": 0,
+        "active_time_ms": 6843
       },
-      "state": "running"
+      "usage": {
+        "input_tokens": 4122,
+        "output_tokens": 22,
+        "total_tokens": 4588,
+        "reasoning_tokens": 444,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "total_usd_micros": 5188
+      },
+      "model": {
+        "provider": "openai",
+        "model_id": "gpt-5.4-mini"
+      },
+      "state": "succeeded"
     },
     "start@1": {
       "first_event_seq": 19,
@@ -417,6 +486,40 @@
       "handler": "start",
       "timing": {
         "wall_time_ms": 4,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "exit@1": {
+      "first_event_seq": 33,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-06-13T08:23:45.560477123Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-06-13T08:23:45.560437219Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
         "inference_time_ms": 0,
         "tool_time_ms": 0,
         "active_time_ms": 0
