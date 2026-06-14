@@ -13,6 +13,10 @@ This directory should remain self-sufficient even though `tmp/` is gitignored:
 tracked examples show the artifact shape, while full raw evidence is preserved
 as external archives with checksums and redaction notes.
 
+The reusable Python code for this area lives under `fabro_kits.issue_to_pr`.
+This docs directory keeps the human-facing `issue-to-PR` spelling; Python uses
+underscores for importable package names.
+
 ## Start Here
 
 - Run one Docker/Codex SWE-bench task:

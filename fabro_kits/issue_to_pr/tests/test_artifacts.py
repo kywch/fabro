@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from attempt_artifacts import (
+from fabro_kits.issue_to_pr.artifacts import (
     DEFAULT_ATTEMPT_ID,
     build_prediction_record,
     load_or_init_manifest,

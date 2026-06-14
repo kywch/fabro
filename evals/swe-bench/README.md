@@ -221,10 +221,8 @@ knowing Fabro dump internals.
 | File | Purpose |
 |------|---------|
 | `status.py` | Check progress of a running or completed generation/evaluation |
-| `run_eval.py` | Generate patches (step 1) |
-| `attempt_artifacts.py` | Write generic task/attempt sidecars and manifest entries |
-| `test_attempt_artifacts.py` | Unit tests for generation sidecar artifacts |
-| `../issue-to-pr/run_attempt.py` | Run one normalized task envelope into a `runs/<run_id>/` bundle |
+| `run_eval.py` | Generate patches (step 1) using the reusable `fabro_kits.issue_to_pr` kit |
+| `../../fabro_kits/issue_to_pr/` | Reusable issue-to-PR runner, workflow generator, artifacts, and tests |
 | `evaluate_daytona.py` | Evaluate patches on Daytona (step 2) |
 | `evaluate.py` | Evaluate patches via official swebench Docker harness (alternative to step 2) |
 | `record_results.py` | Record results to scoreboard (step 3) |

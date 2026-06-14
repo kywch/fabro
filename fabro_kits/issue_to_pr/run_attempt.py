@@ -13,16 +13,11 @@ import argparse
 import json
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SWE_BENCH_DIR = REPO_ROOT / "evals" / "swe-bench"
-sys.path.insert(0, str(SWE_BENCH_DIR))
-
-from attempt_artifacts import (  # noqa: E402
+from fabro_kits.issue_to_pr.artifacts import (
     DEFAULT_ATTEMPT_ID,
     RUNS_LAYOUT,
     build_candidate_record,
@@ -32,7 +27,7 @@ from attempt_artifacts import (  # noqa: E402
     write_manifest,
     write_run_bundle,
 )
-from workflow_generator import (  # noqa: E402
+from fabro_kits.issue_to_pr.workflow_generator import (
     SIMPLE_PROFILE,
     STRUCTURED_PROFILE,
     VERIFY_DIFF_CHECK,

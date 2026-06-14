@@ -21,10 +21,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
 from datasets import load_dataset
 from swebench.harness.constants import MAP_REPO_VERSION_TO_SPECS
 
-from attempt_artifacts import (
+from fabro_kits.issue_to_pr.artifacts import (
     DEFAULT_ATTEMPT_ID,
     build_candidate_record,
     build_prediction_record,
@@ -36,13 +39,7 @@ from attempt_artifacts import (
     write_run_bundle,
     write_manifest,
 )
-from gen_dockerfile import generate_dockerfile, repo_version_key
-
-EVAL_DIR = Path(__file__).parent.resolve()
-ISSUE_TO_PR_DIR = EVAL_DIR.parent / "issue-to-pr"
-sys.path.insert(0, str(ISSUE_TO_PR_DIR))
-
-from workflow_generator import (  # noqa: E402
+from fabro_kits.issue_to_pr.workflow_generator import (
     SIMPLE_PROFILE,
     STRUCTURED_PROFILE,
     VERIFY_DIFF_CHECK,
@@ -52,6 +49,9 @@ from workflow_generator import (  # noqa: E402
     generate_issue_to_pr_workflow,
     validate_generated_workflow,
 )
+from gen_dockerfile import generate_dockerfile, repo_version_key
+
+EVAL_DIR = Path(__file__).parent.resolve()
 
 # ---------------------------------------------------------------------------
 # Logging — dual output: file (DEBUG) + terminal (INFO)

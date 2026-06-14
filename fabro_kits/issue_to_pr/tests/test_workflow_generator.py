@@ -1,6 +1,6 @@
 import unittest
 
-from workflow_generator import (
+from fabro_kits.issue_to_pr.workflow_generator import (
     SIMPLE_PROFILE,
     STRUCTURED_PROFILE,
     VERIFY_DIFF_CHECK,
