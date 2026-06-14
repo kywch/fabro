@@ -33,11 +33,20 @@ from fabro_kits.issue_to_pr.artifacts import (
     build_prediction_record,
     load_or_init_manifest,
     run_id_for_task,
-    update_manifest_for_attempt,
     update_manifest_for_run,
-    write_attempt_sidecars,
     write_run_bundle,
     write_manifest,
+)
+from fabro_kits.issue_to_pr.run_attempt import (
+    dump_run,
+    find_audit_record,
+    find_json_stage_record,
+    find_patch,
+    find_review_record,
+    find_test_evidence_gate_record,
+    find_verify_record,
+    parse_run_ref,
+    write_trajectory_from_events,
 )
 from fabro_kits.issue_to_pr.workflow_generator import (
     SIMPLE_PROFILE,
@@ -284,305 +293,6 @@ def generate_workflow_toml(
     return "\n".join(lines)
 
 
-def find_stage_output(run_dir: Path, node_id: str) -> str | None:
-    """Find the latest stdout-like output for a node in a Fabro run dir."""
-    candidates = []
-    for root_name in ("nodes", "stages"):
-        root = run_dir / root_name
-        if root.exists():
-            candidates.extend(path for path in root.iterdir() if path.is_dir())
-
-    for stage_dir in sorted(candidates, key=_stage_sort_key, reverse=True):
-        if not _stage_dir_matches(stage_dir, node_id):
-            continue
-        for name in ("stdout.log", "output.log", "response.md"):
-            path = stage_dir / name
-            if path.exists():
-                return path.read_text()
-
-    return None
-
-
-def find_patch(run_dir: Path) -> str | None:
-    """Find the latest exported or pre-review patch in a local/dumped run dir."""
-    return find_stage_output(run_dir, "extract_patch") or find_stage_output(
-        run_dir,
-        "snapshot_patch",
-    )
-
-
-def find_stage_status(run_dir: Path, node_id: str) -> dict | None:
-    """Find the latest status.json for a node in a Fabro run dir."""
-    candidates = []
-    for root_name in ("nodes", "stages"):
-        root = run_dir / root_name
-        if root.exists():
-            candidates.extend(path for path in root.iterdir() if path.is_dir())
-
-    for stage_dir in sorted(candidates, key=_stage_sort_key, reverse=True):
-        if not _stage_dir_matches(stage_dir, node_id):
-            continue
-        path = stage_dir / "status.json"
-        if not path.exists():
-            continue
-        try:
-            status = json.loads(path.read_text())
-        except json.JSONDecodeError:
-            continue
-        if isinstance(status, dict):
-            return status
-    return None
-
-
-def find_verify_record(run_dir: Path) -> dict | None:
-    """Parse the latest verify JSON object printed by the verify stage."""
-    output = find_stage_output(run_dir, "verify")
-    if not output:
-        return None
-    for line in reversed(output.splitlines()):
-        stripped = line.strip()
-        if not stripped.startswith("{"):
-            continue
-        try:
-            value = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict) and "status" in value:
-            return value
-    return None
-
-
-def find_audit_record(run_dir: Path) -> dict | None:
-    """Parse the latest audit JSON object printed by the audit stage."""
-    output = find_stage_output(run_dir, "audit")
-    if not output:
-        return None
-    return _last_json_object(output)
-
-
-def find_review_record(run_dir: Path) -> dict | None:
-    """Return the latest structured review status, if the workflow ran review."""
-    status = find_stage_status(run_dir, "review")
-    if not status:
-        return None
-    response = find_stage_output(run_dir, "review")
-    routing = _last_json_object(response) if response else None
-    if isinstance(routing, dict):
-        merged = {**routing, **status}
-        if status.get("failure_reason") is None and routing.get("failure_reason"):
-            merged["failure_reason"] = routing["failure_reason"]
-        return {key: value for key, value in merged.items() if value is not None}
-    return {key: value for key, value in status.items() if value is not None}
-
-
-def find_test_evidence_gate_record(run_dir: Path) -> dict | None:
-    """Parse the latest test evidence gate JSON object printed by the gate stage."""
-    output = find_stage_output(run_dir, "test_evidence_gate")
-    if not output:
-        return None
-    value = _last_json_object(output)
-    if isinstance(value, dict) and "status" in value:
-        return value
-    return None
-
-
-def find_json_stage_record(run_dir: Path, node_id: str) -> dict | None:
-    """Parse the latest JSON object printed by a named stage."""
-    output = find_stage_output(run_dir, node_id)
-    if not output:
-        return None
-    value = _last_json_object(output)
-    if isinstance(value, dict):
-        return value
-    return None
-
-
-def find_acceptance_audit_record(run_dir: Path) -> dict | None:
-    value = find_json_stage_record(run_dir, "acceptance_audit")
-    if isinstance(value, dict) and "status" in value:
-        return value
-    return None
-
-
-def _last_json_object(text: str) -> dict | None:
-    for line in reversed(text.splitlines()):
-        stripped = line.strip()
-        if not stripped.startswith("{"):
-            continue
-        try:
-            value = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            return value
-    decoder = json.JSONDecoder()
-    for index in reversed([idx for idx, char in enumerate(text) if char == "{"]):
-        try:
-            value, end = decoder.raw_decode(text[index:])
-        except json.JSONDecodeError:
-            continue
-        tail = text[index + end :].strip()
-        if isinstance(value, dict) and (not tail or tail.startswith("```")):
-            return value
-    return None
-
-
-def _stage_sort_key(path: Path) -> tuple[int, int, str]:
-    match = re.search(r"(\d+)-.*@(\d+)$", path.name)
-    if match:
-        return int(match.group(2)), int(match.group(1)), path.name
-    match = re.search(r"(\d+)", path.name)
-    if match:
-        return 0, int(match.group(1)), path.name
-    return 0, 0, path.name
-
-
-def _stage_dir_matches(path: Path, node_id: str) -> bool:
-    name = path.name
-    if name == node_id or name.startswith(f"{node_id}@"):
-        return True
-    return bool(re.match(rf"^\d+-{re.escape(node_id)}@", name))
-
-
-def parse_run_ref(stdout: str, stderr: str) -> tuple[str | None, Path | None]:
-    """Parse either a server run ID or a local run dir from fabro output."""
-    run_id = None
-    run_dir = None
-    for line in (stdout + "\n" + stderr).splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("Run:"):
-            continue
-        value = stripped.split("Run:", 1)[1].strip()
-        if "/" in value:
-            run_dir = Path(value.replace("~", str(Path.home())))
-        elif value:
-            run_id = value
-    return run_id, run_dir
-
-
-def dump_run(fabro_bin: str, run_id: str, config_dir: Path, timeout: int) -> Path | None:
-    """Dump a server-backed run to local files and return the dump path."""
-    dump_dir = config_dir / "run_dump"
-    if dump_dir.exists():
-        shutil.rmtree(dump_dir)
-    proc = subprocess.run(
-        [fabro_bin, "dump", "--output", str(dump_dir), run_id],
-        timeout=timeout,
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        log.debug(f"[{run_id}] fabro dump failed: {proc.stderr[-500:]}")
-        return None
-    return dump_dir
-
-
-TRAJECTORY_EVENTS = {
-    "agent.input",
-    "agent.message",
-    "agent.tool.started",
-    "agent.tool.completed",
-    "agent.error",
-    "agent.warning",
-    "agent.loop_detected",
-    "agent.turn_limit_reached",
-    "agent.steering_injected",
-    "agent.compaction.started",
-    "agent.compaction.completed",
-    "agent.processing_end",
-}
-
-
-def trajectory_entry(event: dict) -> dict | None:
-    """Convert one durable event into the eval trajectory shape."""
-    event_name = event.get("event")
-    if event_name not in TRAJECTORY_EVENTS:
-        return None
-
-    props = event.get("properties") or {}
-    entry = {
-        "seq": event.get("seq"),
-        "ts": event.get("ts"),
-        "run_id": event.get("run_id"),
-        "event": event_name,
-        "stage_id": event.get("stage_id"),
-        "node_id": event.get("node_id"),
-        "node_label": event.get("node_label"),
-        "session_id": event.get("session_id"),
-        "parallel_group_id": event.get("parallel_group_id"),
-        "parallel_branch_id": event.get("parallel_branch_id"),
-        "visit": props.get("visit"),
-    }
-
-    if event_name == "agent.input":
-        entry.update({
-            "role": "user",
-            "text": props.get("text", ""),
-        })
-    elif event_name == "agent.message":
-        entry.update({
-            "role": "assistant",
-            "text": props.get("text", ""),
-            "model": props.get("model"),
-            "billing": props.get("billing"),
-            "tool_call_count": props.get("tool_call_count"),
-            "message": props.get("message"),
-            "context_window": props.get("context_window"),
-        })
-    elif event_name == "agent.tool.started":
-        entry.update({
-            "role": "tool_call",
-            "tool_name": props.get("tool_name"),
-            "tool_call_id": props.get("tool_call_id") or event.get("tool_call_id"),
-            "arguments": props.get("arguments"),
-            "tool_call": props.get("tool_call"),
-            "turn_id": props.get("turn_id"),
-            "parent_message_id": props.get("parent_message_id"),
-        })
-    elif event_name == "agent.tool.completed":
-        entry.update({
-            "role": "tool_result",
-            "tool_name": props.get("tool_name"),
-            "tool_call_id": props.get("tool_call_id") or event.get("tool_call_id"),
-            "output": props.get("output"),
-            "is_error": props.get("is_error"),
-            "tool_result": props.get("tool_result"),
-            "turn_id": props.get("turn_id"),
-        })
-    else:
-        entry["properties"] = props
-
-    return {key: value for key, value in entry.items() if value is not None}
-
-
-def write_trajectory_from_events(dump_dir: Path) -> Path | None:
-    """Write a best-effort agent trajectory JSONL file from a Fabro dump."""
-    events_path = dump_dir / "events.jsonl"
-    if not events_path.exists():
-        return None
-
-    trajectory_path = dump_dir / "trajectory.jsonl"
-    count = 0
-    with events_path.open() as events, trajectory_path.open("w") as trajectory:
-        for line in events:
-            if not line.strip():
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            entry = trajectory_entry(event)
-            if entry is None:
-                continue
-            trajectory.write(json.dumps(entry) + "\n")
-            count += 1
-
-    if count == 0:
-        trajectory_path.unlink(missing_ok=True)
-        return None
-    return trajectory_path
-
-
 # ---------------------------------------------------------------------------
 # Per-instance runner
 # ---------------------------------------------------------------------------
@@ -596,7 +306,6 @@ def run_instance(
     timeout: int,
     sandbox_provider: str,
     fabro_bin: str,
-    output_layout: str,
     workflow_profile: str,
     verify_mode: str,
 ) -> dict:
@@ -622,8 +331,8 @@ def run_instance(
         "test_evidence_gate": None,
         "adversarial_review": None,
         "moderator_filter": None,
-        "acceptance_audit": None,
-        "review_ledger": None,
+        "review_materialization": None,
+        "review_accountability_gate": None,
         "artifacts": {},
     }
 
@@ -734,18 +443,35 @@ def run_instance(
                     )
                 result["moderator_filter"] = moderator_filter
 
-                acceptance_audit = (
-                    find_acceptance_audit_record(fabro_run_dir)
+                review_materialization = (
+                    find_json_stage_record(
+                        fabro_run_dir,
+                        "materialize_review_artifacts",
+                    )
                     if fabro_run_dir
                     else None
                 )
-                if not acceptance_audit and dumped:
-                    acceptance_audit = find_acceptance_audit_record(dumped)
-                result["acceptance_audit"] = acceptance_audit
-                if isinstance(acceptance_audit, dict):
-                    ledger = acceptance_audit.get("review_ledger")
-                    if isinstance(ledger, dict):
-                        result["review_ledger"] = ledger
+                if not review_materialization and dumped:
+                    review_materialization = find_json_stage_record(
+                        dumped,
+                        "materialize_review_artifacts",
+                    )
+                result["review_materialization"] = review_materialization
+
+                review_accountability_gate = (
+                    find_json_stage_record(
+                        fabro_run_dir,
+                        "review_accountability_gate",
+                    )
+                    if fabro_run_dir
+                    else None
+                )
+                if not review_accountability_gate and dumped:
+                    review_accountability_gate = find_json_stage_record(
+                        dumped,
+                        "review_accountability_gate",
+                    )
+                result["review_accountability_gate"] = review_accountability_gate
             review = find_review_record(fabro_run_dir) if fabro_run_dir else None
             if not review and dumped:
                 review = find_review_record(dumped)
@@ -776,13 +502,13 @@ def run_instance(
                 )
             elif (
                 workflow_profile == STRUCTURED_MODERATED_PROFILE
-                and result.get("acceptance_audit")
-                and result["acceptance_audit"].get("status") != "passed"
+                and result.get("review_accountability_gate")
+                and result["review_accountability_gate"].get("status") != "passed"
             ):
                 result["status"] = "failed"
                 result["error"] = (
-                    result["acceptance_audit"].get("failure_reason")
-                    or "Moderated review blocked export"
+                    result["review_accountability_gate"].get("failure_reason")
+                    or "Review accountability gate blocked export"
                 )
             elif proc.returncode == 0:
                 result["status"] = "completed"
@@ -807,30 +533,21 @@ def run_instance(
 
     result["duration_s"] = round(time.time() - start_time, 1)
     try:
-        result["artifacts"] = write_attempt_sidecars(
+        run_id = run_id_for_task(instance_id, DEFAULT_ATTEMPT_ID)
+        result["artifacts"] = write_run_bundle(
             instance=instance,
             result=result,
             output_dir=output_dir,
             config_dir=config_dir,
             sandbox_provider=sandbox_provider,
+            run_id=run_id,
             attempt_id=DEFAULT_ATTEMPT_ID,
         )
         result["candidate"] = build_candidate_record(
             result,
-            config_dir / "patch.diff",
-            config_dir,
+            output_dir / "runs" / run_id / "output" / "patch.diff",
+            output_dir / "runs" / run_id,
         )
-        if _writes_runs_layout(output_layout):
-            run_id = run_id_for_task(instance_id, DEFAULT_ATTEMPT_ID)
-            result["artifacts"]["run_bundle"] = write_run_bundle(
-                instance=instance,
-                result=result,
-                output_dir=output_dir,
-                config_dir=config_dir,
-                sandbox_provider=sandbox_provider,
-                run_id=run_id,
-                attempt_id=DEFAULT_ATTEMPT_ID,
-            )
     except Exception as e:
         result["artifact_error"] = str(e)
         log.debug(f"[{instance_id}] Artifact sidecar write failed: {e}")
@@ -921,10 +638,6 @@ def preflight_docker():
     print("Preflight OK: Docker daemon reachable")
 
 
-def _writes_runs_layout(output_layout: str) -> bool:
-    return output_layout in {"runs-v1", "both"}
-
-
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -966,16 +679,6 @@ def main():
         "--output-dir", type=Path,
         default=EVAL_DIR / "results" / "default",
         help="Output directory for results",
-    )
-    parser.add_argument(
-        "--output-layout",
-        choices=["swebench-compat", "runs-v1", "both"],
-        default="swebench-compat",
-        help=(
-            "Artifact layout to write. swebench-compat preserves the current "
-            "configs/<instance_id> tree; runs-v1 additionally writes "
-            "runs/<task_id>--001; both writes both layouts."
-        ),
     )
     parser.add_argument(
         "--workflow-profile",
@@ -1030,7 +733,6 @@ def main():
     log.info(f"  Sandbox:     {args.sandbox_provider}")
     log.info(f"  Fabro bin:   {args.fabro_bin}")
     log.info(f"  Timeout:     {args.timeout}s")
-    log.info(f"  Layout:      {args.output_layout}")
     log.info(f"  Workflow:    {args.workflow_profile}")
     log.info(f"  Verify:      {args.verify_mode}")
     log.info(f"  Output:      {args.output_dir}")
@@ -1051,11 +753,6 @@ def main():
     # --- Run instances ----------------------------------------------------
     predictions_file = args.output_dir / "predictions.jsonl"
     results_file = args.output_dir / "results.jsonl"
-    exports_dir = args.output_dir / "exports" / "swebench"
-    export_predictions_file = exports_dir / "predictions.jsonl"
-    export_results_file = exports_dir / "results.jsonl"
-    if _writes_runs_layout(args.output_layout):
-        exports_dir.mkdir(parents=True, exist_ok=True)
     manifest = load_or_init_manifest(args.output_dir)
 
     # Counters (thread-safe via lock)
@@ -1080,100 +777,64 @@ def main():
             executor.submit(
                 run_instance, inst, args.model, args.provider,
                 args.output_dir, args.timeout, args.sandbox_provider,
-                args.fabro_bin, args.output_layout, args.workflow_profile,
+                args.fabro_bin, args.workflow_profile,
                 args.verify_mode,
             ): inst
             for inst in instances
         }
 
         with open(predictions_file, "a") as pf, open(results_file, "a") as rf:
-            export_pf = (
-                open(export_predictions_file, "a")
-                if _writes_runs_layout(args.output_layout)
-                else None
-            )
-            export_rf = (
-                open(export_results_file, "a")
-                if _writes_runs_layout(args.output_layout)
-                else None
-            )
-            try:
-                for future in as_completed(futures):
-                    result = future.result()
-                    iid = result["instance_id"]
-                    status = result["status"]
-                    dur = result["duration_s"]
-                    has_patch = bool(result["model_patch"].strip())
+            for future in as_completed(futures):
+                result = future.result()
+                iid = result["instance_id"]
+                status = result["status"]
+                dur = result["duration_s"]
+                has_patch = bool(result["model_patch"].strip())
 
-                    with lock:
-                        counters[status] = counters.get(status, 0) + 1
-                        done_count += 1
-                        n = done_count
+                with lock:
+                    counters[status] = counters.get(status, 0) + 1
+                    done_count += 1
+                    n = done_count
 
-                        # Write prediction
-                        prediction_record = build_prediction_record(result)
-                        prediction_line = json.dumps(prediction_record) + "\n"
-                        pf.write(prediction_line)
-                        pf.flush()
-                        if export_pf:
-                            export_pf.write(prediction_line)
-                            export_pf.flush()
+                    prediction_line = json.dumps(build_prediction_record(result)) + "\n"
+                    pf.write(prediction_line)
+                    pf.flush()
 
-                        # Write detailed result
-                        result_line = json.dumps(result) + "\n"
-                        rf.write(result_line)
-                        rf.flush()
-                        if export_rf:
-                            export_rf.write(result_line)
-                            export_rf.flush()
+                    rf.write(json.dumps(result) + "\n")
+                    rf.flush()
 
-                        update_manifest_for_attempt(
-                            manifest,
-                            task_id=iid,
-                            attempt_id=DEFAULT_ATTEMPT_ID,
-                            output_dir=args.output_dir,
-                            config_dir=args.output_dir / "configs" / iid,
-                        )
-                        if _writes_runs_layout(args.output_layout):
-                            update_manifest_for_run(
-                                manifest,
-                                task_id=iid,
-                                run_id=run_id_for_task(iid, DEFAULT_ATTEMPT_ID),
-                                attempt_id=DEFAULT_ATTEMPT_ID,
-                                output_dir=args.output_dir,
-                            )
-                        write_manifest(args.output_dir, manifest)
-
-                    # Log every result
-                    patch_info = (
-                        f"patch={len(result['model_patch'])}b"
-                        if has_patch
-                        else "no patch"
+                    update_manifest_for_run(
+                        manifest,
+                        task_id=iid,
+                        run_id=run_id_for_task(iid, DEFAULT_ATTEMPT_ID),
+                        attempt_id=DEFAULT_ATTEMPT_ID,
+                        output_dir=args.output_dir,
                     )
-                    err_info = f"  err={result['error'][:80]}" if result["error"] else ""
-                    elapsed = round(time.time() - wall_start)
+                    write_manifest(args.output_dir, manifest)
+
+                patch_info = (
+                    f"patch={len(result['model_patch'])}b"
+                    if has_patch
+                    else "no patch"
+                )
+                err_info = f"  err={result['error'][:80]}" if result["error"] else ""
+                elapsed = round(time.time() - wall_start)
+                log.info(
+                    f"[{n:3d}/{total}]  {status:<10s}  {dur:6.0f}s  "
+                    f"{patch_info:<14s}  {iid}{err_info}"
+                )
+
+                if n % 10 == 0 or n == total:
                     log.info(
-                        f"[{n:3d}/{total}]  {status:<10s}  {dur:6.0f}s  "
-                        f"{patch_info:<14s}  {iid}{err_info}"
+                        f"  --- progress: {n}/{total}  "
+                        f"completed={counters.get('completed',0)}  "
+                        f"no_patch={counters.get('no_patch',0)}  "
+                        f"verify_failed={counters.get('verify_failed',0)}  "
+                        f"failed={counters.get('failed',0)}  "
+                        f"timeout={counters.get('timeout',0)}  "
+                        f"error={counters.get('error',0)}  "
+                        f"elapsed={elapsed}s ---"
                     )
-
-                    # Print running totals every 10 completions
-                    if n % 10 == 0 or n == total:
-                        log.info(
-                            f"  --- progress: {n}/{total}  "
-                            f"completed={counters.get('completed',0)}  "
-                            f"no_patch={counters.get('no_patch',0)}  "
-                            f"verify_failed={counters.get('verify_failed',0)}  "
-                            f"failed={counters.get('failed',0)}  "
-                            f"timeout={counters.get('timeout',0)}  "
-                            f"error={counters.get('error',0)}  "
-                            f"elapsed={elapsed}s ---"
-                        )
-            finally:
-                if export_pf:
-                    export_pf.close()
-                if export_rf:
-                    export_rf.close()
 
     wall_duration = round(time.time() - wall_start, 1)
 
@@ -1215,9 +876,6 @@ def main():
     }
     summary_file = args.output_dir / "summary.json"
     summary_file.write_text(json.dumps(summary, indent=2))
-    if _writes_runs_layout(args.output_layout):
-        exports_dir.mkdir(parents=True, exist_ok=True)
-        (exports_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
     skipped = len(completed_ids)
     log.info("")

@@ -5,675 +5,202 @@ from pathlib import Path
 
 from fabro_kits.issue_to_pr.artifacts import (
     DEFAULT_ATTEMPT_ID,
+    build_candidate_record,
     build_prediction_record,
     load_or_init_manifest,
     run_id_for_task,
-    update_manifest_for_attempt,
     update_manifest_for_run,
-    write_attempt_sidecars,
     write_manifest,
     write_run_bundle,
 )
 
 
-class AttemptArtifactsTest(unittest.TestCase):
-    def test_writes_generic_sidecars_and_manifest(self):
-        instance = {
-            "instance_id": "django__django-11099",
-            "repo": "django/django",
-            "version": "3.0",
-            "base_commit": "abc123",
-        }
-        result = {
-            "instance_id": "django__django-11099",
-            "model_name_or_path": "gpt-5.4-mini",
-            "model_patch": "diff --git a/a.py b/a.py\n",
-            "status": "completed",
-            "error": None,
-            "duration_s": 12.3,
-            "fabro_run_id": "01run",
-            "fabro_run_dir": None,
-            "fabro_dump_dir": None,
-            "events_path": None,
-            "trajectory_path": None,
-        }
+class RunBundleArtifactsTest(unittest.TestCase):
+    def test_completed_run_writes_canonical_bundle(self):
+        result = _result(
+            model_patch="diff --git a/a.py b/a.py\n",
+            status="completed",
+            review_accountability_gate={
+                "status": "passed",
+                "process_status": "passed",
+                "readiness_tier": "ready_unverified",
+                "route_decision": "export",
+                "adversarial_row_count": 1,
+                "moderator_disposition_count": 1,
+            },
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            config_dir = output_dir / "configs" / instance["instance_id"]
-            config_dir.mkdir(parents=True)
-            (config_dir / "goal.txt").write_text("fix it")
-
-            artifacts = write_attempt_sidecars(
-                instance=instance,
+            output_dir, config_dir = _workspace(tmp)
+            artifacts = write_run_bundle(
+                instance=_instance(),
                 result=result,
                 output_dir=output_dir,
                 config_dir=config_dir,
                 sandbox_provider="docker",
             )
-            manifest = load_or_init_manifest(output_dir)
-            update_manifest_for_attempt(
-                manifest,
-                task_id=instance["instance_id"],
-                attempt_id=DEFAULT_ATTEMPT_ID,
-                output_dir=output_dir,
-                config_dir=config_dir,
-            )
-            write_manifest(output_dir, manifest)
 
+            run_dir = output_dir / "runs" / "django__django-11099--001"
+            self.assertEqual(artifacts["run"], "runs/django__django-11099--001/run.json")
+            self.assertEqual(artifacts["patch"], "runs/django__django-11099--001/output/patch.diff")
+            self.assertFalse((run_dir / "manifest.json").exists())
+            self.assertFalse((run_dir / "output" / "acceptance_audit.json").exists())
+            self.assertFalse((run_dir / "output" / "review_ledger.json").exists())
+
+            run = json.loads((run_dir / "run.json").read_text())
+            self.assertEqual(run["layout"], "issue-to-pr-runs-v1")
+            self.assertEqual(run["status"], "completed")
+            self.assertEqual(run["candidate"]["state"], "ready")
+            self.assertEqual(run["candidate"]["reuse"], "merge_candidate")
+            self.assertEqual(run["candidate"]["readiness_tier"], "ready_unverified")
             self.assertEqual(
-                artifacts,
-                {
-                    "task": "configs/django__django-11099/task.json",
-                    "attempt": "configs/django__django-11099/attempt.json",
-                    "patch": "configs/django__django-11099/patch.diff",
-                    "prediction": "configs/django__django-11099/prediction.json",
-                },
-            )
-            self.assertEqual(
-                (config_dir / "patch.diff").read_text(),
-                "diff --git a/a.py b/a.py\n",
+                run["phases"]["review_accountability_gate"]["status"],
+                "completed",
             )
 
-            task = json.loads((config_dir / "task.json").read_text())
-            self.assertEqual(task["source"]["kind"], "swe_bench")
-            self.assertEqual(task["policy"]["mode"], "patch_only")
-            self.assertEqual(task["repository"]["owner"], "django")
-            self.assertEqual(task["repository"]["name"], "django")
-            self.assertEqual(task["repository"]["full_name"], "django/django")
-
-            attempt = json.loads((config_dir / "attempt.json").read_text())
-            self.assertEqual(attempt["phases"]["change"]["status"], "completed")
-            self.assertEqual(attempt["candidate"]["state"], "ready")
-            self.assertEqual(attempt["candidate"]["reuse"], "merge_candidate")
-            self.assertEqual(attempt["phases"]["grade"]["status"], "not_run")
-            self.assertEqual(attempt["exports"]["swebench_prediction"], "prediction.json")
-
-            prediction = json.loads((config_dir / "prediction.json").read_text())
+            prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
             self.assertEqual(prediction["model_patch"], result["model_patch"])
 
-            manifest = json.loads((output_dir / "manifest.json").read_text())
-            task_entry = manifest["tasks"]["django__django-11099"]
-            self.assertEqual(task_entry["selected_attempt"], "001")
-            self.assertEqual(
-                task_entry["attempts"]["001"]["attempt_path"],
-                "configs/django__django-11099/attempt.json",
-            )
-
-    def test_no_patch_attempt_still_writes_empty_patch_file(self):
-        instance = {
-            "instance_id": "django__django-11099",
-            "repo": "django/django",
-            "version": "3.0",
-            "base_commit": "abc123",
-        }
-        result = {
-            "instance_id": "django__django-11099",
-            "model_name_or_path": "gpt-5.4-mini",
-            "model_patch": "",
-            "status": "no_patch",
-            "error": "No patch produced",
-            "duration_s": 1.0,
-        }
+    def test_failed_prediction_is_blank_but_patch_is_retained(self):
+        result = _result(
+            model_patch="diff --git a/a.py b/a.py\n+bad\n",
+            status="failed",
+            error="Review accountability gate blocked export",
+            review_accountability_gate={
+                "status": "failed",
+                "process_status": "process_failed",
+                "readiness_tier": "process_failed",
+                "failure_reason": "open_blocker_or_major_rows",
+                "fixup_required_rows": [{"id": "A1", "state": "open"}],
+                "do_not_repeat": ["Do not drop adversarial rows."],
+                "next_agent_guidance": "Fix A1.",
+            },
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            config_dir = output_dir / "configs" / instance["instance_id"]
-            config_dir.mkdir(parents=True)
-            (config_dir / "goal.txt").write_text("fix it")
-
-            write_attempt_sidecars(
-                instance=instance,
+            output_dir, config_dir = _workspace(tmp)
+            write_run_bundle(
+                instance=_instance(),
                 result=result,
                 output_dir=output_dir,
                 config_dir=config_dir,
                 sandbox_provider="docker",
             )
 
-            self.assertEqual((config_dir / "patch.diff").read_text(), "")
-            attempt = json.loads((config_dir / "attempt.json").read_text())
-            self.assertEqual(attempt["status"], "no_patch")
-            self.assertEqual(attempt["phases"]["solve"]["status"], "completed")
-            self.assertEqual(attempt["phases"]["change"]["status"], "failed")
-            self.assertEqual(attempt["candidate"]["state"], "absent")
-
-    def test_writes_runs_v1_bundle_and_manifest(self):
-        instance = {
-            "instance_id": "django__django-11099",
-            "repo": "django/django",
-            "version": "3.0",
-            "base_commit": "abc123",
-        }
-        result = {
-            "instance_id": "django__django-11099",
-            "model_name_or_path": "gpt-5.4-mini",
-            "model_patch": "diff --git a/a.py b/a.py\n",
-            "status": "completed",
-            "error": None,
-            "duration_s": 12.3,
-            "fabro_run_id": "01run",
-            "fabro_run_dir": None,
-        }
-
-        with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            config_dir = output_dir / "configs" / instance["instance_id"]
-            dump_dir = config_dir / "run_dump"
-            dump_dir.mkdir(parents=True)
-            (config_dir / "goal.txt").write_text("fix it")
-            (config_dir / "workflow.fabro").write_text("digraph G {}")
-            (config_dir / "workflow.toml").write_text("[workflow]\n")
-            (dump_dir / "run.json").write_text("{}")
-            (dump_dir / "events.jsonl").write_text("{}\n")
-            (dump_dir / "trajectory.jsonl").write_text("{}\n")
-
-            run_id = run_id_for_task(instance["instance_id"])
-            artifacts = write_run_bundle(
-                instance=instance,
-                result=result,
-                output_dir=output_dir,
-                config_dir=config_dir,
-                sandbox_provider="docker",
-                run_id=run_id,
-            )
-            manifest = load_or_init_manifest(output_dir)
-            update_manifest_for_run(
-                manifest,
-                task_id=instance["instance_id"],
-                run_id=run_id,
-                attempt_id=DEFAULT_ATTEMPT_ID,
-                output_dir=output_dir,
-            )
-            write_manifest(output_dir, manifest)
-
-            run_dir = output_dir / "runs" / run_id
-            self.assertEqual(
-                artifacts["run"],
-                "runs/django__django-11099--001/run.json",
-            )
-            self.assertEqual((run_dir / "input" / "goal.md").read_text(), "fix it")
+            run_dir = output_dir / "runs" / "django__django-11099--001"
             self.assertEqual(
                 (run_dir / "output" / "patch.diff").read_text(),
                 result["model_patch"],
             )
-            self.assertTrue((run_dir / "fabro" / "dump" / "run.json").exists())
-
-            run = json.loads((run_dir / "run.json").read_text())
-            self.assertEqual(run["layout"], "issue-to-pr-runs-v1")
-            self.assertEqual(run["run_id"], run_id)
-            self.assertEqual(run["phases"]["change"]["patch_path"], "output/patch.diff")
-            self.assertEqual(run["candidate"]["state"], "ready")
-            self.assertEqual(run["fabro"]["events_path"], "fabro/dump/events.jsonl")
-
-            task = json.loads((run_dir / "task.json").read_text())
-            self.assertEqual(task["goal"]["text_path"], "input/goal.md")
-
-            manifest = json.loads((output_dir / "manifest.json").read_text())
-            self.assertEqual(
-                manifest["tasks"]["django__django-11099"]["selected_run"],
-                run_id,
-            )
-            self.assertEqual(
-                manifest["runs"][run_id]["run_path"],
-                "runs/django__django-11099--001/run.json",
-            )
-
-    def test_promotes_trajectory_and_verify_artifacts(self):
-        instance = {
-            "instance_id": "django__django-11099",
-            "repo": "django/django",
-            "version": "3.0",
-            "base_commit": "abc123",
-        }
-        verify = {
-            "schema_version": 1,
-            "status": "passed",
-            "mode": "diff-check",
-            "patch_nonempty": True,
-            "failure_reason": None,
-        }
-        audit = {
-            "schema_version": 1,
-            "patch_nonempty": True,
-            "changed_files": ["a.py", "tests/test_a.py"],
-            "test_files_changed": ["tests/test_a.py"],
-            "diff_stat": ["a.py | 1 +"],
-        }
-        test_evidence_gate = {
-            "schema_version": 1,
-            "status": "passed",
-            "mode": "test-evidence",
-            "failure_reason": None,
-            "observed": {
-                "changed_files": ["a.py", "tests/test_a.py"],
-                "test_files_changed": ["tests/test_a.py"],
-            },
-            "claims": {"claimed_tests_raw": ["tests/test_a.py"]},
-            "derived": {"claimed_test_paths_normalized": ["tests/test_a.py"]},
-            "judgment": {
-                "hard_failures": [],
-                "warnings": [],
-                "route_decision": "review",
-                "fixup_guidance": None,
-            },
-        }
-
-        with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            config_dir = output_dir / "configs" / instance["instance_id"]
-            dump_dir = config_dir / "run_dump"
-            dump_dir.mkdir(parents=True)
-            trajectory = dump_dir / "trajectory.jsonl"
-            trajectory.write_text('{"event":"agent.message"}\n')
-            (dump_dir / "events.jsonl").write_text("{}\n")
-            (config_dir / "goal.txt").write_text("fix it")
-
-            result = {
-                "instance_id": "django__django-11099",
-                "model_name_or_path": "gpt-5.4-mini",
-                "model_patch": "diff --git a/a.py b/a.py\n",
-                "status": "completed",
-                "error": None,
-                "duration_s": 12.3,
-                "fabro_run_id": "01run",
-                "fabro_dump_dir": str(dump_dir),
-                "events_path": str(dump_dir / "events.jsonl"),
-                "trajectory_path": str(trajectory),
-                "verify": verify,
-                "audit": audit,
-                "test_evidence_gate": test_evidence_gate,
-                "review": {
-                    "status": "failed",
-                    "outcome": "failed",
-                    "preferred_next_label": "Fix",
-                    "failure_class": "test_blocking",
-                    "failure_reason": "missing regression test",
-                },
-            }
-
-            artifacts = write_attempt_sidecars(
-                instance=instance,
-                result=result,
-                output_dir=output_dir,
-                config_dir=config_dir,
-                sandbox_provider="docker",
-            )
-
-            self.assertEqual(
-                artifacts["trajectory"],
-                "configs/django__django-11099/trajectory.jsonl",
-            )
-            self.assertEqual(
-                artifacts["verify"],
-                "configs/django__django-11099/verify.json",
-            )
-            self.assertEqual(
-                artifacts["audit"],
-                "configs/django__django-11099/audit.json",
-            )
-            self.assertEqual(
-                artifacts["test_evidence_gate"],
-                "configs/django__django-11099/test_evidence_gate.json",
-            )
-            self.assertEqual(
-                (config_dir / "trajectory.jsonl").read_text(),
-                trajectory.read_text(),
-            )
-            self.assertEqual(json.loads((config_dir / "verify.json").read_text()), verify)
-            self.assertEqual(json.loads((config_dir / "audit.json").read_text()), audit)
-            self.assertEqual(
-                json.loads((config_dir / "test_evidence_gate.json").read_text()),
-                test_evidence_gate,
-            )
-
-            attempt = json.loads((config_dir / "attempt.json").read_text())
-            self.assertEqual(attempt["phases"]["verify"]["status"], "completed")
-            self.assertEqual(attempt["phases"]["verify"]["artifact_path"], "verify.json")
-            self.assertEqual(attempt["phases"]["audit"]["status"], "completed")
-            self.assertEqual(attempt["phases"]["audit"]["artifact_path"], "audit.json")
-            self.assertEqual(
-                attempt["phases"]["audit"]["test_files_changed"],
-                ["tests/test_a.py"],
-            )
-            self.assertEqual(
-                attempt["phases"]["test_evidence_gate"]["status"],
-                "completed",
-            )
-            self.assertEqual(
-                attempt["phases"]["test_evidence_gate"]["artifact_path"],
-                "test_evidence_gate.json",
-            )
-            self.assertEqual(
-                attempt["phases"]["test_evidence_gate"][
-                    "claimed_test_paths_normalized"
-                ],
-                ["tests/test_a.py"],
-            )
-            self.assertEqual(
-                attempt["phases"]["test_evidence_gate"]["route_decision"],
-                "review",
-            )
-            self.assertEqual(attempt["phases"]["review"]["status"], "failed")
-            self.assertEqual(attempt["phases"]["review"]["failure_class"], "test_blocking")
-            self.assertEqual(
-                attempt["phases"]["review"]["failure_reason"],
-                "missing regression test",
-            )
-            self.assertEqual(attempt["exports"]["trajectory"], "trajectory.jsonl")
-            self.assertEqual(
-                attempt["fabro"]["trajectory_path"],
-                "run_dump/trajectory.jsonl",
-            )
-
-            run_id = run_id_for_task(instance["instance_id"])
-            write_run_bundle(
-                instance=instance,
-                result=result,
-                output_dir=output_dir,
-                config_dir=config_dir,
-                sandbox_provider="docker",
-                run_id=run_id,
-            )
-            run_dir = output_dir / "runs" / run_id
-            self.assertEqual(
-                (run_dir / "output" / "trajectory.jsonl").read_text(),
-                trajectory.read_text(),
-            )
-            run = json.loads((run_dir / "run.json").read_text())
-            self.assertEqual(run["exports"]["trajectory"], "output/trajectory.jsonl")
-            self.assertEqual(run["phases"]["verify"]["status"], "completed")
-            self.assertEqual(run["phases"]["audit"]["artifact_path"], "output/audit.json")
-            self.assertEqual(
-                run["phases"]["test_evidence_gate"]["artifact_path"],
-                "output/test_evidence_gate.json",
-            )
-            self.assertEqual(run["phases"]["review"]["preferred_next_label"], "Fix")
-
-    def test_promotes_moderated_review_artifacts_and_readiness_tier(self):
-        instance = {
-            "instance_id": "django__django-11099",
-            "repo": "django/django",
-            "version": "3.0",
-            "base_commit": "abc123",
-        }
-        result = {
-            "instance_id": "django__django-11099",
-            "model_name_or_path": "gpt-5.4-mini",
-            "model_patch": "diff --git a/a.py b/a.py\n",
-            "status": "failed",
-            "error": "missing regression test",
-            "duration_s": 12.3,
-            "adversarial_review": {
-                "schema_version": 1,
-                "stage": "adversarial_review",
-                "summary": "Possible test gap.",
-                "rows": [{"id": "A1", "category": "tests"}],
-                "overall_risk": "medium",
-            },
-            "moderator_filter": {
-                "schema_version": 1,
-                "stage": "moderator_filter",
-                "dispositions": [
-                    {
-                        "id": "A1",
-                        "disposition": "confirmed",
-                        "routing_effect": "fix_tests",
-                    },
-                ],
-                "readiness_tier": "needs_fix_tests",
-                "do_not_repeat": ["Do not claim tests without changed test files."],
-                "next_agent_guidance": "Add a regression test for the changed behavior.",
-            },
-            "acceptance_audit": {
-                "schema_version": 1,
-                "status": "failed",
-                "mode": "moderated-review",
-                "readiness_tier": "needs_fix_tests",
-                "failure_reason": "missing regression test",
-                "route_decision": "fixup",
-                "do_not_repeat": ["Do not claim tests without changed test files."],
-                "next_agent_guidance": "Add a regression test for the changed behavior.",
-            },
-            "review_ledger": {
-                "schema_version": 1,
-                "stage": "review_ledger",
-                "status": "failed",
-                "readiness_tier": "needs_fix_tests",
-                "route_decision": "fixup",
-                "adversarial_row_count": 1,
-                "moderator_disposition_count": 1,
-            },
-        }
-
-        with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            config_dir = output_dir / "configs" / instance["instance_id"]
-            config_dir.mkdir(parents=True)
-            (config_dir / "goal.txt").write_text("fix it")
-
-            artifacts = write_attempt_sidecars(
-                instance=instance,
-                result=result,
-                output_dir=output_dir,
-                config_dir=config_dir,
-                sandbox_provider="docker",
-            )
-
-            self.assertEqual(
-                artifacts["adversarial_review"],
-                "configs/django__django-11099/adversarial_review.json",
-            )
-            self.assertEqual(
-                artifacts["moderator_filter"],
-                "configs/django__django-11099/moderator_filter.json",
-            )
-            self.assertEqual(
-                artifacts["acceptance_audit"],
-                "configs/django__django-11099/acceptance_audit.json",
-            )
-            self.assertEqual(
-                artifacts["review_ledger"],
-                "configs/django__django-11099/review_ledger.json",
-            )
-            attempt = json.loads((config_dir / "attempt.json").read_text())
-            self.assertEqual(
-                attempt["phases"]["adversarial_review"]["row_count"],
-                1,
-            )
-            self.assertEqual(
-                attempt["phases"]["moderator_filter"]["readiness_tier"],
-                "needs_fix_tests",
-            )
-            self.assertEqual(
-                attempt["phases"]["acceptance_audit"]["status"],
-                "failed",
-            )
-            self.assertEqual(
-                attempt["phases"]["review_ledger"]["artifact_path"],
-                "review_ledger.json",
-            )
-            self.assertEqual(attempt["candidate"]["state"], "failed_with_patch")
-            self.assertEqual(attempt["candidate"]["readiness_tier"], "needs_fix_tests")
-            self.assertEqual(
-                attempt["candidate"]["do_not_repeat"],
-                ["Do not claim tests without changed test files."],
-            )
-            prediction = json.loads((config_dir / "prediction.json").read_text())
+            prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
             self.assertEqual(prediction["model_patch"], "")
 
-            run_id = run_id_for_task(instance["instance_id"])
-            run_artifacts = write_run_bundle(
-                instance=instance,
-                result=result,
-                output_dir=output_dir,
-                config_dir=config_dir,
-                sandbox_provider="docker",
-                run_id=run_id,
-            )
+            run = json.loads((run_dir / "run.json").read_text())
+            self.assertEqual(run["candidate"]["state"], "failed_with_patch")
+            self.assertEqual(run["candidate"]["reuse"], "continuation_candidate")
             self.assertEqual(
-                run_artifacts["review_ledger"],
-                "runs/django__django-11099--001/output/review_ledger.json",
+                run["candidate"]["failure_reason"],
+                "open_blocker_or_major_rows",
             )
-            run = json.loads((output_dir / "runs" / run_id / "run.json").read_text())
-            self.assertEqual(
-                run["candidate"]["readiness_tier"],
-                "needs_fix_tests",
-            )
-            self.assertEqual(
-                run["phases"]["acceptance_audit"]["route_decision"],
-                "fixup",
-            )
+            self.assertEqual(run["candidate"]["next_agent_guidance"], "Fix A1.")
 
-    def test_verify_failed_with_patch_is_not_completed(self):
-        instance = {
-            "instance_id": "django__django-11099",
-            "repo": "django/django",
-            "version": "3.0",
-            "base_commit": "abc123",
-        }
-        result = {
-            "instance_id": "django__django-11099",
-            "model_name_or_path": "gpt-5.4-mini",
-            "model_patch": "diff --git a/a.py b/a.py\n",
-            "status": "verify_failed",
-            "error": "git diff --check failed",
-            "duration_s": 12.3,
-            "verify": {
-                "schema_version": 1,
-                "status": "failed",
-                "mode": "diff-check",
-                "patch_nonempty": True,
-                "failure_reason": "git diff --check failed",
-            },
-        }
+    def test_review_artifacts_are_copied_without_synthesis(self):
+        result = _result(
+            model_patch="diff --git a/a.py b/a.py\n",
+            status="completed",
+            adversarial_review={"stage": "adversarial_review", "rows": []},
+            moderator_filter={"stage": "moderator_filter", "dispositions": []},
+            review_materialization={"stage": "review_materialization", "status": "passed"},
+            review_accountability_gate={"stage": "review_accountability_gate", "status": "passed"},
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            config_dir = output_dir / "configs" / instance["instance_id"]
-            config_dir.mkdir(parents=True)
-            (config_dir / "goal.txt").write_text("fix it")
-
-            write_attempt_sidecars(
-                instance=instance,
+            output_dir, config_dir = _workspace(tmp)
+            artifacts = write_run_bundle(
+                instance=_instance(),
                 result=result,
                 output_dir=output_dir,
                 config_dir=config_dir,
                 sandbox_provider="docker",
             )
 
-            attempt = json.loads((config_dir / "attempt.json").read_text())
-            self.assertEqual(attempt["status"], "verify_failed")
-            self.assertEqual(attempt["phases"]["solve"]["status"], "failed")
-            self.assertEqual(attempt["phases"]["verify"]["status"], "failed")
-            self.assertEqual(attempt["phases"]["change"]["status"], "completed")
-            self.assertEqual(attempt["candidate"]["state"], "failed_with_patch")
-            self.assertEqual(attempt["candidate"]["reuse"], "continuation_candidate")
-            self.assertEqual(
-                attempt["candidate"]["warning"],
-                "Do not merge as-is; use this patch as a starting point with the review lesson.",
-            )
+            self.assertIn("adversarial_review", artifacts)
+            self.assertIn("moderator_filter", artifacts)
+            self.assertIn("review_materialization", artifacts)
+            self.assertIn("review_accountability_gate", artifacts)
+            self.assertNotIn("review_ledger", artifacts)
+            self.assertNotIn("acceptance_audit", artifacts)
 
-    def test_failed_patch_candidate_records_review_lesson(self):
-        instance = {
-            "instance_id": "django__django-11099",
-            "repo": "django/django",
-            "version": "3.0",
-            "base_commit": "abc123",
-        }
-        result = {
-            "instance_id": "django__django-11099",
-            "model_name_or_path": "gpt-5.4-mini",
-            "model_patch": "diff --git a/a.py b/a.py\n",
-            "status": "failed",
-            "error": "fabro exited with code 1",
-            "duration_s": 12.3,
-            "review": {
-                "outcome": "failed",
-                "failure_class": "code_blocking",
-                "failure_reason": "kept the wrong comparator",
-                "context_updates": {
-                    "do_not_repeat": ["Do not sort params that may be unorderable."],
-                    "next_agent_guidance": "Compare params without relying on ordering.",
-                },
-            },
-        }
-
+    def test_root_manifest_indexes_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
-            config_dir = output_dir / "configs" / instance["instance_id"]
-            config_dir.mkdir(parents=True)
-            (config_dir / "goal.txt").write_text("fix it")
-
-            write_attempt_sidecars(
-                instance=instance,
-                result=result,
+            manifest = load_or_init_manifest(output_dir)
+            update_manifest_for_run(
+                manifest,
+                task_id="django__django-11099",
+                run_id=run_id_for_task("django__django-11099", DEFAULT_ATTEMPT_ID),
+                attempt_id=DEFAULT_ATTEMPT_ID,
                 output_dir=output_dir,
-                config_dir=config_dir,
-                sandbox_provider="docker",
             )
+            write_manifest(output_dir, manifest)
 
-            attempt = json.loads((config_dir / "attempt.json").read_text())
-            self.assertEqual(attempt["status"], "failed")
-            self.assertEqual(attempt["candidate"]["state"], "failed_with_patch")
-            self.assertEqual(attempt["candidate"]["failure_class"], "code_blocking")
+            saved = json.loads((output_dir / "manifest.json").read_text())
+            self.assertEqual(saved["layout"], "issue-to-pr-runs-v1")
             self.assertEqual(
-                attempt["candidate"]["do_not_repeat"],
-                ["Do not sort params that may be unorderable."],
+                saved["tasks"]["django__django-11099"]["selected_run"],
+                "django__django-11099--001",
             )
-            self.assertEqual(
-                attempt["candidate"]["next_agent_guidance"],
-                "Compare params without relying on ordering.",
-            )
+            self.assertNotIn("manifest_path", saved["runs"]["django__django-11099--001"])
 
-    def test_failed_patch_prediction_is_blank_but_candidate_keeps_patch(self):
-        result = {
-            "instance_id": "django__django-11099",
-            "model_name_or_path": "gpt-5.4-mini",
-            "model_patch": "diff --git a/a.py b/a.py\n",
-            "status": "failed",
-            "error": "fabro exited with code 1",
-        }
-
-        prediction = build_prediction_record(result)
-
-        self.assertEqual(prediction["model_patch"], "")
-
-    def test_failed_patch_candidate_falls_back_to_result_error(self):
-        instance = {
-            "instance_id": "django__django-11099",
-            "repo": "django/django",
-            "version": "3.0",
-            "base_commit": "abc123",
-        }
-        result = {
-            "instance_id": "django__django-11099",
-            "model_name_or_path": "gpt-5.4-mini",
-            "model_patch": "diff --git a/a.py b/a.py\n",
-            "status": "failed",
-            "error": "fabro exited with code 1",
-            "duration_s": 12.3,
-            "review": {"outcome": "failed"},
-        }
-
+    def test_candidate_patch_bytes_use_utf8_bytes(self):
         with tempfile.TemporaryDirectory() as tmp:
-            output_dir = Path(tmp)
-            config_dir = output_dir / "configs" / instance["instance_id"]
-            config_dir.mkdir(parents=True)
-            (config_dir / "goal.txt").write_text("fix it")
+            patch_path = Path(tmp) / "patch.diff"
+            result = _result(model_patch="diff\n+é\n", status="completed")
+            candidate = build_candidate_record(result, patch_path, Path(tmp))
 
-            write_attempt_sidecars(
-                instance=instance,
-                result=result,
-                output_dir=output_dir,
-                config_dir=config_dir,
-                sandbox_provider="docker",
-            )
+            self.assertEqual(candidate["patch_bytes"], len("diff\n+é\n".encode()))
 
-            attempt = json.loads((config_dir / "attempt.json").read_text())
-            self.assertEqual(
-                attempt["candidate"]["failure_reason"],
-                "fabro exited with code 1",
-            )
+    def test_prediction_blanks_non_completed_statuses(self):
+        result = _result(model_patch="diff --git a/a.py b/a.py\n", status="failed")
+        self.assertEqual(build_prediction_record(result)["model_patch"], "")
+
+
+def _workspace(tmp: str) -> tuple[Path, Path]:
+    output_dir = Path(tmp)
+    config_dir = output_dir / "configs" / "django__django-11099"
+    dump_dir = config_dir / "run_dump"
+    dump_dir.mkdir(parents=True)
+    (config_dir / "goal.txt").write_text("fix it")
+    (config_dir / "workflow.fabro").write_text("digraph G {}")
+    (config_dir / "workflow.toml").write_text("[workflow]\n")
+    (dump_dir / "events.jsonl").write_text("{}\n")
+    (dump_dir / "trajectory.jsonl").write_text("{}\n")
+    return output_dir, config_dir
+
+
+def _instance() -> dict:
+    return {
+        "instance_id": "django__django-11099",
+        "repo": "django/django",
+        "version": "3.0",
+        "base_commit": "abc123",
+    }
+
+
+def _result(**overrides) -> dict:
+    result = {
+        "instance_id": "django__django-11099",
+        "model_name_or_path": "gpt-5.4-mini",
+        "model_patch": "",
+        "status": "completed",
+        "error": None,
+        "duration_s": 12.3,
+        "fabro_run_id": "01run",
+        "fabro_dump_dir": None,
+        "trajectory_path": None,
+    }
+    result.update(overrides)
+    return result
 
 
 if __name__ == "__main__":

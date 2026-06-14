@@ -19,8 +19,8 @@ DIFF_AUDIT_PATH = "/tmp/fabro-diff-audit.json"
 TEST_EVIDENCE_GATE_PATH = "/tmp/fabro-test-evidence-gate.json"
 ADVERSARIAL_REVIEW_PATH = "/tmp/fabro-adversarial-review.json"
 MODERATOR_FILTER_PATH = "/tmp/fabro-moderator-filter.json"
-ACCEPTANCE_AUDIT_PATH = "/tmp/fabro-acceptance-audit.json"
-REVIEW_LEDGER_PATH = "/tmp/fabro-review-ledger.json"
+REVIEW_MATERIALIZATION_PATH = "/tmp/fabro-review-materialization.json"
+REVIEW_ACCOUNTABILITY_GATE_PATH = "/tmp/fabro-review-accountability-gate.json"
 READY_TIERS = (
     "ready_verified",
     "ready_unverified",
@@ -102,7 +102,10 @@ def validate_generated_workflow(workflow: str, *, workflow_profile: str) -> None
         expected_by_node["moderator_filter"] = (
             f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}"
         )
-        expected_by_node["acceptance_audit"] = (
+        expected_by_node["materialize_review_artifacts"] = (
+            f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}"
+        )
+        expected_by_node["review_accountability_gate"] = (
             f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}"
         )
     missing = [
@@ -202,15 +205,21 @@ def _structured_workflow(
     if include_moderated_review:
         review_nodes = f'''    adversarial_review [label="Adversarial Review", max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, prompt="{dot_escape(_adversarial_review_prompt())}"]
     moderator_filter   [label="Moderator Filter", max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, prompt="{dot_escape(_moderator_filter_prompt())}"]
-    acceptance_audit   [label="Acceptance Audit", goal_gate=true, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, output_schema="routing", prompt="{dot_escape(_acceptance_audit_prompt())}"]
+    materialize_review_artifacts [label="Materialize Review Artifacts", shape=parallelogram, goal_gate=true, max_retries=0, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="{dot_escape(_review_materialization_script())}"]
+    review_accountability_gate [label="Review Accountability Gate", shape=parallelogram, goal_gate=true, max_retries=0, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="{dot_escape(_review_accountability_gate_script())}"]
 '''
         gate_edges = """    snapshot_patch -> audit -> test_evidence_gate
     test_evidence_gate -> adversarial_review [condition="outcome=succeeded"]
     test_evidence_gate -> fixup              [condition="outcome=failed"]
     test_evidence_gate -> fixup              [label="Fallback"]
-    adversarial_review -> moderator_filter -> acceptance_audit
-    acceptance_audit -> extract_patch [label="Approve"]
-    acceptance_audit -> fixup         [label="Fix"]"""
+    adversarial_review -> moderator_filter -> materialize_review_artifacts
+    materialize_review_artifacts -> review_accountability_gate [condition="outcome=succeeded"]
+    materialize_review_artifacts -> fixup [condition="outcome=failed"]
+    materialize_review_artifacts -> fixup [label="Fallback"]
+    review_accountability_gate -> extract_patch     [condition="outcome=succeeded"]
+    review_accountability_gate -> fixup            [condition="outcome=failed"]
+    review_accountability_gate -> fixup            [label="Fallback"]
+"""
     return f'''digraph {graph_name} {{
     rankdir=LR
     start [shape=Mdiamond]
@@ -235,117 +244,32 @@ def _structured_workflow(
 
 
 def _research_prompt() -> str:
-    return """Research the issue and repository before editing.
-
-This is a non-interactive benchmark/batch run:
-- Do not ask the user questions.
-- Do not call request_user_input or any interactive clarification tool.
-- If scope is ambiguous, make the smallest defensible assumption from the issue
-  text and repository evidence, then record that assumption.
-
-Hard contract:
-- Do not modify repository files during this stage.
-- Do not use edit/write tools on repository files.
-- Do not run shell commands that write into the repository.
-- Do not create temporary regression tests in repository files, even if you
-  intend to revert them.
-- Do not use git checkout, git restore, git reset, or cleanup commands as a way
-  to hide research-stage writes. A clean diff after research is not enough; the
-  stage itself must be read-only.
-- If you need notes, write them only to /tmp/fabro-research.md so they cannot
-  pollute git diff.
-- Also write {VALIDATION_CONTRACT_PATH} with a JSON object containing:
-  acceptance_criteria, risky_shortcuts, likely_files, test_plan, and
-  research_assumptions. This file is the durable goal/evidence handoff for the
-  fresh agents in later stages and must not live inside the repository.
-
-Identify:
-- the exact acceptance criteria from the issue text;
-- likely files and code paths;
-- whether docs, release notes, migrations, or tests are part of the requested fix;
-- visible tests or commands that can validate the change;
-- risks where an obvious shortcut would not satisfy the deeper contract.
-
-End with a concise research summary that includes acceptance criteria and a test plan.""".replace(
+    return """Research only; do not edit repository files or ask questions.
+Use read-only commands. Put notes in /tmp/fabro-research.md.
+Write {VALIDATION_CONTRACT_PATH} with JSON fields:
+acceptance_criteria, risky_shortcuts, likely_files, test_plan,
+research_assumptions. End with acceptance criteria and test plan.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     )
 
 
 def _implement_prompt() -> str:
-    return """Fix this issue in the repository. Make the minimal code change needed.
-
-This is a non-interactive benchmark/batch run. Do not ask the user questions and
-do not call request_user_input. If scope is ambiguous, make the smallest
-defensible assumption from the issue text and repository evidence, then record it
-in the final response.
-
-Use /tmp/fabro-research.md if it exists. Keep benchmark, grader, and hidden-test
-assumptions out of the implementation.
-
-Before editing, restate the acceptance criteria from the issue/research. The final
-patch must satisfy all of them, not only the issue title. Add or update regression
-tests when the behavior is testable in the repository. If docs or release notes are
-explicitly requested, update them too.
-
-Run the most relevant visible test command you can identify. Do not claim a command
-passed unless it actually exited successfully. If no useful test can run, explain
-why in the final response.
-
-Before finishing, update {VALIDATION_CONTRACT_PATH}. Preserve the research fields
-and add or update:
-- changed_files: repository files intentionally changed;
-- tests_added: regression tests added or updated;
-- commands_run: exact commands with status values such as passed, failed,
-  not_run, or unavailable;
-- no_test_justification: required when behavior is testable but no regression test
-  was added or run;
-- residual_risks: known gaps, uncertainty, or environment limitations;
-- final_claims: the behavior you believe the patch now satisfies.
-
-Do not end with casual follow-up offers or questions. This is a batch run.""".replace(
+    return """Fix the issue with the smallest defensible patch. Do not ask questions.
+Use /tmp/fabro-research.md when present. Satisfy all acceptance criteria, not
+only the title. Add/update regression tests when behavior is testable.
+Run the most relevant visible test command and report only real exit results.
+Before finishing, update {VALIDATION_CONTRACT_PATH}; preserve research fields and add:
+changed_files, tests_added as objects with path/test_name_or_scope/behavior_guarded,
+commands_run with status, no_test_justification, residual_risks, final_claims.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     )
 
 
 def _review_prompt() -> str:
-    return """Review the patch before it is exported.
-
-This is a non-interactive benchmark/batch run:
-- Do not ask the user questions.
-- Do not call request_user_input or any interactive clarification tool.
-- Do not modify repository files.
-- Use read-only inspection only: git diff, file reads, searches, and test-log
-  inspection are allowed. Do not edit files.
-- Do not run tests, compilers, formatters, or commands that may create caches or
-  mutate the repository during review. Judge only from the patch, prior stage
-  output, and recorded command results.
-
-Check:
-- {DIFF_AUDIT_PATH} exists and matches the actual `git diff`; treat this
-  machine-generated audit and the current diff as authoritative over
-  agent-authored validation claims;
-- {VALIDATION_CONTRACT_PATH} exists and is consistent with the diff and prior
-  stage output. If the validation contract disagrees with the audit/diff, judge
-  the patch first and call out metadata drift separately;
-- changed_files, tests_added, commands_run, residual_risks, and final_claims in
-  the validation contract are specific and not contradictory;
-- the patch satisfies every acceptance criterion from the issue and research;
-- the fix is not an overbroad shortcut that changes unrelated behavior;
-- test evidence is credible for the changed behavior;
-- if the behavior is testable in this repository, the patch adds or updates a
-  regression test unless there is a repository-specific reason this is impossible;
-- the final response does not claim stronger validation than was actually run.
-
-Classify any blocking issue as one of:
-- code_blocking: the code diff is wrong, incomplete, overbroad, or unrelated;
-- test_blocking: test coverage/evidence is missing or not credible for a
-  testable behavior;
-- metadata_blocking: only the agent-authored validation contract is stale,
-  incomplete, or inconsistent while the actual code/test diff is otherwise ready.
-
-Only route to Fix for code_blocking or test_blocking issues. If the only
-remaining issue is metadata_blocking, approve export and mention the metadata
-warning in context_updates.
+    return """Review read-only; do not ask questions, edit, or run mutating commands.
+Treat {DIFF_AUDIT_PATH}, {VALIDATION_CONTRACT_PATH}, and git diff as evidence.
+Check acceptance criteria, scope, tests, commands_run, residual_risks, final_claims.
+Route Fix only for code_blocking or test_blocking. Metadata-only drift may approve.
 
 If the patch is ready, end with exactly this routing JSON:
 {"preferred_next_label":"Approve","outcome":"succeeded","context_updates":{"review_decision":"approve"}}
@@ -360,31 +284,10 @@ this routing JSON:
 
 
 def _adversarial_review_prompt() -> str:
-    return """Adversarially review the patch before export.
-
-This is pass 1 of a three-stage review pattern. Your job is discovery, not final
-approval. Be maximally critical and look for plausible failure modes, missing
-tests, overbroad changes, and evidence gaps. You may over-report. A later
-moderator will reject weak or unsupported objections.
-
-Hard contract:
-- Do not ask the user questions.
-- Do not call request_user_input or any interactive clarification tool.
-- Do not modify repository files.
-- Use read-only inspection only: git diff, file reads, searches, and recorded
-  artifacts/logs are allowed.
-- Do not run tests, compilers, formatters, installers, or commands that may write
-  caches or mutate the repository.
-- Machine artifacts outrank agent-authored claims. Treat {DIFF_AUDIT_PATH},
-  {TEST_EVIDENCE_GATE_PATH}, and the current `git diff` as stronger evidence
-  than narrative summaries.
-
-Inspect:
-- the issue goal and /tmp/fabro-research.md if present;
-- {VALIDATION_CONTRACT_PATH};
-- {DIFF_AUDIT_PATH};
-- {TEST_EVIDENCE_GATE_PATH};
-- the current `git diff` and touched source/tests.
+    return """Adversarially review the patch, read-only. Do not ask questions,
+modify files, or run mutating commands. Be critical; the moderator will filter.
+Use the issue, /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH},
+{DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, git diff, and touched files.
 
 Write {ADVERSARIAL_REVIEW_PATH} with a single JSON object:
 {
@@ -419,21 +322,15 @@ End with exactly the same JSON object on one line. Do not include Markdown.""".r
 def _moderator_filter_prompt() -> str:
     return """Moderate the adversarial review.
 
-This is pass 2 of a three-stage review pattern. Your job is to filter. Keep only
-objections that are supported by repository evidence, the current diff, or
-machine artifacts. Reject plausible-sounding but unsupported criticism. Do not
-invent new objections; you may only accept, downgrade, or reject rows from
-{ADVERSARIAL_REVIEW_PATH}.
+This is pass 2 of a three-stage review pattern. Filter only the rows from
+{ADVERSARIAL_REVIEW_PATH}. Do not invent objections.
 
 Hard contract:
 - Do not ask the user questions.
-- Do not call request_user_input or any interactive clarification tool.
 - Do not modify repository files.
-- Use read-only inspection only. Do not run tests, compilers, formatters,
-  installers, or commands that may write caches or mutate the repository.
+- Use read-only inspection only. Do not run tests or commands that may write.
 - Machine artifacts outrank agent-authored claims. Treat {DIFF_AUDIT_PATH},
-  {TEST_EVIDENCE_GATE_PATH}, and the current `git diff` as authoritative when
-  they conflict with narrative stage output.
+  {TEST_EVIDENCE_GATE_PATH}, and `git diff` as authoritative.
 
 Write {MODERATOR_FILTER_PATH} with a single JSON object:
 {
@@ -442,11 +339,10 @@ Write {MODERATOR_FILTER_PATH} with a single JSON object:
   "dispositions": [
     {
       "id": "A1",
-      "disposition": "confirmed|downgraded|rejected",
+      "state": "open|closed_by_evidence|rejected|downgraded",
       "category": "code|tests|metadata|process",
       "severity": "blocker|major|minor|info",
-      "routing_effect": "fix_code|fix_tests|metadata_warning|none",
-      "evidence_grade": "strong|weak|unsupported",
+      "evidence": ["<required for closed_by_evidence or downgraded>"],
       "reason": "<why this disposition is evidence-bound>"
     }
   ],
@@ -455,18 +351,19 @@ Write {MODERATOR_FILTER_PATH} with a single JSON object:
   "next_agent_guidance": "<concrete guidance if a downstream agent continues>"
 }
 
-Readiness tier rules:
-- needs_fix_code: any confirmed blocker/major code issue.
-- needs_fix_tests: any confirmed blocker/major test-evidence issue with
-  testable behavior.
-- process_failed: missing/malformed required review artifacts or hard process
-  contradiction.
-- metadata_only_warning: only metadata/process rows remain and the diff itself
-  appears exportable.
-- ready_verified: no blocking rows remain and machine-visible test evidence is
-  credible.
-- ready_unverified: no blocking rows remain but validation is weak, unavailable,
-  failed for environment reasons, or claim-only.
+Rules:
+- Every row from {ADVERSARIAL_REVIEW_PATH}.rows must have exactly one
+  disposition with the same id. Empty dispositions are valid only when there are
+  zero adversarial rows.
+- Use open for unresolved blocker/major objections, including any row saying
+  the patch does not fix the issue.
+- Use closed_by_evidence only when cited diff, file, or machine-artifact
+  evidence closes the row.
+- Use rejected only when the row is unsupported. Use downgraded only with new
+  severity and evidence.
+- ready_verified requires machine-visible test evidence. ready_unverified means
+  no blocker/major row remains but validation is weak. needs_fix_code/tests mean
+  blocker/major open rows remain. process_failed means malformed review process.
 
 End with exactly the same JSON object on one line. Do not include Markdown.""".replace(
         "{ADVERSARIAL_REVIEW_PATH}", ADVERSARIAL_REVIEW_PATH
@@ -479,105 +376,18 @@ End with exactly the same JSON object on one line. Do not include Markdown.""".r
     )
 
 
-def _acceptance_audit_prompt() -> str:
-    return """Audit the moderated review and decide whether the patch can be exported.
-
-This is pass 3 of a three-stage review pattern. Your job is not to find new
-issues. Audit the adversarial review and moderator filter already present in
-context, verify that the moderator's surviving rows are evidence-bound, then
-make the final route decision.
-
-Hard contract:
-- Do not ask the user questions.
-- Do not call request_user_input or any interactive clarification tool.
-- Do not modify repository files.
-- Use read-only inspection only. Do not run tests, compilers, formatters,
-  installers, or commands that may write caches or mutate the repository.
-- Do not introduce new findings. You may only accept, reject, or downgrade
-  findings already raised by the adversarial review and handled by the moderator.
-- Machine artifacts outrank agent-authored claims. Treat {DIFF_AUDIT_PATH},
-  {TEST_EVIDENCE_GATE_PATH}, and the current `git diff` as authoritative when
-  they conflict with narrative stage output.
-
-If /tmp review JSON files exist, read them. If they do not exist, use the prior
-stage outputs in context; missing /tmp files alone should be a metadata/process
-warning, not a reason to reject an otherwise evidence-backed patch.
-If you can write files without touching the repository, also write the final
-routing object to {ACCEPTANCE_AUDIT_PATH} and the nested review_ledger object to
-{REVIEW_LEDGER_PATH}; the final response JSON is still the source of truth.
-
-End with exactly one routing JSON object on one line:
-{
-  "preferred_next_label": "Approve|Fix",
-  "outcome": "succeeded|failed",
-  "status": "passed|failed",
-  "mode": "moderated-review",
-  "readiness_tier": "ready_verified|ready_unverified|needs_fix_code|needs_fix_tests|metadata_only_warning|process_failed",
-  "failure_reason": null,
-  "route_decision": "export|fixup",
-  "blocking_rows": [],
-  "do_not_repeat": ["<specific failed approach to avoid>"],
-  "next_agent_guidance": "<concrete downstream guidance>",
-  "review_ledger": {
-    "schema_version": 1,
-    "stage": "review_ledger",
-    "status": "passed|failed",
-    "readiness_tier": "ready_verified|ready_unverified|needs_fix_code|needs_fix_tests|metadata_only_warning|process_failed",
-    "route_decision": "export|fixup",
-    "confirmed_rows": [],
-    "blocking_rows": [],
-    "malformed_artifacts": []
-  }
-}
-
-Decision rules:
-- Use Approve/succeeded/passed/export for ready_verified, ready_unverified, or
-  metadata_only_warning.
-- Use Fix/failed/failed/fixup for needs_fix_code, needs_fix_tests, or
-  process_failed.
-- ready_verified requires credible machine-visible validation.
-- ready_unverified is acceptable when no blocking issue remains but validation is
-  weak, unavailable, failed for environment reasons, or claim-only.
-- metadata_only_warning is acceptable only when the actual diff is ready and the
-  remaining issue is stale/missing review metadata.
-- needs_fix_code or needs_fix_tests must include blocking_rows, do_not_repeat,
-  and next_agent_guidance so another agent can continue from this patch.""".replace(
-        "{DIFF_AUDIT_PATH}", DIFF_AUDIT_PATH
-    ).replace(
-        "{TEST_EVIDENCE_GATE_PATH}", TEST_EVIDENCE_GATE_PATH
-    ).replace(
-        "{ACCEPTANCE_AUDIT_PATH}", ACCEPTANCE_AUDIT_PATH
-    ).replace(
-        "{REVIEW_LEDGER_PATH}", REVIEW_LEDGER_PATH
-    )
-
-
 def _fixup_prompt() -> str:
-    return """A quality gate failed. Read the verify or review output from context and fix the issue.
-
-This is a non-interactive benchmark/batch run. Do not ask the user questions and
-do not call request_user_input. If scope is ambiguous, make the smallest
-defensible assumption from the issue text and repository evidence, then record it
-in the final response.
-
-Keep the patch minimal. Do not create durable notes in the repository unless they
-are part of the requested source change.
-
-Read {VALIDATION_CONTRACT_PATH} before editing. Update it before finishing with:
-- reviewer_objections addressed;
-- changed_files after fixup;
-- commands_run after fixup;
-- residual_risks after fixup;
-- final_claims after fixup.
-
-Repair the actual patch before repairing metadata. If the validation contract
-disagrees with the current diff or {DIFF_AUDIT_PATH}, update the code/tests first,
-then make the contract match the real final state.
-
-Do not end with casual follow-up offers or questions. This is a batch run.""".replace(
+    return """A quality gate failed. Do not ask questions. Read
+{VALIDATION_CONTRACT_PATH}, {DIFF_AUDIT_PATH}, and when present
+{REVIEW_ACCOUNTABILITY_GATE_PATH}. Fix the actual patch before metadata. For
+each blocker/major fixup_required_rows entry, close it with code/test evidence
+or preserve it as an open blocker. Update the validation contract with
+reviewer_objections, changed_files, commands_run, residual_risks, final_claims.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     ).replace(
         "{DIFF_AUDIT_PATH}", DIFF_AUDIT_PATH
+    ).replace(
+        "{REVIEW_ACCOUNTABILITY_GATE_PATH}", REVIEW_ACCOUNTABILITY_GATE_PATH
     )
 
 
@@ -652,102 +462,255 @@ def _test_evidence_gate_script() -> str:
     )
 
 
-def _acceptance_audit_script() -> str:
-    ready_values = ",".join(READY_TIERS)
-    blocking_values = ",".join(sorted(BLOCKING_READY_TIERS))
+def _review_materialization_script() -> str:
+    return f"""python - <<'PY'
+import json
+from pathlib import Path
+
+SOURCES = {{
+    "adversarial_review": Path("{ADVERSARIAL_REVIEW_PATH}"),
+    "moderator_filter": Path("{MODERATOR_FILTER_PATH}"),
+}}
+OUT = Path("{REVIEW_MATERIALIZATION_PATH}")
+
+
+def load(name, path):
+    try:
+        value = json.loads(path.read_text())
+    except Exception as exc:
+        return None, {{"artifact": name, "path": str(path), "error": str(exc)}}
+    if not isinstance(value, dict):
+        return None, {{"artifact": name, "path": str(path), "error": "expected_json_object"}}
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\\n")
+    return value, None
+
+
+errors = []
+loaded = {{}}
+for name, path in SOURCES.items():
+    value, error = load(name, path)
+    loaded[name] = value or {{}}
+    if error:
+        errors.append(error)
+
+rows = loaded["adversarial_review"].get("rows")
+dispositions = loaded["moderator_filter"].get("dispositions")
+rows = rows if isinstance(rows, list) else []
+dispositions = dispositions if isinstance(dispositions, list) else []
+row_ids = [
+    str(row.get("id"))
+    for row in rows
+    if isinstance(row, dict) and row.get("id") not in (None, "")
+]
+disposition_ids = [
+    str(row.get("id"))
+    for row in dispositions
+    if isinstance(row, dict) and row.get("id") not in (None, "")
+]
+report = {{
+    "schema_version": 1,
+    "stage": "review_materialization",
+    "status": "failed" if errors else "passed",
+    "sources": {{name: str(path) for name, path in SOURCES.items()}},
+    "adversarial_row_ids": row_ids,
+    "moderator_disposition_ids": disposition_ids,
+    "errors": errors,
+}}
+OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\\n")
+print(json.dumps(report, sort_keys=True))
+raise SystemExit(1 if errors else 0)
+PY
+"""
+
+
+def _review_accountability_gate_script() -> str:
     return f"""python - <<'PY'
 import json
 from pathlib import Path
 
 ADVERSARIAL = Path("{ADVERSARIAL_REVIEW_PATH}")
 MODERATOR = Path("{MODERATOR_FILTER_PATH}")
-GATE = Path("{TEST_EVIDENCE_GATE_PATH}")
-OUT = Path("{ACCEPTANCE_AUDIT_PATH}")
-LEDGER = Path("{REVIEW_LEDGER_PATH}")
-READY_VALUES = set("{ready_values}".split(","))
-BLOCKING_VALUES = set("{blocking_values}".split(","))
+TEST_GATE = Path("{TEST_EVIDENCE_GATE_PATH}")
+MATERIALIZATION = Path("{REVIEW_MATERIALIZATION_PATH}")
+OUT = Path("{REVIEW_ACCOUNTABILITY_GATE_PATH}")
+MAJOR = {{"blocker", "critical", "major"}}
+STATES = {{"open", "closed_by_evidence", "rejected", "downgraded"}}
 
 
 def load(path):
     try:
-        return json.loads(path.read_text())
+        obj = json.loads(path.read_text())
     except Exception as exc:
-        return {{"_error": str(exc), "_path": str(path)}}
+        return None, {{"path": str(path), "error": str(exc)}}
+    if not isinstance(obj, dict):
+        return None, {{"path": str(path), "error": "expected_json_object"}}
+    return obj, None
 
 
-adversarial = load(ADVERSARIAL)
-moderator = load(MODERATOR)
-gate = load(GATE)
-malformed = []
-if "_error" in adversarial:
-    malformed.append({{"path": str(ADVERSARIAL), "error": adversarial.get("_error")}})
-if "_error" in moderator:
-    malformed.append({{"path": str(MODERATOR), "error": moderator.get("_error")}})
-if "_error" in gate:
-    malformed.append({{"path": str(GATE), "error": gate.get("_error")}})
+def row_id(row):
+    value = row.get("id") if isinstance(row, dict) else None
+    return None if value in (None, "") else str(value)
 
-readiness = moderator.get("readiness_tier") if isinstance(moderator, dict) else None
-if readiness not in READY_VALUES:
-    malformed.append({{"path": str(MODERATOR), "error": "missing_or_invalid_readiness_tier"}})
-    readiness = "process_failed"
-if isinstance(gate, dict) and gate.get("status") not in (None, "passed"):
-    readiness = "process_failed"
 
-dispositions = moderator.get("dispositions") if isinstance(moderator, dict) else []
-if not isinstance(dispositions, list):
-    dispositions = []
-confirmed = [
-    row for row in dispositions
-    if isinstance(row, dict) and row.get("disposition") in ("confirmed", "downgraded")
+def as_list(value):
+    return value if isinstance(value, list) else []
+
+
+def has_evidence(row):
+    if not isinstance(row, dict):
+        return False
+    for key in ("evidence", "evidence_citations", "cited_evidence"):
+        value = row.get(key)
+        if isinstance(value, list) and value:
+            return True
+        if isinstance(value, str) and value.strip():
+            return True
+    return bool(row.get("artifact_path") or row.get("artifact_field"))
+
+
+def tests_executed_successfully(gate):
+    if not isinstance(gate, dict):
+        return False
+    observed = gate.get("observed") if isinstance(gate.get("observed"), dict) else {{}}
+    for key in ("commands_passed_count", "tests_passed_count"):
+        value = observed.get(key) or gate.get(key)
+        if isinstance(value, int) and value > 0:
+            return True
+    return False
+
+
+adversarial, adversarial_error = load(ADVERSARIAL)
+moderator, moderator_error = load(MODERATOR)
+test_gate, test_gate_error = load(TEST_GATE)
+materialization, materialization_error = load(MATERIALIZATION)
+malformed = [err for err in (
+    adversarial_error,
+    moderator_error,
+    test_gate_error,
+    materialization_error,
+) if err]
+if isinstance(materialization, dict) and materialization.get("status") != "passed":
+    malformed.extend(as_list(materialization.get("errors")))
+
+rows = as_list(adversarial.get("rows") if isinstance(adversarial, dict) else None)
+dispositions = as_list(moderator.get("dispositions") if isinstance(moderator, dict) else None)
+if isinstance(adversarial, dict) and not isinstance(adversarial.get("rows", []), list):
+    malformed.append({{"artifact": "adversarial_review", "field": "rows", "error": "expected_list"}})
+if isinstance(moderator, dict) and not isinstance(moderator.get("dispositions", []), list):
+    malformed.append({{"artifact": "moderator_filter", "field": "dispositions", "error": "expected_list"}})
+
+row_by_id = {{}}
+for row in rows:
+    rid = row_id(row)
+    if rid:
+        row_by_id[rid] = row
+    else:
+        malformed.append({{"artifact": "adversarial_review", "field": "rows.id", "error": "missing_id"}})
+
+seen = set()
+duplicate_disposition_ids = []
+orphan_dispositions = []
+open_rows = []
+closed_rows = []
+downgraded_rows = []
+rejected_rows = []
+invalid_dispositions = []
+
+for disposition in dispositions:
+    if not isinstance(disposition, dict):
+        malformed.append({{"artifact": "moderator_filter", "field": "dispositions", "error": "disposition_not_object"}})
+        continue
+    did = row_id(disposition)
+    state = str(disposition.get("state") or disposition.get("disposition") or "").lower()
+    if not did:
+        invalid_dispositions.append(disposition)
+        malformed.append({{"artifact": "moderator_filter", "field": "dispositions.id", "error": "missing_id"}})
+        continue
+    if did in seen:
+        duplicate_disposition_ids.append(did)
+    seen.add(did)
+    if did not in row_by_id:
+        orphan_dispositions.append(disposition)
+    if state not in STATES:
+        invalid_dispositions.append(disposition)
+        continue
+    if state == "open":
+        open_rows.append(disposition)
+    elif state == "closed_by_evidence":
+        if not has_evidence(disposition):
+            invalid_dispositions.append(disposition)
+        closed_rows.append(disposition)
+    elif state == "downgraded":
+        if not has_evidence(disposition):
+            invalid_dispositions.append(disposition)
+        downgraded_rows.append(disposition)
+    elif state == "rejected":
+        rejected_rows.append(disposition)
+
+unaccounted_rows = [row for rid, row in row_by_id.items() if rid not in seen]
+unaccounted_major_rows = [
+    row for row in unaccounted_rows
+    if str(row.get("severity", "")).lower() in MAJOR
 ]
 blocking_rows = [
-    row for row in confirmed
-    if row.get("routing_effect") in ("fix_code", "fix_tests")
+    row for row in open_rows
+    if str(row.get("severity", "")).lower() in MAJOR
 ]
 
+process_failures = []
 if malformed:
-    readiness = "process_failed"
+    process_failures.append("review_artifact_missing_or_malformed")
+if rows and not dispositions:
+    process_failures.append("adversarial_rows_without_moderator_dispositions")
+if unaccounted_major_rows:
+    process_failures.append("unaccounted_major_adversarial_rows")
+elif unaccounted_rows:
+    process_failures.append("unaccounted_adversarial_rows")
+if duplicate_disposition_ids:
+    process_failures.append("duplicate_moderator_dispositions")
+if orphan_dispositions:
+    process_failures.append("orphan_moderator_dispositions")
+if invalid_dispositions:
+    process_failures.append("invalid_moderator_dispositions")
+if blocking_rows:
+    process_failures.append("open_blocker_or_major_rows")
 
-status = "failed" if readiness in BLOCKING_VALUES else "passed"
-audit = {{
+failed = bool(process_failures)
+fixup_required_rows = blocking_rows or unaccounted_major_rows or unaccounted_rows or invalid_dispositions
+readiness = "process_failed" if failed else (
+    "ready_verified" if tests_executed_successfully(test_gate) else "ready_unverified"
+)
+report = {{
     "schema_version": 1,
-    "status": status,
-    "mode": "moderated-review",
+    "stage": "review_accountability_gate",
+    "status": "failed" if failed else "passed",
+    "process_status": "process_failed" if failed else "passed",
+    "preferred_next_label": "Fix" if failed else "Approve",
+    "route_decision": "fixup" if failed else "export",
     "readiness_tier": readiness,
-    "malformed_artifacts": malformed,
-    "confirmed_rows": len(confirmed),
-    "blocking_rows": blocking_rows,
-    "failure_reason": None,
-    "route_decision": "fixup" if status == "failed" else "export",
-    "do_not_repeat": moderator.get("do_not_repeat") if isinstance(moderator, dict) else None,
-    "next_agent_guidance": moderator.get("next_agent_guidance") if isinstance(moderator, dict) else None,
-}}
-if status == "failed":
-    if malformed:
-        audit["failure_reason"] = "review artifacts missing or malformed"
-    elif blocking_rows:
-        audit["failure_reason"] = blocking_rows[0].get("reason") or "moderator found blocking issue"
-    else:
-        audit["failure_reason"] = "moderated review blocked export"
-
-ledger = {{
-    "schema_version": 1,
-    "stage": "review_ledger",
-    "readiness_tier": readiness,
-    "status": status,
-    "adversarial_row_count": len(adversarial.get("rows", [])) if isinstance(adversarial, dict) and isinstance(adversarial.get("rows"), list) else None,
+    "failure_reason": "; ".join(process_failures),
+    "process_failures": process_failures,
+    "adversarial_row_count": len(rows),
     "moderator_disposition_count": len(dispositions),
-    "confirmed_rows": confirmed,
+    "open_rows": open_rows,
+    "closed_rows": closed_rows,
+    "downgraded_rows": downgraded_rows,
+    "rejected_rows": rejected_rows,
     "blocking_rows": blocking_rows,
+    "fixup_required_rows": fixup_required_rows,
+    "unaccounted_adversarial_rows": unaccounted_rows,
+    "unaccounted_major_rows": unaccounted_major_rows,
+    "duplicate_disposition_ids": duplicate_disposition_ids,
+    "orphan_dispositions": orphan_dispositions,
+    "invalid_dispositions": invalid_dispositions,
+    "tests_executed_successfully": tests_executed_successfully(test_gate),
+    "materialization": materialization or {{}},
     "malformed_artifacts": malformed,
-    "route_decision": audit["route_decision"],
-    "do_not_repeat": audit.get("do_not_repeat"),
-    "next_agent_guidance": audit.get("next_agent_guidance"),
+    "do_not_repeat": ["Do not export until every blocker/major objection is open or closed with cited evidence."] if failed else [],
+    "next_agent_guidance": "Address fixup_required_rows, then rerun verify/review." if failed else "Proceed to patch extraction.",
 }}
-audit["review_ledger"] = ledger
-OUT.write_text(json.dumps(audit, indent=2, sort_keys=True) + "\\n")
-LEDGER.write_text(json.dumps(ledger, indent=2, sort_keys=True) + "\\n")
-print(json.dumps(audit, sort_keys=True))
-raise SystemExit(0 if status == "passed" else 1)
+OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\\n")
+print(json.dumps(report, sort_keys=True))
+raise SystemExit(1 if failed else 0)
 PY
 """
