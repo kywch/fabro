@@ -41,6 +41,8 @@ from fabro_kits.issue_to_pr.artifacts import (
 )
 from fabro_kits.issue_to_pr.workflow_generator import (
     SIMPLE_PROFILE,
+    STRUCTURED_GATED_PROFILE,
+    STRUCTURED_MODERATED_PROFILE,
     STRUCTURED_PROFILE,
     VERIFY_DIFF_CHECK,
     VERIFY_NONE,
@@ -52,6 +54,12 @@ from fabro_kits.issue_to_pr.workflow_generator import (
 from gen_dockerfile import generate_dockerfile, repo_version_key
 
 EVAL_DIR = Path(__file__).parent.resolve()
+STRUCTURED_WORKFLOW_PROFILES = {
+    STRUCTURED_PROFILE,
+    STRUCTURED_GATED_PROFILE,
+    STRUCTURED_MODERATED_PROFILE,
+}
+GATED_WORKFLOW_PROFILES = {STRUCTURED_GATED_PROFILE, STRUCTURED_MODERATED_PROFILE}
 
 # ---------------------------------------------------------------------------
 # Logging — dual output: file (DEBUG) + terminal (INFO)
@@ -285,7 +293,7 @@ def find_stage_output(run_dir: Path, node_id: str) -> str | None:
             candidates.extend(path for path in root.iterdir() if path.is_dir())
 
     for stage_dir in sorted(candidates, key=_stage_sort_key, reverse=True):
-        if node_id not in stage_dir.name:
+        if not _stage_dir_matches(stage_dir, node_id):
             continue
         for name in ("stdout.log", "output.log", "response.md"):
             path = stage_dir / name
@@ -312,7 +320,7 @@ def find_stage_status(run_dir: Path, node_id: str) -> dict | None:
             candidates.extend(path for path in root.iterdir() if path.is_dir())
 
     for stage_dir in sorted(candidates, key=_stage_sort_key, reverse=True):
-        if node_id not in stage_dir.name:
+        if not _stage_dir_matches(stage_dir, node_id):
             continue
         path = stage_dir / "status.json"
         if not path.exists():
@@ -367,6 +375,35 @@ def find_review_record(run_dir: Path) -> dict | None:
     return {key: value for key, value in status.items() if value is not None}
 
 
+def find_test_evidence_gate_record(run_dir: Path) -> dict | None:
+    """Parse the latest test evidence gate JSON object printed by the gate stage."""
+    output = find_stage_output(run_dir, "test_evidence_gate")
+    if not output:
+        return None
+    value = _last_json_object(output)
+    if isinstance(value, dict) and "status" in value:
+        return value
+    return None
+
+
+def find_json_stage_record(run_dir: Path, node_id: str) -> dict | None:
+    """Parse the latest JSON object printed by a named stage."""
+    output = find_stage_output(run_dir, node_id)
+    if not output:
+        return None
+    value = _last_json_object(output)
+    if isinstance(value, dict):
+        return value
+    return None
+
+
+def find_acceptance_audit_record(run_dir: Path) -> dict | None:
+    value = find_json_stage_record(run_dir, "acceptance_audit")
+    if isinstance(value, dict) and "status" in value:
+        return value
+    return None
+
+
 def _last_json_object(text: str) -> dict | None:
     for line in reversed(text.splitlines()):
         stripped = line.strip()
@@ -377,6 +414,15 @@ def _last_json_object(text: str) -> dict | None:
         except json.JSONDecodeError:
             continue
         if isinstance(value, dict):
+            return value
+    decoder = json.JSONDecoder()
+    for index in reversed([idx for idx, char in enumerate(text) if char == "{"]):
+        try:
+            value, end = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        tail = text[index + end :].strip()
+        if isinstance(value, dict) and (not tail or tail.startswith("```")):
             return value
     return None
 
@@ -389,6 +435,13 @@ def _stage_sort_key(path: Path) -> tuple[int, int, str]:
     if match:
         return 0, int(match.group(1)), path.name
     return 0, 0, path.name
+
+
+def _stage_dir_matches(path: Path, node_id: str) -> bool:
+    name = path.name
+    if name == node_id or name.startswith(f"{node_id}@"):
+        return True
+    return bool(re.match(rf"^\d+-{re.escape(node_id)}@", name))
 
 
 def parse_run_ref(stdout: str, stderr: str) -> tuple[str | None, Path | None]:
@@ -565,6 +618,12 @@ def run_instance(
         "events_path": None,
         "trajectory_path": None,
         "verify": None,
+        "audit": None,
+        "test_evidence_gate": None,
+        "adversarial_review": None,
+        "moderator_filter": None,
+        "acceptance_audit": None,
+        "review_ledger": None,
         "artifacts": {},
     }
 
@@ -632,7 +691,7 @@ def run_instance(
             result["status"] = "completed"
 
         verify = None
-        if workflow_profile == STRUCTURED_PROFILE:
+        if workflow_profile in STRUCTURED_WORKFLOW_PROFILES:
             verify = find_verify_record(fabro_run_dir) if fabro_run_dir else None
             if not verify and dumped:
                 verify = find_verify_record(dumped)
@@ -641,6 +700,52 @@ def run_instance(
             if not audit and dumped:
                 audit = find_audit_record(dumped)
             result["audit"] = audit
+            if workflow_profile in GATED_WORKFLOW_PROFILES:
+                test_evidence_gate = (
+                    find_test_evidence_gate_record(fabro_run_dir)
+                    if fabro_run_dir
+                    else None
+                )
+                if not test_evidence_gate and dumped:
+                    test_evidence_gate = find_test_evidence_gate_record(dumped)
+                result["test_evidence_gate"] = test_evidence_gate
+            if workflow_profile == STRUCTURED_MODERATED_PROFILE:
+                adversarial_review = (
+                    find_json_stage_record(fabro_run_dir, "adversarial_review")
+                    if fabro_run_dir
+                    else None
+                )
+                if not adversarial_review and dumped:
+                    adversarial_review = find_json_stage_record(
+                        dumped,
+                        "adversarial_review",
+                    )
+                result["adversarial_review"] = adversarial_review
+
+                moderator_filter = (
+                    find_json_stage_record(fabro_run_dir, "moderator_filter")
+                    if fabro_run_dir
+                    else None
+                )
+                if not moderator_filter and dumped:
+                    moderator_filter = find_json_stage_record(
+                        dumped,
+                        "moderator_filter",
+                    )
+                result["moderator_filter"] = moderator_filter
+
+                acceptance_audit = (
+                    find_acceptance_audit_record(fabro_run_dir)
+                    if fabro_run_dir
+                    else None
+                )
+                if not acceptance_audit and dumped:
+                    acceptance_audit = find_acceptance_audit_record(dumped)
+                result["acceptance_audit"] = acceptance_audit
+                if isinstance(acceptance_audit, dict):
+                    ledger = acceptance_audit.get("review_ledger")
+                    if isinstance(ledger, dict):
+                        result["review_ledger"] = ledger
             review = find_review_record(fabro_run_dir) if fabro_run_dir else None
             if not review and dumped:
                 review = find_review_record(dumped)
@@ -653,15 +758,39 @@ def run_instance(
         if patch and patch.strip():
             result["model_patch"] = patch
             if (
-                workflow_profile == STRUCTURED_PROFILE
+                workflow_profile in STRUCTURED_WORKFLOW_PROFILES
                 and verify
                 and verify.get("status") not in {"passed", "skipped"}
             ):
                 result["status"] = "verify_failed"
                 result["error"] = verify.get("failure_reason") or "Verify failed"
+            elif (
+                workflow_profile in GATED_WORKFLOW_PROFILES
+                and result.get("test_evidence_gate")
+                and result["test_evidence_gate"].get("status") != "passed"
+            ):
+                result["status"] = "failed"
+                result["error"] = (
+                    result["test_evidence_gate"].get("failure_reason")
+                    or "Test evidence gate failed"
+                )
+            elif (
+                workflow_profile == STRUCTURED_MODERATED_PROFILE
+                and result.get("acceptance_audit")
+                and result["acceptance_audit"].get("status") != "passed"
+            ):
+                result["status"] = "failed"
+                result["error"] = (
+                    result["acceptance_audit"].get("failure_reason")
+                    or "Moderated review blocked export"
+                )
             elif proc.returncode == 0:
                 result["status"] = "completed"
-        elif workflow_profile == STRUCTURED_PROFILE and verify and verify.get("status") != "passed":
+        elif (
+            workflow_profile in STRUCTURED_WORKFLOW_PROFILES
+            and verify
+            and verify.get("status") != "passed"
+        ):
             result["status"] = "verify_failed"
             result["error"] = verify.get("failure_reason") or "Verify failed"
         elif result["status"] == "completed":
@@ -850,11 +979,18 @@ def main():
     )
     parser.add_argument(
         "--workflow-profile",
-        choices=[SIMPLE_PROFILE, STRUCTURED_PROFILE],
+        choices=[
+            SIMPLE_PROFILE,
+            STRUCTURED_PROFILE,
+            STRUCTURED_GATED_PROFILE,
+            STRUCTURED_MODERATED_PROFILE,
+        ],
         default=SIMPLE_PROFILE,
         help=(
             "Workflow profile to run. simple preserves setup->solve->extract_patch; "
-            "structured runs research->implement->verify with one fixup loop."
+            "structured runs research->implement->verify with one fixup loop; "
+            "structured-gated adds a deterministic test-evidence gate before review; "
+            "structured-moderated adds adversarial/moderated review and a readiness audit."
         ),
     )
     parser.add_argument(

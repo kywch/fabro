@@ -239,6 +239,24 @@ class AttemptArtifactsTest(unittest.TestCase):
             "test_files_changed": ["tests/test_a.py"],
             "diff_stat": ["a.py | 1 +"],
         }
+        test_evidence_gate = {
+            "schema_version": 1,
+            "status": "passed",
+            "mode": "test-evidence",
+            "failure_reason": None,
+            "observed": {
+                "changed_files": ["a.py", "tests/test_a.py"],
+                "test_files_changed": ["tests/test_a.py"],
+            },
+            "claims": {"claimed_tests_raw": ["tests/test_a.py"]},
+            "derived": {"claimed_test_paths_normalized": ["tests/test_a.py"]},
+            "judgment": {
+                "hard_failures": [],
+                "warnings": [],
+                "route_decision": "review",
+                "fixup_guidance": None,
+            },
+        }
 
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
@@ -263,6 +281,7 @@ class AttemptArtifactsTest(unittest.TestCase):
                 "trajectory_path": str(trajectory),
                 "verify": verify,
                 "audit": audit,
+                "test_evidence_gate": test_evidence_gate,
                 "review": {
                     "status": "failed",
                     "outcome": "failed",
@@ -293,11 +312,19 @@ class AttemptArtifactsTest(unittest.TestCase):
                 "configs/django__django-11099/audit.json",
             )
             self.assertEqual(
+                artifacts["test_evidence_gate"],
+                "configs/django__django-11099/test_evidence_gate.json",
+            )
+            self.assertEqual(
                 (config_dir / "trajectory.jsonl").read_text(),
                 trajectory.read_text(),
             )
             self.assertEqual(json.loads((config_dir / "verify.json").read_text()), verify)
             self.assertEqual(json.loads((config_dir / "audit.json").read_text()), audit)
+            self.assertEqual(
+                json.loads((config_dir / "test_evidence_gate.json").read_text()),
+                test_evidence_gate,
+            )
 
             attempt = json.loads((config_dir / "attempt.json").read_text())
             self.assertEqual(attempt["phases"]["verify"]["status"], "completed")
@@ -307,6 +334,24 @@ class AttemptArtifactsTest(unittest.TestCase):
             self.assertEqual(
                 attempt["phases"]["audit"]["test_files_changed"],
                 ["tests/test_a.py"],
+            )
+            self.assertEqual(
+                attempt["phases"]["test_evidence_gate"]["status"],
+                "completed",
+            )
+            self.assertEqual(
+                attempt["phases"]["test_evidence_gate"]["artifact_path"],
+                "test_evidence_gate.json",
+            )
+            self.assertEqual(
+                attempt["phases"]["test_evidence_gate"][
+                    "claimed_test_paths_normalized"
+                ],
+                ["tests/test_a.py"],
+            )
+            self.assertEqual(
+                attempt["phases"]["test_evidence_gate"]["route_decision"],
+                "review",
             )
             self.assertEqual(attempt["phases"]["review"]["status"], "failed")
             self.assertEqual(attempt["phases"]["review"]["failure_class"], "test_blocking")
@@ -338,7 +383,146 @@ class AttemptArtifactsTest(unittest.TestCase):
             self.assertEqual(run["exports"]["trajectory"], "output/trajectory.jsonl")
             self.assertEqual(run["phases"]["verify"]["status"], "completed")
             self.assertEqual(run["phases"]["audit"]["artifact_path"], "output/audit.json")
+            self.assertEqual(
+                run["phases"]["test_evidence_gate"]["artifact_path"],
+                "output/test_evidence_gate.json",
+            )
             self.assertEqual(run["phases"]["review"]["preferred_next_label"], "Fix")
+
+    def test_promotes_moderated_review_artifacts_and_readiness_tier(self):
+        instance = {
+            "instance_id": "django__django-11099",
+            "repo": "django/django",
+            "version": "3.0",
+            "base_commit": "abc123",
+        }
+        result = {
+            "instance_id": "django__django-11099",
+            "model_name_or_path": "gpt-5.4-mini",
+            "model_patch": "diff --git a/a.py b/a.py\n",
+            "status": "failed",
+            "error": "missing regression test",
+            "duration_s": 12.3,
+            "adversarial_review": {
+                "schema_version": 1,
+                "stage": "adversarial_review",
+                "summary": "Possible test gap.",
+                "rows": [{"id": "A1", "category": "tests"}],
+                "overall_risk": "medium",
+            },
+            "moderator_filter": {
+                "schema_version": 1,
+                "stage": "moderator_filter",
+                "dispositions": [
+                    {
+                        "id": "A1",
+                        "disposition": "confirmed",
+                        "routing_effect": "fix_tests",
+                    },
+                ],
+                "readiness_tier": "needs_fix_tests",
+                "do_not_repeat": ["Do not claim tests without changed test files."],
+                "next_agent_guidance": "Add a regression test for the changed behavior.",
+            },
+            "acceptance_audit": {
+                "schema_version": 1,
+                "status": "failed",
+                "mode": "moderated-review",
+                "readiness_tier": "needs_fix_tests",
+                "failure_reason": "missing regression test",
+                "route_decision": "fixup",
+                "do_not_repeat": ["Do not claim tests without changed test files."],
+                "next_agent_guidance": "Add a regression test for the changed behavior.",
+            },
+            "review_ledger": {
+                "schema_version": 1,
+                "stage": "review_ledger",
+                "status": "failed",
+                "readiness_tier": "needs_fix_tests",
+                "route_decision": "fixup",
+                "adversarial_row_count": 1,
+                "moderator_disposition_count": 1,
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            config_dir = output_dir / "configs" / instance["instance_id"]
+            config_dir.mkdir(parents=True)
+            (config_dir / "goal.txt").write_text("fix it")
+
+            artifacts = write_attempt_sidecars(
+                instance=instance,
+                result=result,
+                output_dir=output_dir,
+                config_dir=config_dir,
+                sandbox_provider="docker",
+            )
+
+            self.assertEqual(
+                artifacts["adversarial_review"],
+                "configs/django__django-11099/adversarial_review.json",
+            )
+            self.assertEqual(
+                artifacts["moderator_filter"],
+                "configs/django__django-11099/moderator_filter.json",
+            )
+            self.assertEqual(
+                artifacts["acceptance_audit"],
+                "configs/django__django-11099/acceptance_audit.json",
+            )
+            self.assertEqual(
+                artifacts["review_ledger"],
+                "configs/django__django-11099/review_ledger.json",
+            )
+            attempt = json.loads((config_dir / "attempt.json").read_text())
+            self.assertEqual(
+                attempt["phases"]["adversarial_review"]["row_count"],
+                1,
+            )
+            self.assertEqual(
+                attempt["phases"]["moderator_filter"]["readiness_tier"],
+                "needs_fix_tests",
+            )
+            self.assertEqual(
+                attempt["phases"]["acceptance_audit"]["status"],
+                "failed",
+            )
+            self.assertEqual(
+                attempt["phases"]["review_ledger"]["artifact_path"],
+                "review_ledger.json",
+            )
+            self.assertEqual(attempt["candidate"]["state"], "failed_with_patch")
+            self.assertEqual(attempt["candidate"]["readiness_tier"], "needs_fix_tests")
+            self.assertEqual(
+                attempt["candidate"]["do_not_repeat"],
+                ["Do not claim tests without changed test files."],
+            )
+            prediction = json.loads((config_dir / "prediction.json").read_text())
+            self.assertEqual(prediction["model_patch"], "")
+
+            run_id = run_id_for_task(instance["instance_id"])
+            run_artifacts = write_run_bundle(
+                instance=instance,
+                result=result,
+                output_dir=output_dir,
+                config_dir=config_dir,
+                sandbox_provider="docker",
+                run_id=run_id,
+            )
+            self.assertEqual(
+                run_artifacts["review_ledger"],
+                "runs/django__django-11099--001/output/review_ledger.json",
+            )
+            run = json.loads((output_dir / "runs" / run_id / "run.json").read_text())
+            self.assertEqual(
+                run["candidate"]["readiness_tier"],
+                "needs_fix_tests",
+            )
+            self.assertEqual(
+                run["phases"]["acceptance_audit"]["route_decision"],
+                "fixup",
+            )
 
     def test_verify_failed_with_patch_is_not_completed(self):
         instance = {

@@ -29,6 +29,8 @@ from fabro_kits.issue_to_pr.artifacts import (
 )
 from fabro_kits.issue_to_pr.workflow_generator import (
     SIMPLE_PROFILE,
+    STRUCTURED_GATED_PROFILE,
+    STRUCTURED_MODERATED_PROFILE,
     STRUCTURED_PROFILE,
     VERIFY_DIFF_CHECK,
     VERIFY_NONE,
@@ -37,6 +39,13 @@ from fabro_kits.issue_to_pr.workflow_generator import (
     generate_issue_to_pr_workflow,
     validate_generated_workflow,
 )
+
+STRUCTURED_WORKFLOW_PROFILES = {
+    STRUCTURED_PROFILE,
+    STRUCTURED_GATED_PROFILE,
+    STRUCTURED_MODERATED_PROFILE,
+}
+GATED_WORKFLOW_PROFILES = {STRUCTURED_GATED_PROFILE, STRUCTURED_MODERATED_PROFILE}
 
 
 def shell_quote(text: str) -> str:
@@ -182,7 +191,7 @@ def find_stage_output(run_dir: Path, node_id: str) -> str | None:
         if root.exists():
             candidates.extend(path for path in root.iterdir() if path.is_dir())
     for stage_dir in sorted(candidates, key=_stage_sort_key, reverse=True):
-        if node_id not in stage_dir.name:
+        if not _stage_dir_matches(stage_dir, node_id):
             continue
         for name in ("stdout.log", "output.log", "response.md"):
             path = stage_dir / name
@@ -205,7 +214,7 @@ def find_stage_status(run_dir: Path, node_id: str) -> dict | None:
         if root.exists():
             candidates.extend(path for path in root.iterdir() if path.is_dir())
     for stage_dir in sorted(candidates, key=_stage_sort_key, reverse=True):
-        if node_id not in stage_dir.name:
+        if not _stage_dir_matches(stage_dir, node_id):
             continue
         path = stage_dir / "status.json"
         if not path.exists():
@@ -257,6 +266,33 @@ def find_review_record(run_dir: Path) -> dict | None:
     return {key: value for key, value in status.items() if value is not None}
 
 
+def find_test_evidence_gate_record(run_dir: Path) -> dict | None:
+    output = find_stage_output(run_dir, "test_evidence_gate")
+    if not output:
+        return None
+    value = _last_json_object(output)
+    if isinstance(value, dict) and "status" in value:
+        return value
+    return None
+
+
+def find_json_stage_record(run_dir: Path, node_id: str) -> dict | None:
+    output = find_stage_output(run_dir, node_id)
+    if not output:
+        return None
+    value = _last_json_object(output)
+    if isinstance(value, dict):
+        return value
+    return None
+
+
+def find_acceptance_audit_record(run_dir: Path) -> dict | None:
+    value = find_json_stage_record(run_dir, "acceptance_audit")
+    if isinstance(value, dict) and "status" in value:
+        return value
+    return None
+
+
 def _last_json_object(text: str) -> dict | None:
     for line in reversed(text.splitlines()):
         stripped = line.strip()
@@ -267,6 +303,15 @@ def _last_json_object(text: str) -> dict | None:
         except json.JSONDecodeError:
             continue
         if isinstance(value, dict):
+            return value
+    decoder = json.JSONDecoder()
+    for index in reversed([idx for idx, char in enumerate(text) if char == "{"]):
+        try:
+            value, end = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        tail = text[index + end :].strip()
+        if isinstance(value, dict) and (not tail or tail.startswith("```")):
             return value
     return None
 
@@ -281,6 +326,15 @@ def _stage_sort_key(path: Path) -> tuple[int, int, str]:
     if match:
         return 0, int(match.group(1)), path.name
     return 0, 0, path.name
+
+
+def _stage_dir_matches(path: Path, node_id: str) -> bool:
+    import re
+
+    name = path.name
+    if name == node_id or name.startswith(f"{node_id}@"):
+        return True
+    return bool(re.match(rf"^\d+-{re.escape(node_id)}@", name))
 
 
 TRAJECTORY_EVENTS = {
@@ -383,7 +437,12 @@ def main() -> int:
     parser.add_argument("--mode", choices=["patch-only", "issue-to-pr"], default="patch-only")
     parser.add_argument(
         "--workflow-profile",
-        choices=[SIMPLE_PROFILE, STRUCTURED_PROFILE],
+        choices=[
+            SIMPLE_PROFILE,
+            STRUCTURED_PROFILE,
+            STRUCTURED_GATED_PROFILE,
+            STRUCTURED_MODERATED_PROFILE,
+        ],
         default=SIMPLE_PROFILE,
     )
     parser.add_argument(
@@ -453,17 +512,52 @@ def main() -> int:
     dumped = dump_run(args.fabro_bin, fabro_run_id, config_dir) if fabro_run_id else None
     trajectory_path = write_trajectory_from_events(dumped) if dumped else None
     verify = None
-    if args.workflow_profile == STRUCTURED_PROFILE:
+    if args.workflow_profile in STRUCTURED_WORKFLOW_PROFILES:
         verify = find_verify_record(fabro_run_dir) if fabro_run_dir else None
         if not verify and dumped:
             verify = find_verify_record(dumped)
     audit = None
-    if args.workflow_profile == STRUCTURED_PROFILE:
+    if args.workflow_profile in STRUCTURED_WORKFLOW_PROFILES:
         audit = find_audit_record(fabro_run_dir) if fabro_run_dir else None
         if not audit and dumped:
             audit = find_audit_record(dumped)
+    test_evidence_gate = None
+    if args.workflow_profile in GATED_WORKFLOW_PROFILES:
+        test_evidence_gate = (
+            find_test_evidence_gate_record(fabro_run_dir) if fabro_run_dir else None
+        )
+        if not test_evidence_gate and dumped:
+            test_evidence_gate = find_test_evidence_gate_record(dumped)
+    adversarial_review = None
+    moderator_filter = None
+    acceptance_audit = None
+    review_ledger = None
+    if args.workflow_profile == STRUCTURED_MODERATED_PROFILE:
+        adversarial_review = (
+            find_json_stage_record(fabro_run_dir, "adversarial_review")
+            if fabro_run_dir
+            else None
+        )
+        if not adversarial_review and dumped:
+            adversarial_review = find_json_stage_record(dumped, "adversarial_review")
+        moderator_filter = (
+            find_json_stage_record(fabro_run_dir, "moderator_filter")
+            if fabro_run_dir
+            else None
+        )
+        if not moderator_filter and dumped:
+            moderator_filter = find_json_stage_record(dumped, "moderator_filter")
+        acceptance_audit = (
+            find_acceptance_audit_record(fabro_run_dir) if fabro_run_dir else None
+        )
+        if not acceptance_audit and dumped:
+            acceptance_audit = find_acceptance_audit_record(dumped)
+        if isinstance(acceptance_audit, dict):
+            ledger = acceptance_audit.get("review_ledger")
+            if isinstance(ledger, dict):
+                review_ledger = ledger
     review = None
-    if args.workflow_profile == STRUCTURED_PROFILE:
+    if args.workflow_profile in STRUCTURED_WORKFLOW_PROFILES:
         review = find_review_record(fabro_run_dir) if fabro_run_dir else None
         if not review and dumped:
             review = find_review_record(dumped)
@@ -474,12 +568,29 @@ def main() -> int:
     status = "completed" if proc.returncode == 0 else "failed"
     error = None if proc.returncode == 0 else f"fabro exited with code {proc.returncode}"
     if (
-        args.workflow_profile == STRUCTURED_PROFILE
+        args.workflow_profile in STRUCTURED_WORKFLOW_PROFILES
         and verify
         and verify.get("status") not in {"passed", "skipped"}
     ):
         status = "verify_failed"
         error = verify.get("failure_reason") or "Verify failed"
+    elif (
+        args.workflow_profile in GATED_WORKFLOW_PROFILES
+        and test_evidence_gate
+        and test_evidence_gate.get("status") != "passed"
+    ):
+        status = "failed"
+        error = test_evidence_gate.get("failure_reason") or "Test evidence gate failed"
+    elif (
+        args.workflow_profile == STRUCTURED_MODERATED_PROFILE
+        and acceptance_audit
+        and acceptance_audit.get("status") != "passed"
+    ):
+        status = "failed"
+        error = (
+            acceptance_audit.get("failure_reason")
+            or "Moderated review blocked export"
+        )
     elif status == "completed" and not (patch or "").strip():
         status = "no_patch"
         error = "No patch produced"
@@ -498,6 +609,11 @@ def main() -> int:
         "trajectory_path": str(trajectory_path) if trajectory_path else None,
         "verify": verify,
         "audit": audit,
+        "test_evidence_gate": test_evidence_gate,
+        "adversarial_review": adversarial_review,
+        "moderator_filter": moderator_filter,
+        "acceptance_audit": acceptance_audit,
+        "review_ledger": review_ledger,
         "review": review,
     }
 

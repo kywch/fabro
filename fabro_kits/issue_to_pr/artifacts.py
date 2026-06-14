@@ -18,6 +18,21 @@ SCHEMA_VERSION = 1
 LAYOUT = "swebench-v1-compat"
 RUNS_LAYOUT = "issue-to-pr-runs-v1"
 DEFAULT_ATTEMPT_ID = "001"
+REVIEW_ARTIFACT_NAMES = (
+    "adversarial_review",
+    "moderator_filter",
+    "acceptance_audit",
+    "review_ledger",
+)
+READY_TIERS = {
+    "ready_verified",
+    "ready_unverified",
+    "needs_fix_code",
+    "needs_fix_tests",
+    "metadata_only_warning",
+    "process_failed",
+}
+BLOCKING_READY_TIERS = {"needs_fix_code", "needs_fix_tests", "process_failed"}
 
 
 def build_prediction_record(result: dict[str, Any]) -> dict[str, Any]:
@@ -89,6 +104,11 @@ def build_attempt_record(
     prediction_path = config_dir / "prediction.json"
     verify_path = config_dir / "verify.json"
     audit_path = config_dir / "audit.json"
+    test_evidence_gate_path = config_dir / "test_evidence_gate.json"
+    adversarial_review_path = config_dir / "adversarial_review.json"
+    moderator_filter_path = config_dir / "moderator_filter.json"
+    acceptance_audit_path = config_dir / "acceptance_audit.json"
+    review_ledger_path = config_dir / "review_ledger.json"
     exported_trajectory_path = config_dir / "trajectory.jsonl"
     dump_path = _optional_path(result.get("fabro_dump_dir"))
     run_dir = _optional_path(result.get("fabro_run_dir"))
@@ -114,6 +134,33 @@ def build_attempt_record(
             },
             "verify": _verify_phase(result, verify_path, config_dir),
             "audit": _audit_phase(result, audit_path, config_dir),
+            "test_evidence_gate": _test_evidence_gate_phase(
+                result,
+                test_evidence_gate_path,
+                config_dir,
+            ),
+            "adversarial_review": _generic_review_phase(
+                result,
+                "adversarial_review",
+                adversarial_review_path,
+                config_dir,
+            ),
+            "moderator_filter": _generic_review_phase(
+                result,
+                "moderator_filter",
+                moderator_filter_path,
+                config_dir,
+            ),
+            "acceptance_audit": _acceptance_audit_phase(
+                result,
+                acceptance_audit_path,
+                config_dir,
+            ),
+            "review_ledger": _review_ledger_phase(
+                result,
+                review_ledger_path,
+                config_dir,
+            ),
             "review": _review_phase(result),
             "publish": {"status": "not_run"},
             "grade": {"status": "not_run"},
@@ -151,6 +198,11 @@ def write_attempt_sidecars(
     prediction_path = config_dir / "prediction.json"
     verify_path = config_dir / "verify.json"
     audit_path = config_dir / "audit.json"
+    test_evidence_gate_path = config_dir / "test_evidence_gate.json"
+    adversarial_review_path = config_dir / "adversarial_review.json"
+    moderator_filter_path = config_dir / "moderator_filter.json"
+    acceptance_audit_path = config_dir / "acceptance_audit.json"
+    review_ledger_path = config_dir / "review_ledger.json"
     trajectory_export_path = config_dir / "trajectory.jsonl"
     task_path = config_dir / "task.json"
     attempt_path = config_dir / "attempt.json"
@@ -158,6 +210,11 @@ def write_attempt_sidecars(
     patch_path.write_text(result.get("model_patch", ""))
     _write_verify_artifact(verify_path, result)
     _write_audit_artifact(audit_path, result)
+    _write_test_evidence_gate_artifact(test_evidence_gate_path, result)
+    _write_named_json_artifact(adversarial_review_path, result, "adversarial_review")
+    _write_named_json_artifact(moderator_filter_path, result, "moderator_filter")
+    _write_named_json_artifact(acceptance_audit_path, result, "acceptance_audit")
+    _write_named_json_artifact(review_ledger_path, result, "review_ledger")
     _copy_optional(result.get("trajectory_path"), trajectory_export_path)
     _write_json_atomic(
         task_path,
@@ -182,6 +239,11 @@ def write_attempt_sidecars(
         "prediction": _relative_to(prediction_path, output_dir),
         **_maybe_artifact("verify", verify_path, output_dir),
         **_maybe_artifact("audit", audit_path, output_dir),
+        **_maybe_artifact("test_evidence_gate", test_evidence_gate_path, output_dir),
+        **_maybe_artifact("adversarial_review", adversarial_review_path, output_dir),
+        **_maybe_artifact("moderator_filter", moderator_filter_path, output_dir),
+        **_maybe_artifact("acceptance_audit", acceptance_audit_path, output_dir),
+        **_maybe_artifact("review_ledger", review_ledger_path, output_dir),
         **_maybe_artifact("trajectory", trajectory_export_path, output_dir),
     }
 
@@ -199,6 +261,11 @@ def build_run_record(
     prediction_path = run_dir / "output" / "prediction.json"
     verify_path = run_dir / "output" / "verify.json"
     audit_path = run_dir / "output" / "audit.json"
+    test_evidence_gate_path = run_dir / "output" / "test_evidence_gate.json"
+    adversarial_review_path = run_dir / "output" / "adversarial_review.json"
+    moderator_filter_path = run_dir / "output" / "moderator_filter.json"
+    acceptance_audit_path = run_dir / "output" / "acceptance_audit.json"
+    review_ledger_path = run_dir / "output" / "review_ledger.json"
     exported_trajectory_path = run_dir / "output" / "trajectory.jsonl"
     dump_path = run_dir / "fabro" / "dump"
     events_path = dump_path / "events.jsonl"
@@ -229,6 +296,33 @@ def build_run_record(
             },
             "verify": _verify_phase(result, verify_path, run_dir),
             "audit": _audit_phase(result, audit_path, run_dir),
+            "test_evidence_gate": _test_evidence_gate_phase(
+                result,
+                test_evidence_gate_path,
+                run_dir,
+            ),
+            "adversarial_review": _generic_review_phase(
+                result,
+                "adversarial_review",
+                adversarial_review_path,
+                run_dir,
+            ),
+            "moderator_filter": _generic_review_phase(
+                result,
+                "moderator_filter",
+                moderator_filter_path,
+                run_dir,
+            ),
+            "acceptance_audit": _acceptance_audit_phase(
+                result,
+                acceptance_audit_path,
+                run_dir,
+            ),
+            "review_ledger": _review_ledger_phase(
+                result,
+                review_ledger_path,
+                run_dir,
+            ),
             "review": _review_phase(result),
             "publish": {"status": "not_run"},
             "grade": {"status": "not_run"},
@@ -298,6 +392,16 @@ def write_run_bundle(
     _write_verify_artifact(verify_path, result)
     audit_path = output_out_dir / "audit.json"
     _write_audit_artifact(audit_path, result)
+    test_evidence_gate_path = output_out_dir / "test_evidence_gate.json"
+    _write_test_evidence_gate_artifact(test_evidence_gate_path, result)
+    adversarial_review_path = output_out_dir / "adversarial_review.json"
+    _write_named_json_artifact(adversarial_review_path, result, "adversarial_review")
+    moderator_filter_path = output_out_dir / "moderator_filter.json"
+    _write_named_json_artifact(moderator_filter_path, result, "moderator_filter")
+    acceptance_audit_path = output_out_dir / "acceptance_audit.json"
+    _write_named_json_artifact(acceptance_audit_path, result, "acceptance_audit")
+    review_ledger_path = output_out_dir / "review_ledger.json"
+    _write_named_json_artifact(review_ledger_path, result, "review_ledger")
     trajectory_export_path = output_out_dir / "trajectory.jsonl"
     _copy_optional(result.get("trajectory_path"), trajectory_export_path)
 
@@ -322,6 +426,11 @@ def write_run_bundle(
         "prediction": _relative_to(prediction_path, output_dir),
         **_maybe_artifact("verify", verify_path, output_dir),
         **_maybe_artifact("audit", audit_path, output_dir),
+        **_maybe_artifact("test_evidence_gate", test_evidence_gate_path, output_dir),
+        **_maybe_artifact("adversarial_review", adversarial_review_path, output_dir),
+        **_maybe_artifact("moderator_filter", moderator_filter_path, output_dir),
+        **_maybe_artifact("acceptance_audit", acceptance_audit_path, output_dir),
+        **_maybe_artifact("review_ledger", review_ledger_path, output_dir),
         **_maybe_artifact("trajectory", trajectory_export_path, output_dir),
         "fabro_dump": _relative_to(dump_out_dir, output_dir) if dump_out_dir.exists() else "",
     }
@@ -486,6 +595,136 @@ def _audit_phase(result: dict[str, Any], audit_path: Path, base: Path) -> dict[s
     return {key: value for key, value in phase.items() if value is not None}
 
 
+def _test_evidence_gate_phase(
+    result: dict[str, Any],
+    gate_path: Path,
+    base: Path,
+) -> dict[str, Any]:
+    gate = result.get("test_evidence_gate")
+    if not isinstance(gate, dict):
+        return {"status": "not_run"}
+
+    raw_status = gate.get("status")
+    if raw_status == "passed":
+        status = "completed"
+    elif raw_status in {"failed", "error"}:
+        status = "failed"
+    else:
+        status = raw_status or "failed"
+
+    judgment = gate.get("judgment") if isinstance(gate.get("judgment"), dict) else {}
+    claims = gate.get("claims") if isinstance(gate.get("claims"), dict) else {}
+    derived = gate.get("derived") if isinstance(gate.get("derived"), dict) else {}
+    observed = gate.get("observed") if isinstance(gate.get("observed"), dict) else {}
+
+    phase = {
+        "status": status,
+        "mode": gate.get("mode"),
+        "failure_reason": gate.get("failure_reason"),
+        "hard_failures": judgment.get("hard_failures") or gate.get("contradictions"),
+        "warnings": judgment.get("warnings") or gate.get("warnings"),
+        "route_decision": judgment.get("route_decision"),
+        "fixup_guidance": judgment.get("fixup_guidance"),
+        "claimed_tests_raw": claims.get("claimed_tests_raw"),
+        "claimed_test_paths_normalized": derived.get("claimed_test_paths_normalized")
+        or gate.get("claimed_tests"),
+        "test_files_changed": observed.get("test_files_changed")
+        or gate.get("test_files_changed"),
+    }
+    if gate_path.exists():
+        phase["artifact_path"] = _relative_to(gate_path, base)
+    return {key: value for key, value in phase.items() if value is not None}
+
+
+def _generic_review_phase(
+    result: dict[str, Any],
+    key: str,
+    path: Path,
+    base: Path,
+) -> dict[str, Any]:
+    artifact = result.get(key)
+    if not isinstance(artifact, dict):
+        return {"status": "not_run"}
+
+    phase = {
+        "status": "completed",
+        "stage": artifact.get("stage"),
+        "summary": artifact.get("summary"),
+        "readiness_tier": artifact.get("readiness_tier"),
+        "overall_risk": artifact.get("overall_risk"),
+    }
+    rows = artifact.get("rows")
+    if isinstance(rows, list):
+        phase["row_count"] = len(rows)
+    dispositions = artifact.get("dispositions")
+    if isinstance(dispositions, list):
+        phase["disposition_count"] = len(dispositions)
+    if path.exists():
+        phase["artifact_path"] = _relative_to(path, base)
+    return {key: value for key, value in phase.items() if value is not None}
+
+
+def _acceptance_audit_phase(
+    result: dict[str, Any],
+    path: Path,
+    base: Path,
+) -> dict[str, Any]:
+    audit = result.get("acceptance_audit")
+    if not isinstance(audit, dict):
+        return {"status": "not_run"}
+
+    raw_status = audit.get("status")
+    if raw_status == "passed":
+        status = "completed"
+    elif raw_status in {"failed", "error"}:
+        status = "failed"
+    else:
+        status = raw_status or "failed"
+    phase = {
+        "status": status,
+        "mode": audit.get("mode"),
+        "readiness_tier": audit.get("readiness_tier"),
+        "failure_reason": audit.get("failure_reason"),
+        "route_decision": audit.get("route_decision"),
+        "confirmed_rows": audit.get("confirmed_rows"),
+        "blocking_rows": audit.get("blocking_rows"),
+        "do_not_repeat": audit.get("do_not_repeat"),
+        "next_agent_guidance": audit.get("next_agent_guidance"),
+    }
+    if path.exists():
+        phase["artifact_path"] = _relative_to(path, base)
+    return {key: value for key, value in phase.items() if value is not None}
+
+
+def _review_ledger_phase(
+    result: dict[str, Any],
+    path: Path,
+    base: Path,
+) -> dict[str, Any]:
+    ledger = result.get("review_ledger")
+    if not isinstance(ledger, dict):
+        return {"status": "not_run"}
+
+    raw_status = ledger.get("status")
+    if raw_status == "passed":
+        status = "completed"
+    elif raw_status in {"failed", "error"}:
+        status = "failed"
+    else:
+        status = raw_status or "completed"
+    phase = {
+        "status": status,
+        "readiness_tier": ledger.get("readiness_tier"),
+        "route_decision": ledger.get("route_decision"),
+        "adversarial_row_count": ledger.get("adversarial_row_count"),
+        "moderator_disposition_count": ledger.get("moderator_disposition_count"),
+        "malformed_artifacts": ledger.get("malformed_artifacts"),
+    }
+    if path.exists():
+        phase["artifact_path"] = _relative_to(path, base)
+    return {key: value for key, value in phase.items() if value is not None}
+
+
 def _review_phase(result: dict[str, Any]) -> dict[str, Any]:
     review = result.get("review")
     if not isinstance(review, dict):
@@ -524,6 +763,21 @@ def build_candidate_record(
     patch_text = result.get("model_patch", "")
     status = result.get("status", "error")
     review = result.get("review") if isinstance(result.get("review"), dict) else {}
+    acceptance_audit = (
+        result.get("acceptance_audit")
+        if isinstance(result.get("acceptance_audit"), dict)
+        else {}
+    )
+    review_ledger = (
+        result.get("review_ledger")
+        if isinstance(result.get("review_ledger"), dict)
+        else {}
+    )
+    gate = (
+        result.get("test_evidence_gate")
+        if isinstance(result.get("test_evidence_gate"), dict)
+        else {}
+    )
     context_updates = review.get("context_updates") if isinstance(review, dict) else None
     if not isinstance(context_updates, dict):
         context_updates = {}
@@ -533,6 +787,14 @@ def build_candidate_record(
             "state": "absent",
             "reuse": "none",
         }
+
+    readiness_tier = (
+        acceptance_audit.get("readiness_tier")
+        or review_ledger.get("readiness_tier")
+        or None
+    )
+    if readiness_tier not in READY_TIERS:
+        readiness_tier = None
 
     if status == "completed":
         state = "ready"
@@ -550,13 +812,24 @@ def build_candidate_record(
         "patch_bytes": len(patch_text),
         "patch_sha256": hashlib.sha256(patch_text.encode()).hexdigest(),
         "warning": warning,
+        "readiness_tier": readiness_tier,
         "failure_class": review.get("failure_class") if isinstance(review, dict) else None,
         "failure_reason": (
             review.get("failure_reason") if isinstance(review, dict) else None
         )
+        or (
+            acceptance_audit.get("failure_reason")
+            if isinstance(acceptance_audit, dict)
+            else None
+        )
+        or (gate.get("failure_reason") if isinstance(gate, dict) else None)
         or result.get("error"),
-        "do_not_repeat": context_updates.get("do_not_repeat"),
-        "next_agent_guidance": context_updates.get("next_agent_guidance"),
+        "do_not_repeat": context_updates.get("do_not_repeat")
+        or acceptance_audit.get("do_not_repeat")
+        or review_ledger.get("do_not_repeat"),
+        "next_agent_guidance": context_updates.get("next_agent_guidance")
+        or acceptance_audit.get("next_agent_guidance")
+        or review_ledger.get("next_agent_guidance"),
     }
     return {key: value for key, value in record.items() if value is not None}
 
@@ -573,6 +846,22 @@ def _write_audit_artifact(path: Path, result: dict[str, Any]) -> None:
     audit = result.get("audit")
     if isinstance(audit, dict):
         _write_json_atomic(path, audit)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _write_test_evidence_gate_artifact(path: Path, result: dict[str, Any]) -> None:
+    gate = result.get("test_evidence_gate")
+    if isinstance(gate, dict):
+        _write_json_atomic(path, gate)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _write_named_json_artifact(path: Path, result: dict[str, Any], key: str) -> None:
+    artifact = result.get(key)
+    if isinstance(artifact, dict):
+        _write_json_atomic(path, artifact)
     else:
         path.unlink(missing_ok=True)
 

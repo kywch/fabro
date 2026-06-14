@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from .evidence_gate import build_embedded_gate_script
+
 
 SIMPLE_PROFILE = "simple"
 STRUCTURED_PROFILE = "structured"
+STRUCTURED_GATED_PROFILE = "structured-gated"
+STRUCTURED_MODERATED_PROFILE = "structured-moderated"
 VERIFY_NONE = "none"
 VERIFY_DIFF_CHECK = "diff-check"
 TEMPLATE_START_MARKERS = ("{{", "{%", "{#")
@@ -12,6 +16,20 @@ STRUCTURED_FIXUP_MAX_VISITS = 3
 STRUCTURED_VERIFY_REVIEW_MAX_VISITS = STRUCTURED_FIXUP_MAX_VISITS + 1
 VALIDATION_CONTRACT_PATH = "/tmp/fabro-validation.json"
 DIFF_AUDIT_PATH = "/tmp/fabro-diff-audit.json"
+TEST_EVIDENCE_GATE_PATH = "/tmp/fabro-test-evidence-gate.json"
+ADVERSARIAL_REVIEW_PATH = "/tmp/fabro-adversarial-review.json"
+MODERATOR_FILTER_PATH = "/tmp/fabro-moderator-filter.json"
+ACCEPTANCE_AUDIT_PATH = "/tmp/fabro-acceptance-audit.json"
+REVIEW_LEDGER_PATH = "/tmp/fabro-review-ledger.json"
+READY_TIERS = (
+    "ready_verified",
+    "ready_unverified",
+    "needs_fix_code",
+    "needs_fix_tests",
+    "metadata_only_warning",
+    "process_failed",
+)
+BLOCKING_READY_TIERS = {"needs_fix_code", "needs_fix_tests", "process_failed"}
 
 
 def dot_escape(text: str) -> str:
@@ -44,14 +62,22 @@ def escape_goal_for_template(text: str) -> str:
 def default_verify_mode(workflow_profile: str, verify_mode: str | None) -> str:
     if verify_mode:
         return verify_mode
-    if workflow_profile == STRUCTURED_PROFILE:
+    if workflow_profile in {
+        STRUCTURED_PROFILE,
+        STRUCTURED_GATED_PROFILE,
+        STRUCTURED_MODERATED_PROFILE,
+    }:
         return VERIFY_DIFF_CHECK
     return VERIFY_NONE
 
 
 def validate_generated_workflow(workflow: str, *, workflow_profile: str) -> None:
     """Validate invariants the eval harness relies on before launching Fabro."""
-    if workflow_profile != STRUCTURED_PROFILE:
+    if workflow_profile not in {
+        STRUCTURED_PROFILE,
+        STRUCTURED_GATED_PROFILE,
+        STRUCTURED_MODERATED_PROFILE,
+    }:
         return
 
     expected_by_node = {
@@ -61,6 +87,24 @@ def validate_generated_workflow(workflow: str, *, workflow_profile: str) -> None
         "review": f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}",
         "fixup": f"max_visits={STRUCTURED_FIXUP_MAX_VISITS}",
     }
+    if workflow_profile == STRUCTURED_GATED_PROFILE:
+        expected_by_node["test_evidence_gate"] = (
+            f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}"
+        )
+    if workflow_profile == STRUCTURED_MODERATED_PROFILE:
+        expected_by_node.pop("review")
+        expected_by_node["test_evidence_gate"] = (
+            f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}"
+        )
+        expected_by_node["adversarial_review"] = (
+            f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}"
+        )
+        expected_by_node["moderator_filter"] = (
+            f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}"
+        )
+        expected_by_node["acceptance_audit"] = (
+            f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}"
+        )
     missing = [
         node_id
         for node_id, expected in expected_by_node.items()
@@ -94,7 +138,28 @@ def generate_issue_to_pr_workflow(
     if workflow_profile == SIMPLE_PROFILE:
         return _simple_workflow(graph_name, setup_script, solve_prompt)
     if workflow_profile == STRUCTURED_PROFILE:
-        return _structured_workflow(graph_name, setup_script, verify_mode)
+        return _structured_workflow(
+            graph_name,
+            setup_script,
+            verify_mode,
+            include_test_evidence_gate=False,
+        )
+    if workflow_profile == STRUCTURED_GATED_PROFILE:
+        return _structured_workflow(
+            graph_name,
+            setup_script,
+            verify_mode,
+            include_test_evidence_gate=True,
+            include_moderated_review=False,
+        )
+    if workflow_profile == STRUCTURED_MODERATED_PROFILE:
+        return _structured_workflow(
+            graph_name,
+            setup_script,
+            verify_mode,
+            include_test_evidence_gate=True,
+            include_moderated_review=True,
+        )
     raise ValueError(f"unsupported workflow profile: {workflow_profile}")
 
 
@@ -111,7 +176,41 @@ def _simple_workflow(graph_name: str, setup_script: str, solve_prompt: str) -> s
 '''
 
 
-def _structured_workflow(graph_name: str, setup_script: str, verify_mode: str) -> str:
+def _structured_workflow(
+    graph_name: str,
+    setup_script: str,
+    verify_mode: str,
+    *,
+    include_test_evidence_gate: bool,
+    include_moderated_review: bool = False,
+) -> str:
+    gate_node = ""
+    review_nodes = f'''    review        [label="Review", goal_gate=true, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, output_schema="routing", prompt="{dot_escape(_review_prompt())}"]
+'''
+    gate_edges = """    snapshot_patch -> audit -> review
+    review -> extract_patch [label="Approve"]
+    review -> fixup        [label="Fix"]"""
+    if include_test_evidence_gate:
+        gate_node = f'''    test_evidence_gate [label="Test Evidence Gate", shape=parallelogram, goal_gate=true, max_retries=0, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="{dot_escape(_test_evidence_gate_script())}"]
+'''
+        gate_edges = """    snapshot_patch -> audit -> test_evidence_gate
+    test_evidence_gate -> review [condition="outcome=succeeded"]
+    test_evidence_gate -> fixup  [condition="outcome=failed"]
+    test_evidence_gate -> fixup  [label="Fallback"]
+    review -> extract_patch [label="Approve"]
+    review -> fixup        [label="Fix"]"""
+    if include_moderated_review:
+        review_nodes = f'''    adversarial_review [label="Adversarial Review", max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, prompt="{dot_escape(_adversarial_review_prompt())}"]
+    moderator_filter   [label="Moderator Filter", max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, prompt="{dot_escape(_moderator_filter_prompt())}"]
+    acceptance_audit   [label="Acceptance Audit", goal_gate=true, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, output_schema="routing", prompt="{dot_escape(_acceptance_audit_prompt())}"]
+'''
+        gate_edges = """    snapshot_patch -> audit -> test_evidence_gate
+    test_evidence_gate -> adversarial_review [condition="outcome=succeeded"]
+    test_evidence_gate -> fixup              [condition="outcome=failed"]
+    test_evidence_gate -> fixup              [label="Fallback"]
+    adversarial_review -> moderator_filter -> acceptance_audit
+    acceptance_audit -> extract_patch [label="Approve"]
+    acceptance_audit -> fixup         [label="Fix"]"""
     return f'''digraph {graph_name} {{
     rankdir=LR
     start [shape=Mdiamond]
@@ -122,17 +221,14 @@ def _structured_workflow(graph_name: str, setup_script: str, verify_mode: str) -
     verify        [label="Verify", shape=parallelogram, goal_gate=true, max_retries=0, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="{dot_escape(_verify_script(verify_mode))}"]
     snapshot_patch [label="Snapshot Patch", shape=parallelogram, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="git diff"]
     audit         [label="Audit Diff", shape=parallelogram, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="{dot_escape(_audit_script())}"]
-    review        [label="Review", goal_gate=true, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, output_schema="routing", prompt="{dot_escape(_review_prompt())}"]
-    fixup         [label="Fixup", max_visits={STRUCTURED_FIXUP_MAX_VISITS}, prompt="{dot_escape(_fixup_prompt())}"]
+{gate_node}{review_nodes}    fixup         [label="Fixup", max_visits={STRUCTURED_FIXUP_MAX_VISITS}, prompt="{dot_escape(_fixup_prompt())}"]
     extract_patch [label="Extract Patch", shape=parallelogram, script="git diff"]
     start -> setup -> research -> implement -> verify
     verify -> snapshot_patch [condition="outcome=succeeded"]
     verify -> fixup        [condition="outcome=failed"]
     verify -> fixup        [label="Fallback"]
-    snapshot_patch -> audit -> review
+{gate_edges}
     fixup -> verify
-    review -> extract_patch [label="Approve"]
-    review -> fixup        [label="Fix"]
     extract_patch -> exit
 }}
 '''
@@ -263,6 +359,199 @@ this routing JSON:
     )
 
 
+def _adversarial_review_prompt() -> str:
+    return """Adversarially review the patch before export.
+
+This is pass 1 of a three-stage review pattern. Your job is discovery, not final
+approval. Be maximally critical and look for plausible failure modes, missing
+tests, overbroad changes, and evidence gaps. You may over-report. A later
+moderator will reject weak or unsupported objections.
+
+Hard contract:
+- Do not ask the user questions.
+- Do not call request_user_input or any interactive clarification tool.
+- Do not modify repository files.
+- Use read-only inspection only: git diff, file reads, searches, and recorded
+  artifacts/logs are allowed.
+- Do not run tests, compilers, formatters, installers, or commands that may write
+  caches or mutate the repository.
+- Machine artifacts outrank agent-authored claims. Treat {DIFF_AUDIT_PATH},
+  {TEST_EVIDENCE_GATE_PATH}, and the current `git diff` as stronger evidence
+  than narrative summaries.
+
+Inspect:
+- the issue goal and /tmp/fabro-research.md if present;
+- {VALIDATION_CONTRACT_PATH};
+- {DIFF_AUDIT_PATH};
+- {TEST_EVIDENCE_GATE_PATH};
+- the current `git diff` and touched source/tests.
+
+Write {ADVERSARIAL_REVIEW_PATH} with a single JSON object:
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "<one sentence>",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "code|tests|metadata|process",
+      "severity": "blocker|major|minor|info",
+      "failure_mode": "<specific possible failure>",
+      "evidence": ["<file/path, diff fact, artifact field, or command claim>"],
+      "falsifiable_check": "<minimal read-only or future executable check>",
+      "why_it_matters": "<impact if true>"
+    }
+  ],
+  "overall_risk": "low|medium|high"
+}
+
+End with exactly the same JSON object on one line. Do not include Markdown.""".replace(
+        "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
+    ).replace(
+        "{DIFF_AUDIT_PATH}", DIFF_AUDIT_PATH
+    ).replace(
+        "{TEST_EVIDENCE_GATE_PATH}", TEST_EVIDENCE_GATE_PATH
+    ).replace(
+        "{ADVERSARIAL_REVIEW_PATH}", ADVERSARIAL_REVIEW_PATH
+    )
+
+
+def _moderator_filter_prompt() -> str:
+    return """Moderate the adversarial review.
+
+This is pass 2 of a three-stage review pattern. Your job is to filter. Keep only
+objections that are supported by repository evidence, the current diff, or
+machine artifacts. Reject plausible-sounding but unsupported criticism. Do not
+invent new objections; you may only accept, downgrade, or reject rows from
+{ADVERSARIAL_REVIEW_PATH}.
+
+Hard contract:
+- Do not ask the user questions.
+- Do not call request_user_input or any interactive clarification tool.
+- Do not modify repository files.
+- Use read-only inspection only. Do not run tests, compilers, formatters,
+  installers, or commands that may write caches or mutate the repository.
+- Machine artifacts outrank agent-authored claims. Treat {DIFF_AUDIT_PATH},
+  {TEST_EVIDENCE_GATE_PATH}, and the current `git diff` as authoritative when
+  they conflict with narrative stage output.
+
+Write {MODERATOR_FILTER_PATH} with a single JSON object:
+{
+  "schema_version": 1,
+  "stage": "moderator_filter",
+  "dispositions": [
+    {
+      "id": "A1",
+      "disposition": "confirmed|downgraded|rejected",
+      "category": "code|tests|metadata|process",
+      "severity": "blocker|major|minor|info",
+      "routing_effect": "fix_code|fix_tests|metadata_warning|none",
+      "evidence_grade": "strong|weak|unsupported",
+      "reason": "<why this disposition is evidence-bound>"
+    }
+  ],
+  "readiness_tier": "ready_verified|ready_unverified|needs_fix_code|needs_fix_tests|metadata_only_warning|process_failed",
+  "do_not_repeat": ["<specific failed approach to avoid>"],
+  "next_agent_guidance": "<concrete guidance if a downstream agent continues>"
+}
+
+Readiness tier rules:
+- needs_fix_code: any confirmed blocker/major code issue.
+- needs_fix_tests: any confirmed blocker/major test-evidence issue with
+  testable behavior.
+- process_failed: missing/malformed required review artifacts or hard process
+  contradiction.
+- metadata_only_warning: only metadata/process rows remain and the diff itself
+  appears exportable.
+- ready_verified: no blocking rows remain and machine-visible test evidence is
+  credible.
+- ready_unverified: no blocking rows remain but validation is weak, unavailable,
+  failed for environment reasons, or claim-only.
+
+End with exactly the same JSON object on one line. Do not include Markdown.""".replace(
+        "{ADVERSARIAL_REVIEW_PATH}", ADVERSARIAL_REVIEW_PATH
+    ).replace(
+        "{MODERATOR_FILTER_PATH}", MODERATOR_FILTER_PATH
+    ).replace(
+        "{DIFF_AUDIT_PATH}", DIFF_AUDIT_PATH
+    ).replace(
+        "{TEST_EVIDENCE_GATE_PATH}", TEST_EVIDENCE_GATE_PATH
+    )
+
+
+def _acceptance_audit_prompt() -> str:
+    return """Audit the moderated review and decide whether the patch can be exported.
+
+This is pass 3 of a three-stage review pattern. Your job is not to find new
+issues. Audit the adversarial review and moderator filter already present in
+context, verify that the moderator's surviving rows are evidence-bound, then
+make the final route decision.
+
+Hard contract:
+- Do not ask the user questions.
+- Do not call request_user_input or any interactive clarification tool.
+- Do not modify repository files.
+- Use read-only inspection only. Do not run tests, compilers, formatters,
+  installers, or commands that may write caches or mutate the repository.
+- Do not introduce new findings. You may only accept, reject, or downgrade
+  findings already raised by the adversarial review and handled by the moderator.
+- Machine artifacts outrank agent-authored claims. Treat {DIFF_AUDIT_PATH},
+  {TEST_EVIDENCE_GATE_PATH}, and the current `git diff` as authoritative when
+  they conflict with narrative stage output.
+
+If /tmp review JSON files exist, read them. If they do not exist, use the prior
+stage outputs in context; missing /tmp files alone should be a metadata/process
+warning, not a reason to reject an otherwise evidence-backed patch.
+If you can write files without touching the repository, also write the final
+routing object to {ACCEPTANCE_AUDIT_PATH} and the nested review_ledger object to
+{REVIEW_LEDGER_PATH}; the final response JSON is still the source of truth.
+
+End with exactly one routing JSON object on one line:
+{
+  "preferred_next_label": "Approve|Fix",
+  "outcome": "succeeded|failed",
+  "status": "passed|failed",
+  "mode": "moderated-review",
+  "readiness_tier": "ready_verified|ready_unverified|needs_fix_code|needs_fix_tests|metadata_only_warning|process_failed",
+  "failure_reason": null,
+  "route_decision": "export|fixup",
+  "blocking_rows": [],
+  "do_not_repeat": ["<specific failed approach to avoid>"],
+  "next_agent_guidance": "<concrete downstream guidance>",
+  "review_ledger": {
+    "schema_version": 1,
+    "stage": "review_ledger",
+    "status": "passed|failed",
+    "readiness_tier": "ready_verified|ready_unverified|needs_fix_code|needs_fix_tests|metadata_only_warning|process_failed",
+    "route_decision": "export|fixup",
+    "confirmed_rows": [],
+    "blocking_rows": [],
+    "malformed_artifacts": []
+  }
+}
+
+Decision rules:
+- Use Approve/succeeded/passed/export for ready_verified, ready_unverified, or
+  metadata_only_warning.
+- Use Fix/failed/failed/fixup for needs_fix_code, needs_fix_tests, or
+  process_failed.
+- ready_verified requires credible machine-visible validation.
+- ready_unverified is acceptable when no blocking issue remains but validation is
+  weak, unavailable, failed for environment reasons, or claim-only.
+- metadata_only_warning is acceptable only when the actual diff is ready and the
+  remaining issue is stale/missing review metadata.
+- needs_fix_code or needs_fix_tests must include blocking_rows, do_not_repeat,
+  and next_agent_guidance so another agent can continue from this patch.""".replace(
+        "{DIFF_AUDIT_PATH}", DIFF_AUDIT_PATH
+    ).replace(
+        "{TEST_EVIDENCE_GATE_PATH}", TEST_EVIDENCE_GATE_PATH
+    ).replace(
+        "{ACCEPTANCE_AUDIT_PATH}", ACCEPTANCE_AUDIT_PATH
+    ).replace(
+        "{REVIEW_LEDGER_PATH}", REVIEW_LEDGER_PATH
+    )
+
+
 def _fixup_prompt() -> str:
     return """A quality gate failed. Read the verify or review output from context and fix the issue.
 
@@ -351,5 +640,114 @@ audit = {{
 }}
 Path("{DIFF_AUDIT_PATH}").write_text(json.dumps(audit, indent=2) + "\\n")
 print(json.dumps(audit, sort_keys=True))
+PY
+"""
+
+
+def _test_evidence_gate_script() -> str:
+    return build_embedded_gate_script(
+        audit_path=DIFF_AUDIT_PATH,
+        contract_path=VALIDATION_CONTRACT_PATH,
+        output_path=TEST_EVIDENCE_GATE_PATH,
+    )
+
+
+def _acceptance_audit_script() -> str:
+    ready_values = ",".join(READY_TIERS)
+    blocking_values = ",".join(sorted(BLOCKING_READY_TIERS))
+    return f"""python - <<'PY'
+import json
+from pathlib import Path
+
+ADVERSARIAL = Path("{ADVERSARIAL_REVIEW_PATH}")
+MODERATOR = Path("{MODERATOR_FILTER_PATH}")
+GATE = Path("{TEST_EVIDENCE_GATE_PATH}")
+OUT = Path("{ACCEPTANCE_AUDIT_PATH}")
+LEDGER = Path("{REVIEW_LEDGER_PATH}")
+READY_VALUES = set("{ready_values}".split(","))
+BLOCKING_VALUES = set("{blocking_values}".split(","))
+
+
+def load(path):
+    try:
+        return json.loads(path.read_text())
+    except Exception as exc:
+        return {{"_error": str(exc), "_path": str(path)}}
+
+
+adversarial = load(ADVERSARIAL)
+moderator = load(MODERATOR)
+gate = load(GATE)
+malformed = []
+if "_error" in adversarial:
+    malformed.append({{"path": str(ADVERSARIAL), "error": adversarial.get("_error")}})
+if "_error" in moderator:
+    malformed.append({{"path": str(MODERATOR), "error": moderator.get("_error")}})
+if "_error" in gate:
+    malformed.append({{"path": str(GATE), "error": gate.get("_error")}})
+
+readiness = moderator.get("readiness_tier") if isinstance(moderator, dict) else None
+if readiness not in READY_VALUES:
+    malformed.append({{"path": str(MODERATOR), "error": "missing_or_invalid_readiness_tier"}})
+    readiness = "process_failed"
+if isinstance(gate, dict) and gate.get("status") not in (None, "passed"):
+    readiness = "process_failed"
+
+dispositions = moderator.get("dispositions") if isinstance(moderator, dict) else []
+if not isinstance(dispositions, list):
+    dispositions = []
+confirmed = [
+    row for row in dispositions
+    if isinstance(row, dict) and row.get("disposition") in ("confirmed", "downgraded")
+]
+blocking_rows = [
+    row for row in confirmed
+    if row.get("routing_effect") in ("fix_code", "fix_tests")
+]
+
+if malformed:
+    readiness = "process_failed"
+
+status = "failed" if readiness in BLOCKING_VALUES else "passed"
+audit = {{
+    "schema_version": 1,
+    "status": status,
+    "mode": "moderated-review",
+    "readiness_tier": readiness,
+    "malformed_artifacts": malformed,
+    "confirmed_rows": len(confirmed),
+    "blocking_rows": blocking_rows,
+    "failure_reason": None,
+    "route_decision": "fixup" if status == "failed" else "export",
+    "do_not_repeat": moderator.get("do_not_repeat") if isinstance(moderator, dict) else None,
+    "next_agent_guidance": moderator.get("next_agent_guidance") if isinstance(moderator, dict) else None,
+}}
+if status == "failed":
+    if malformed:
+        audit["failure_reason"] = "review artifacts missing or malformed"
+    elif blocking_rows:
+        audit["failure_reason"] = blocking_rows[0].get("reason") or "moderator found blocking issue"
+    else:
+        audit["failure_reason"] = "moderated review blocked export"
+
+ledger = {{
+    "schema_version": 1,
+    "stage": "review_ledger",
+    "readiness_tier": readiness,
+    "status": status,
+    "adversarial_row_count": len(adversarial.get("rows", [])) if isinstance(adversarial, dict) and isinstance(adversarial.get("rows"), list) else None,
+    "moderator_disposition_count": len(dispositions),
+    "confirmed_rows": confirmed,
+    "blocking_rows": blocking_rows,
+    "malformed_artifacts": malformed,
+    "route_decision": audit["route_decision"],
+    "do_not_repeat": audit.get("do_not_repeat"),
+    "next_agent_guidance": audit.get("next_agent_guidance"),
+}}
+audit["review_ledger"] = ledger
+OUT.write_text(json.dumps(audit, indent=2, sort_keys=True) + "\\n")
+LEDGER.write_text(json.dumps(ledger, indent=2, sort_keys=True) + "\\n")
+print(json.dumps(audit, sort_keys=True))
+raise SystemExit(0 if status == "passed" else 1)
 PY
 """

@@ -119,10 +119,7 @@ def main():
         open_file_limit=4096,
         run_id=args.run_id,
         timeout=1800,
-        namespace=None,
-        rewrite_reports=False,
         modal=False,
-        report_dir=report_dir,
     )
 
     # Try to find and print results
