@@ -21,3 +21,4 @@ __pycache__
 .claude/scheduled_tasks.lock
 .mcp.json
 docs/internal/agent
+logs/
