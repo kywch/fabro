@@ -8,8 +8,6 @@ from fabro_kits.issue_to_pr.evidence_gate import (
     build_embedded_gate_script,
     evaluate_evidence_gate,
 )
-
-
 class EvidenceGateTest(unittest.TestCase):
     def test_exact_path_claim_passes(self):
         record = evaluate_evidence_gate(
@@ -18,15 +16,22 @@ class EvidenceGateTest(unittest.TestCase):
                 "changed_files": ["tests/test_a.py"],
                 "test_files_changed": ["tests/test_a.py"],
             },
-            contract={"tests_added": ["tests/test_a.py"], "commands_run": []},
+            contract={"tests_added": ["tests/test_a.py"], "commands_run": [{"status": "passed"}]},
         )
-
         self.assertEqual(record["status"], "passed")
         self.assertEqual(record["judgment"]["hard_failures"], [])
         self.assertEqual(
             record["derived"]["claimed_test_paths_normalized"],
             ["tests/test_a.py"],
         )
+        self.assertEqual(record["observed"]["commands_reported_passed_count"], 1)
+    def test_verified_command_pass_count_requires_real_exit_zero(self):
+        record = evaluate_evidence_gate(
+            audit={"patch_nonempty": True, "changed_files": [], "test_files_changed": []},
+            contract={"commands_run": [{"command": "python3 -m unittest fabro_kits.issue_to_pr.tests.test_artifacts.RunBundleArtifactsTest.test_candidate_patch_bytes_use_utf8_bytes", "status": "passed"}]},
+            verify_commands=True,
+        )
+        self.assertEqual(record["observed"]["tests_passed_count"], 1)
 
     def test_claimed_tests_without_changed_test_file_hard_fails(self):
         record = evaluate_evidence_gate(
@@ -37,7 +42,6 @@ class EvidenceGateTest(unittest.TestCase):
             },
             contract={"tests_added": ["tests/test_a.py"], "commands_run": []},
         )
-
         self.assertEqual(record["status"], "failed")
         self.assertIn(
             "validation_claims_tests_but_diff_has_no_test_files",
@@ -65,7 +69,6 @@ class EvidenceGateTest(unittest.TestCase):
                 contract_path=str(contract),
                 output_path=str(out),
             )
-
             proc = subprocess.run(
                 script,
                 shell=True,
@@ -73,10 +76,5 @@ class EvidenceGateTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(json.loads(out.read_text())["status"], "passed")
-
-
-if __name__ == "__main__":
-    unittest.main()

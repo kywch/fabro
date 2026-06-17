@@ -21,15 +21,6 @@ ADVERSARIAL_REVIEW_PATH = "/tmp/fabro-adversarial-review.json"
 MODERATOR_FILTER_PATH = "/tmp/fabro-moderator-filter.json"
 REVIEW_MATERIALIZATION_PATH = "/tmp/fabro-review-materialization.json"
 REVIEW_ACCOUNTABILITY_GATE_PATH = "/tmp/fabro-review-accountability-gate.json"
-READY_TIERS = (
-    "ready_verified",
-    "ready_unverified",
-    "needs_fix_code",
-    "needs_fix_tests",
-    "metadata_only_warning",
-    "process_failed",
-)
-BLOCKING_READY_TIERS = {"needs_fix_code", "needs_fix_tests", "process_failed"}
 
 
 def dot_escape(text: str) -> str:
@@ -214,8 +205,8 @@ def _structured_workflow(
     test_evidence_gate -> fixup              [label="Fallback"]
     adversarial_review -> moderator_filter -> materialize_review_artifacts
     materialize_review_artifacts -> review_accountability_gate [condition="outcome=succeeded"]
-    materialize_review_artifacts -> fixup [condition="outcome=failed"]
-    materialize_review_artifacts -> fixup [label="Fallback"]
+    materialize_review_artifacts -> review_accountability_gate [condition="outcome=failed"]
+    materialize_review_artifacts -> review_accountability_gate [label="Fallback"]
     review_accountability_gate -> extract_patch     [condition="outcome=succeeded"]
     review_accountability_gate -> fixup            [condition="outcome=failed"]
     review_accountability_gate -> fixup            [label="Fallback"]
@@ -244,23 +235,21 @@ def _structured_workflow(
 
 
 def _research_prompt() -> str:
-    return """Research only; do not edit repository files or ask questions.
+    return """Research only; do not edit repository files or ask questions. When uncertain, choose the smallest issue-scoped investigation path yourself.
 Use read-only commands. Put notes in /tmp/fabro-research.md.
 Write {VALIDATION_CONTRACT_PATH} with JSON fields:
-acceptance_criteria, risky_shortcuts, likely_files, test_plan,
+	acceptance_criteria including requested release/changelog notes, risky_shortcuts, likely_files, test_plan,
 research_assumptions. End with acceptance criteria and test plan.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     )
 
 
 def _implement_prompt() -> str:
-    return """Fix the issue with the smallest defensible patch. Do not ask questions.
-Use /tmp/fabro-research.md when present. Satisfy all acceptance criteria, not
-only the title. Add/update regression tests when behavior is testable.
-Run the most relevant visible test command and report only real exit results.
-Before finishing, update {VALIDATION_CONTRACT_PATH}; preserve research fields and add:
-changed_files, tests_added as objects with path/test_name_or_scope/behavior_guarded,
-commands_run with status, no_test_justification, residual_risks, final_claims.""".replace(
+    return """Fix the issue with the smallest defensible patch. Do not ask questions or call request_user_input.
+	Use /tmp/fabro-research.md when present. Satisfy all acceptance criteria, including requested release/changelog notes, not only the title. Add/update regression tests when behavior is testable.
+Run the most relevant focused single-process test command; for Django prefer class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not pytest/django test. If bootstrap fails, fix the invocation before using weaker smoke evidence, and report only real exit results.
+Before finishing, update {VALIDATION_CONTRACT_PATH}; preserve research fields and add changed_files, tests_added as objects with path/test_name_or_scope/behavior_guarded,
+commands_run/status, no_test_justification, residual_risks, final_claims.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     )
 
@@ -289,7 +278,7 @@ modify files, or run mutating commands. Be critical; the moderator will filter.
 Use the issue, /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH},
 {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, git diff, and touched files.
 
-Write {ADVERSARIAL_REVIEW_PATH} with a single JSON object:
+Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON object:
 {
   "schema_version": 1,
   "stage": "adversarial_review",
@@ -301,6 +290,8 @@ Write {ADVERSARIAL_REVIEW_PATH} with a single JSON object:
       "severity": "blocker|major|minor|info",
       "failure_mode": "<specific possible failure>",
       "evidence": ["<file/path, diff fact, artifact field, or command claim>"],
+      "required_files": ["<optional exact repo-relative paths that must be changed to close this row>"],
+      "closure_requires": "runtime_tests|changed_files|diff_evidence|none",
       "falsifiable_check": "<minimal read-only or future executable check>",
       "why_it_matters": "<impact if true>"
     }
@@ -308,7 +299,7 @@ Write {ADVERSARIAL_REVIEW_PATH} with a single JSON object:
   "overall_risk": "low|medium|high"
 }
 
-End with exactly the same JSON object on one line. Do not include Markdown.""".replace(
+End with exactly the same JSON object on one line. Do not ask how to write it, include Markdown, or output the object twice.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     ).replace(
         "{DIFF_AUDIT_PATH}", DIFF_AUDIT_PATH
@@ -329,10 +320,9 @@ Hard contract:
 - Do not ask the user questions.
 - Do not modify repository files.
 - Use read-only inspection only. Do not run tests or commands that may write.
-- Machine artifacts outrank agent-authored claims. Treat {DIFF_AUDIT_PATH},
-  {TEST_EVIDENCE_GATE_PATH}, and `git diff` as authoritative.
+- Machine artifacts outrank claims. Treat {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, and `git diff` as authoritative.
 
-Write {MODERATOR_FILTER_PATH} with a single JSON object:
+Overwrite {MODERATOR_FILTER_PATH} with one JSON object; escape literal backslashes as JSON \\\\; printing without writing fails:
 {
   "schema_version": 1,
   "stage": "moderator_filter",
@@ -343,6 +333,7 @@ Write {MODERATOR_FILTER_PATH} with a single JSON object:
       "category": "code|tests|metadata|process",
       "severity": "blocker|major|minor|info",
       "evidence": ["<required for closed_by_evidence or downgraded>"],
+      "closure_check": "<required for closed/downgraded/rejected blocker|major>",
       "reason": "<why this disposition is evidence-bound>"
     }
   ],
@@ -352,20 +343,15 @@ Write {MODERATOR_FILTER_PATH} with a single JSON object:
 }
 
 Rules:
-- Every row from {ADVERSARIAL_REVIEW_PATH}.rows must have exactly one
-  disposition with the same id. Empty dispositions are valid only when there are
-  zero adversarial rows.
-- Use open for unresolved blocker/major objections, including any row saying
-  the patch does not fix the issue.
-- Use closed_by_evidence only when cited diff, file, or machine-artifact
-  evidence closes the row.
-- Use rejected only when the row is unsupported. Use downgraded only with new
-  severity and evidence.
-- ready_verified requires machine-visible test evidence. ready_unverified means
-  no blocker/major row remains but validation is weak. needs_fix_code/tests mean
-  blocker/major open rows remain. process_failed means malformed review process.
+- Every adversarial row needs exactly one same-id disposition; empty is valid only with zero rows.
+- Keep severe rows open when any required_files are absent from changed_files.
+- Use open for unresolved blocker/major objections.
+- Use closed_by_evidence only when cited evidence directly answers the row.
+  Never close by denying cited git diff hunks; keep the row open unless current patch evidence disproves them.
+- Use rejected only when the row is unsupported. Use downgraded only with evidence.
+- Runtime-test proof requires machine-observed pass fields like tests_passed_count; never use test_evidence_gate.status, changed files, or commands_reported_passed_count to close test-execution rows or mark ready_verified.
 
-End with exactly the same JSON object on one line. Do not include Markdown.""".replace(
+End with exactly the same JSON object on one line. Do not ask how to write it, include Markdown, or output the object twice.""".replace(
         "{ADVERSARIAL_REVIEW_PATH}", ADVERSARIAL_REVIEW_PATH
     ).replace(
         "{MODERATOR_FILTER_PATH}", MODERATOR_FILTER_PATH
@@ -377,12 +363,16 @@ End with exactly the same JSON object on one line. Do not include Markdown.""".r
 
 
 def _fixup_prompt() -> str:
-    return """A quality gate failed. Do not ask questions. Read
-{VALIDATION_CONTRACT_PATH}, {DIFF_AUDIT_PATH}, and when present
-{REVIEW_ACCOUNTABILITY_GATE_PATH}. Fix the actual patch before metadata. For
-each blocker/major fixup_required_rows entry, close it with code/test evidence
-or preserve it as an open blocker. Update the validation contract with
-reviewer_objections, changed_files, commands_run, residual_risks, final_claims.""".replace(
+    return """A quality gate failed. Do not ask questions. Re-read the original goal,
+/tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH}, {DIFF_AUDIT_PATH}, and when
+present {REVIEW_ACCOUNTABILITY_GATE_PATH}. Repair the whole patch, not only the
+latest critic row. Inspect changed files for unrelated hunks. Address every
+	fixup_required_rows and malformed_artifacts item; when an artifact names a
+	path/check, repair that exact diff hunk before arguing it is stale. Then update
+the validation contract with reviewer_objections, changed_files, commands_run,
+residual_risks, and final_claims. Prefer focused single-process tests over broad
+suites; for Django prefer class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not pytest/django test. If the full issue contract remains broken,
+keep it open.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     ).replace(
         "{DIFF_AUDIT_PATH}", DIFF_AUDIT_PATH
@@ -436,6 +426,7 @@ changed_files = [line for line in names.splitlines() if line.strip()]
 test_files = [
     path for path in changed_files
     if path.startswith("tests/")
+    or path.startswith("testing/")
     or "/tests/" in path
     or path.startswith("test_")
     or path.endswith("_test.py")
@@ -465,6 +456,7 @@ def _test_evidence_gate_script() -> str:
 def _review_materialization_script() -> str:
     return f"""python - <<'PY'
 import json
+import re
 from pathlib import Path
 
 SOURCES = {{
@@ -476,13 +468,29 @@ OUT = Path("{REVIEW_MATERIALIZATION_PATH}")
 
 def load(name, path):
     try:
-        value = json.loads(path.read_text())
+        text = path.read_text(encoding="utf-8")
     except Exception as exc:
         return None, {{"artifact": name, "path": str(path), "error": str(exc)}}
-    if not isinstance(value, dict):
+    candidates = [text, re.sub(r'\\\\(?!["\\\\/bfnrtu])', r'\\\\\\\\', text)]
+    decoder = json.JSONDecoder(strict=False)
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate, strict=False)
+        except Exception:
+            for index in reversed([idx for idx, char in enumerate(candidate) if char == "{{"]):
+                try:
+                    value, end = decoder.raw_decode(candidate[index:])
+                except Exception:
+                    continue
+                if not candidate[index + end :].strip():
+                    break
+            else:
+                continue
+        if isinstance(value, dict):
+            path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+            return value, None
         return None, {{"artifact": name, "path": str(path), "error": "expected_json_object"}}
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\\n")
-    return value, None
+    return None, {{"artifact": name, "path": str(path), "error": "invalid_json_object"}}
 
 
 errors = []
@@ -510,13 +518,14 @@ disposition_ids = [
 report = {{
     "schema_version": 1,
     "stage": "review_materialization",
-    "status": "failed" if errors else "passed",
+    "status": "failed" if errors or (row_ids and not disposition_ids) or any(did not in row_ids for did in disposition_ids) else "passed",
     "sources": {{name: str(path) for name, path in SOURCES.items()}},
     "adversarial_row_ids": row_ids,
     "moderator_disposition_ids": disposition_ids,
+    "artifacts": loaded,
     "errors": errors,
 }}
-OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\\n")
+OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
 print(json.dumps(report, sort_keys=True))
 raise SystemExit(1 if errors else 0)
 PY
@@ -525,7 +534,7 @@ PY
 
 def _review_accountability_gate_script() -> str:
     return f"""python - <<'PY'
-import json
+import json, subprocess
 from pathlib import Path
 
 ADVERSARIAL = Path("{ADVERSARIAL_REVIEW_PATH}")
@@ -556,6 +565,11 @@ def as_list(value):
     return value if isinstance(value, list) else []
 
 
+def clean_path(value):
+    text = str(value).strip()
+    return text[len("/workspace/"):] if text.startswith("/workspace/") else text
+
+
 def has_evidence(row):
     if not isinstance(row, dict):
         return False
@@ -572,12 +586,11 @@ def tests_executed_successfully(gate):
     if not isinstance(gate, dict):
         return False
     observed = gate.get("observed") if isinstance(gate.get("observed"), dict) else {{}}
-    for key in ("commands_passed_count", "tests_passed_count"):
+    for key in ("tests_passed_count",):
         value = observed.get(key) or gate.get(key)
         if isinstance(value, int) and value > 0:
             return True
     return False
-
 
 adversarial, adversarial_error = load(ADVERSARIAL)
 moderator, moderator_error = load(MODERATOR)
@@ -591,9 +604,12 @@ malformed = [err for err in (
 ) if err]
 if isinstance(materialization, dict) and materialization.get("status") != "passed":
     malformed.extend(as_list(materialization.get("errors")))
-
+if not tests_executed_successfully(test_gate): malformed.append({{"artifact": "test_evidence_gate", "error": "tests_not_executed_successfully"}})
 rows = as_list(adversarial.get("rows") if isinstance(adversarial, dict) else None)
 dispositions = as_list(moderator.get("dispositions") if isinstance(moderator, dict) else None)
+changed_files = {{clean_path(path) for path in as_list(test_gate.get("changed_files") if isinstance(test_gate, dict) else None)}}
+settings_ref = subprocess.run(["git", "diff", "--", "docs/ref/settings.txt"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout
+if ("``OPTIONS``" in settings_ref and "+Default: ``0o644``" in settings_ref and "Extra parameters to pass to the cache backend" in settings_ref) or settings_ref.count("+The numeric mode (i.e. ``0o644``) to set newly uploaded files to.") > 1: malformed.append({{"artifact": "patch", "path": "docs/ref/settings.txt", "error": "docs_settings_corruption", "check": "cache OPTIONS default changed or FILE_UPLOAD_PERMISSIONS text duplicated", "offending_diff": settings_ref[:1200]}})
 if isinstance(adversarial, dict) and not isinstance(adversarial.get("rows", []), list):
     malformed.append({{"artifact": "adversarial_review", "field": "rows", "error": "expected_list"}})
 if isinstance(moderator, dict) and not isinstance(moderator.get("dispositions", []), list):
@@ -615,6 +631,7 @@ closed_rows = []
 downgraded_rows = []
 rejected_rows = []
 invalid_dispositions = []
+closure_check_failures = []
 
 for disposition in dispositions:
     if not isinstance(disposition, dict):
@@ -634,6 +651,20 @@ for disposition in dispositions:
     if state not in STATES:
         invalid_dispositions.append(disposition)
         continue
+    severe = str(row_by_id.get(did, {{}}).get("severity", disposition.get("severity", ""))).lower() in MAJOR
+    closure_check = str(disposition.get("closure_check", "")).strip()
+    if severe and state in {{"closed_by_evidence", "downgraded", "rejected"}} and not closure_check:
+        closure_check_failures.append(disposition)
+    if severe and did in row_by_id and str(disposition.get("category", "")).lower() != str(row_by_id[did].get("category", "")).lower():
+        disposition["category_mismatch"] = {{"row": row_by_id[did].get("category"), "disposition": disposition.get("category")}}
+        closure_check_failures.append(disposition)
+    missing_required = [path for path in (clean_path(path) for path in as_list(row_by_id.get(did, {{}}).get("required_files"))) if path not in changed_files]
+    if severe and state in {{"closed_by_evidence", "downgraded", "rejected"}} and missing_required:
+        disposition["missing_required_files"] = missing_required
+        closure_check_failures.append(disposition)
+    if severe and state in {{"closed_by_evidence", "downgraded", "rejected"}} and str(row_by_id.get(did, {{}}).get("closure_requires", "")).lower() == "runtime_tests" and not tests_executed_successfully(test_gate):
+        disposition["missing_closure_requirement"] = "runtime_tests"
+        closure_check_failures.append(disposition)
     if state == "open":
         open_rows.append(disposition)
     elif state == "closed_by_evidence":
@@ -660,6 +691,8 @@ blocking_rows = [
 process_failures = []
 if malformed:
     process_failures.append("review_artifact_missing_or_malformed")
+if any(isinstance(item, dict) and item.get("error") == "tests_not_executed_successfully" for item in malformed):
+    process_failures.append("tests_not_executed_successfully")
 if rows and not dispositions:
     process_failures.append("adversarial_rows_without_moderator_dispositions")
 if unaccounted_major_rows:
@@ -672,11 +705,12 @@ if orphan_dispositions:
     process_failures.append("orphan_moderator_dispositions")
 if invalid_dispositions:
     process_failures.append("invalid_moderator_dispositions")
+if closure_check_failures:
+    process_failures.append("invalid_severe_closure_checks")
 if blocking_rows:
     process_failures.append("open_blocker_or_major_rows")
-
 failed = bool(process_failures)
-fixup_required_rows = blocking_rows or unaccounted_major_rows or unaccounted_rows or invalid_dispositions
+fixup_required_rows = (blocking_rows or unaccounted_major_rows or unaccounted_rows or invalid_dispositions or orphan_dispositions) + malformed
 readiness = "process_failed" if failed else (
     "ready_verified" if tests_executed_successfully(test_gate) else "ready_unverified"
 )
@@ -703,11 +737,12 @@ report = {{
     "duplicate_disposition_ids": duplicate_disposition_ids,
     "orphan_dispositions": orphan_dispositions,
     "invalid_dispositions": invalid_dispositions,
+    "closure_check_failures": closure_check_failures,
     "tests_executed_successfully": tests_executed_successfully(test_gate),
     "materialization": materialization or {{}},
     "malformed_artifacts": malformed,
     "do_not_repeat": ["Do not export until every blocker/major objection is open or closed with cited evidence."] if failed else [],
-    "next_agent_guidance": "Address fixup_required_rows, then rerun verify/review." if failed else "Proceed to patch extraction.",
+	    "next_agent_guidance": "; ".join([str((item if isinstance(item, dict) else {{}}).get("falsifiable_check") or (item if isinstance(item, dict) else {{}}).get("check") or (item if isinstance(item, dict) else {{}}).get("reason") or item) for item in fixup_required_rows[:3]]) if failed else "Proceed to patch extraction.",
 }}
 OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\\n")
 print(json.dumps(report, sort_keys=True))

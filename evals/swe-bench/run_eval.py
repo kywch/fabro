@@ -96,31 +96,73 @@ def setup_logging(output_dir: Path):
     log.addHandler(ch)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+def load_completed_results(output_dir: Path) -> list[dict]:
+    """Load prior results that should be preserved when resuming."""
+    results = []
+    results_file = output_dir / "results.jsonl"
+    if results_file.exists():
+        with open(results_file) as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        result = json.loads(line)
+                        if result.get("instance_id") and result.get("status") in {"completed", "no_patch"}:
+                            results.append(result)
+                    except json.JSONDecodeError:
+                        pass
+    return results
 
 
-def dot_escape(s: str) -> str:
-    """Escape a string for use inside DOT double-quoted attribute values."""
-    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+def write_root_exports(
+    output_dir: Path,
+    results: list[dict],
+    *,
+    model: str,
+    provider: str,
+    workflow_profile: str,
+    verify_mode: str,
+    total_duration_s: float,
+) -> dict:
+    (output_dir / "predictions.jsonl").write_text(
+        "".join(json.dumps(build_prediction_record(r)) + "\n" for r in results)
+    )
+    (output_dir / "results.jsonl").write_text("".join(json.dumps(r) + "\n" for r in results))
+
+    counters = {key: 0 for key in ("completed", "no_patch", "verify_failed", "failed", "timeout", "error")}
+    failed_with_patch = 0
+    continuation_candidates = 0
+    for result in results:
+        counters[result["status"]] = counters.get(result["status"], 0) + 1
+        candidate = result.get("candidate") if isinstance(result.get("candidate"), dict) else {}
+        if candidate.get("reuse") == "continuation_candidate":
+            continuation_candidates += 1
+        if candidate.get("state") == "failed_with_patch":
+            failed_with_patch += 1
+    summary = {
+        "model": model,
+        "provider": provider,
+        "workflow_profile": workflow_profile,
+        "verify_mode": verify_mode,
+        "total": len(results),
+        **counters,
+        "failed_with_patch": failed_with_patch,
+        "continuation_candidates": continuation_candidates,
+        "total_duration_s": total_duration_s,
+    }
+    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    return summary
 
 
-def load_completed_ids(output_dir: Path) -> set[str]:
-    """Load instance IDs that already produced a terminal usable result."""
-    completed = set()
-    for jsonl_file in [output_dir / "results.jsonl"]:
-        if jsonl_file.exists():
-            with open(jsonl_file) as f:
-                for line in f:
-                    if line.strip():
-                        try:
-                            result = json.loads(line)
-                            if result.get("status") in {"completed", "no_patch"}:
-                                completed.add(result["instance_id"])
-                        except (json.JSONDecodeError, KeyError):
-                            pass
-    return completed
+def review_artifacts_reconciled(result: dict) -> bool:
+    gate = result.get("review_accountability_gate")
+    return (
+        not isinstance(gate, dict)
+        or not (gate.get("adversarial_row_count") or gate.get("moderator_disposition_count"))
+        or (
+            isinstance(result.get("adversarial_review"), dict)
+            and isinstance(result.get("moderator_filter"), dict)
+        )
+    )
 
 
 def load_instances(instance_ids: list[str] | None = None) -> list[dict]:
@@ -457,6 +499,13 @@ def run_instance(
                         "materialize_review_artifacts",
                     )
                 result["review_materialization"] = review_materialization
+                if isinstance(review_materialization, dict):
+                    materialized = review_materialization.get("artifacts")
+                    if isinstance(materialized, dict):
+                        if not isinstance(result.get("adversarial_review"), dict):
+                            result["adversarial_review"] = materialized.get("adversarial_review")
+                        if not isinstance(result.get("moderator_filter"), dict):
+                            result["moderator_filter"] = materialized.get("moderator_filter")
 
                 review_accountability_gate = (
                     find_json_stage_record(
@@ -512,6 +561,13 @@ def run_instance(
                 )
             elif proc.returncode == 0:
                 result["status"] = "completed"
+            if (
+                workflow_profile == STRUCTURED_MODERATED_PROFILE
+                and result["status"] == "completed"
+                and not review_artifacts_reconciled(result)
+            ):
+                result["status"] = "failed"
+                result["error"] = "Review artifacts missing from durable export"
         elif (
             workflow_profile in STRUCTURED_WORKFLOW_PROFILES
             and verify
@@ -582,10 +638,6 @@ def _cleanup_sandbox(label_value: str, sandbox_provider: str, fabro_bin: str):
         log.debug(f"[{label_value}] Sandbox cleanup failed (non-fatal): {e}")
 
 
-# ---------------------------------------------------------------------------
-# Preflight
-# ---------------------------------------------------------------------------
-
 DAYTONA_CPU_LIMIT = 500  # org-level max from Daytona tier
 
 
@@ -636,11 +688,6 @@ def preflight_docker():
         check=True,
     )
     print("Preflight OK: Docker daemon reachable")
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main():
@@ -744,15 +791,14 @@ def main():
     log.info(f"  {len(instances)} instances loaded")
 
     # --- Resume: skip already-completed instances -------------------------
-    completed_ids = load_completed_ids(args.output_dir)
+    results = load_completed_results(args.output_dir)
+    completed_ids = {result["instance_id"] for result in results}
     if completed_ids:
         instances = [i for i in instances if i["instance_id"] not in completed_ids]
         log.info(f"  {len(completed_ids)} already completed, {len(instances)} remaining")
     log.info("")
 
     # --- Run instances ----------------------------------------------------
-    predictions_file = args.output_dir / "predictions.jsonl"
-    results_file = args.output_dir / "results.jsonl"
     manifest = load_or_init_manifest(args.output_dir)
 
     # Counters (thread-safe via lock)
@@ -783,99 +829,62 @@ def main():
             for inst in instances
         }
 
-        with open(predictions_file, "a") as pf, open(results_file, "a") as rf:
-            for future in as_completed(futures):
-                result = future.result()
-                iid = result["instance_id"]
-                status = result["status"]
-                dur = result["duration_s"]
-                has_patch = bool(result["model_patch"].strip())
+        for future in as_completed(futures):
+            result = future.result()
+            iid = result["instance_id"]
+            status = result["status"]
+            dur = result["duration_s"]
+            has_patch = bool(result["model_patch"].strip())
 
-                with lock:
-                    counters[status] = counters.get(status, 0) + 1
-                    done_count += 1
-                    n = done_count
+            with lock:
+                results.append(result)
+                counters[status] = counters.get(status, 0) + 1
+                done_count += 1
+                n = done_count
 
-                    prediction_line = json.dumps(build_prediction_record(result)) + "\n"
-                    pf.write(prediction_line)
-                    pf.flush()
-
-                    rf.write(json.dumps(result) + "\n")
-                    rf.flush()
-
-                    update_manifest_for_run(
-                        manifest,
-                        task_id=iid,
-                        run_id=run_id_for_task(iid, DEFAULT_ATTEMPT_ID),
-                        attempt_id=DEFAULT_ATTEMPT_ID,
-                        output_dir=args.output_dir,
-                    )
-                    write_manifest(args.output_dir, manifest)
-
-                patch_info = (
-                    f"patch={len(result['model_patch'])}b"
-                    if has_patch
-                    else "no patch"
+                update_manifest_for_run(
+                    manifest,
+                    task_id=iid,
+                    run_id=run_id_for_task(iid, DEFAULT_ATTEMPT_ID),
+                    attempt_id=DEFAULT_ATTEMPT_ID,
+                    output_dir=args.output_dir,
                 )
-                err_info = f"  err={result['error'][:80]}" if result["error"] else ""
-                elapsed = round(time.time() - wall_start)
+                write_manifest(args.output_dir, manifest)
+
+            patch_info = f"patch={len(result['model_patch'])}b" if has_patch else "no patch"
+            err_info = f"  err={result['error'][:80]}" if result["error"] else ""
+            elapsed = round(time.time() - wall_start)
+            log.info(
+                f"[{n:3d}/{total}]  {status:<10s}  {dur:6.0f}s  "
+                f"{patch_info:<14s}  {iid}{err_info}"
+            )
+
+            if n % 10 == 0 or n == total:
                 log.info(
-                    f"[{n:3d}/{total}]  {status:<10s}  {dur:6.0f}s  "
-                    f"{patch_info:<14s}  {iid}{err_info}"
+                    f"  --- progress: {n}/{total}  "
+                    f"completed={counters.get('completed',0)}  "
+                    f"no_patch={counters.get('no_patch',0)}  "
+                    f"verify_failed={counters.get('verify_failed',0)}  "
+                    f"failed={counters.get('failed',0)}  "
+                    f"timeout={counters.get('timeout',0)}  "
+                    f"error={counters.get('error',0)}  "
+                    f"elapsed={elapsed}s ---"
                 )
-
-                if n % 10 == 0 or n == total:
-                    log.info(
-                        f"  --- progress: {n}/{total}  "
-                        f"completed={counters.get('completed',0)}  "
-                        f"no_patch={counters.get('no_patch',0)}  "
-                        f"verify_failed={counters.get('verify_failed',0)}  "
-                        f"failed={counters.get('failed',0)}  "
-                        f"timeout={counters.get('timeout',0)}  "
-                        f"error={counters.get('error',0)}  "
-                        f"elapsed={elapsed}s ---"
-                    )
 
     wall_duration = round(time.time() - wall_start, 1)
 
-    # --- Final summary (recompute from full results file) -----------------
-    all_counters = {
-        "completed": 0,
-        "no_patch": 0,
-        "verify_failed": 0,
-        "failed": 0,
-        "timeout": 0,
-        "error": 0,
-    }
-    continuation_candidates = 0
-    failed_with_patch = 0
-    all_total = 0
-    with open(results_file) as f:
-        for line in f:
-            if line.strip():
-                r = json.loads(line)
-                all_counters[r["status"]] = all_counters.get(r["status"], 0) + 1
-                candidate = r.get("candidate")
-                if isinstance(candidate, dict):
-                    if candidate.get("reuse") == "continuation_candidate":
-                        continuation_candidates += 1
-                    if candidate.get("state") == "failed_with_patch":
-                        failed_with_patch += 1
-                all_total += 1
-
-    summary = {
-        "model": args.model,
-        "provider": args.provider,
-        "workflow_profile": args.workflow_profile,
-        "verify_mode": args.verify_mode,
-        "total": all_total,
-        **all_counters,
-        "failed_with_patch": failed_with_patch,
-        "continuation_candidates": continuation_candidates,
-        "total_duration_s": wall_duration,
-    }
+    summary = write_root_exports(
+        args.output_dir,
+        results,
+        model=args.model,
+        provider=args.provider,
+        workflow_profile=args.workflow_profile,
+        verify_mode=args.verify_mode,
+        total_duration_s=wall_duration,
+    )
+    predictions_file = args.output_dir / "predictions.jsonl"
+    results_file = args.output_dir / "results.jsonl"
     summary_file = args.output_dir / "summary.json"
-    summary_file.write_text(json.dumps(summary, indent=2))
 
     skipped = len(completed_ids)
     log.info("")
@@ -885,15 +894,15 @@ def main():
     if skipped:
         log.info(f"  Skipped:     {skipped} (already completed)")
         log.info(f"  This run:    {total}")
-    log.info(f"  Total:       {all_total}")
-    log.info(f"  Completed:   {all_counters.get('completed', 0)}")
-    log.info(f"  No patch:    {all_counters.get('no_patch', 0)}")
-    log.info(f"  Verify fail: {all_counters.get('verify_failed', 0)}")
-    log.info(f"  Failed:      {all_counters.get('failed', 0)}")
-    log.info(f"  Failed+patch:{failed_with_patch:4d}")
-    log.info(f"  Continue:    {continuation_candidates:4d}")
-    log.info(f"  Timeout:     {all_counters.get('timeout', 0)}")
-    log.info(f"  Error:       {all_counters.get('error', 0)}")
+    log.info(f"  Total:       {summary['total']}")
+    log.info(f"  Completed:   {summary.get('completed', 0)}")
+    log.info(f"  No patch:    {summary.get('no_patch', 0)}")
+    log.info(f"  Verify fail: {summary.get('verify_failed', 0)}")
+    log.info(f"  Failed:      {summary.get('failed', 0)}")
+    log.info(f"  Failed+patch:{summary['failed_with_patch']:4d}")
+    log.info(f"  Continue:    {summary['continuation_candidates']:4d}")
+    log.info(f"  Timeout:     {summary.get('timeout', 0)}")
+    log.info(f"  Error:       {summary.get('error', 0)}")
     log.info(f"  Wall time:   {wall_duration}s")
     log.info(f"  Predictions: {predictions_file}")
     log.info(f"  Results:     {results_file}")

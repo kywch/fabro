@@ -2,67 +2,48 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
-from pathlib import Path
+import subprocess
 from typing import Any
 
-
 SCHEMA_VERSION = 1
-CANNOT_PROVE = [
-    "patch_semantically_fixes_issue",
-    "changed_tests_are_meaningful_regressions",
-    "no_new_test_is_acceptable",
-    "hidden_or_official_tests_would_pass",
-]
-
+CANNOT_PROVE = ["patch_semantically_fixes_issue", "changed_tests_are_meaningful_regressions", "no_new_test_is_acceptable", "hidden_or_official_tests_would_pass"]
 
 def evaluate_evidence_gate(
     audit: dict[str, Any] | None,
     contract: dict[str, Any] | None,
+    verify_commands: bool = False,
 ) -> dict[str, Any]:
     """Compare agent validation claims with machine-observed diff evidence."""
     audit = audit if isinstance(audit, dict) else {}
     contract = contract if isinstance(contract, dict) else {}
     hard_failures: list[str] = []
     warnings: list[str] = []
-
     if audit.get("_json_error"):
         hard_failures.append(f"audit_json_invalid: {audit['_json_error']}")
     if contract.get("_json_error"):
         warnings.append(f"validation_contract_json_invalid: {contract['_json_error']}")
-
     changed_files = normalize_path_list(audit.get("changed_files"))
     test_files_changed = normalize_path_list(audit.get("test_files_changed"))
     claimed_tests_raw = normalize_claims_raw(contract.get("tests_added"))
-    normalized_claims = [
-        claim
-        for claim in (normalize_claim(raw) for raw in claimed_tests_raw)
-        if claim is not None
-    ]
-    normalized_paths = [
-        claim["path"] for claim in normalized_claims if isinstance(claim.get("path"), str)
-    ]
+    normalized_claims = [claim for claim in (normalize_claim(raw) for raw in claimed_tests_raw) if claim is not None]
+    normalized_paths = [claim["path"] for claim in normalized_claims if isinstance(claim.get("path"), str)]
     commands_run = contract.get("commands_run") or []
     if not isinstance(commands_run, list):
         warnings.append("commands_run_not_list")
         commands_run = []
-
+    commands_reported_passed_count = commands_status_count(commands_run, {"passed", "pass", "success", "succeeded", "ok"})
+    verified_commands = verify_reported_passes(commands_run) if verify_commands else []
+    tests_passed_count = sum(1 for command in verified_commands if command["exit_code"] == 0 and is_test_command(command["command"]))
     if audit and audit.get("patch_nonempty") is False:
         hard_failures.append("audit_reports_empty_patch")
-
     if normalized_paths and not test_files_changed:
         hard_failures.append("validation_claims_tests_but_diff_has_no_test_files")
     elif normalized_paths:
-        missing = [
-            path
-            for path in normalized_paths
-            if not path_matches_claim(test_files_changed, path)
-        ]
+        missing = [path for path in normalized_paths if not path_matches_claim(test_files_changed, path)]
         if missing:
             hard_failures.append("validation_claims_tests_not_in_diff: " + ", ".join(missing))
-
     unparseable_claims = [
         claim
         for claim in claimed_tests_raw
@@ -78,17 +59,13 @@ def evaluate_evidence_gate(
             "unparseable_test_claims_without_changed_test_files: "
             + ", ".join(str(claim) for claim in unparseable_claims[:3])
         )
-
     if test_files_changed and not claimed_tests_raw:
         warnings.append("diff_has_test_files_but_validation_contract_does_not_claim_tests")
-
     if not test_files_changed and not contract.get("no_test_justification"):
         warnings.append("no_test_files_and_no_test_justification")
-
     missing_status = commands_missing_status(commands_run)
     if missing_status:
         warnings.append("commands_missing_status: " + ", ".join(missing_status[:3]))
-
     status = "failed" if hard_failures else "passed"
     route_decision = "fixup" if hard_failures else "review"
     return {
@@ -100,6 +77,9 @@ def evaluate_evidence_gate(
             "changed_files": changed_files,
             "test_files_changed": test_files_changed,
             "commands_claimed_count": len(commands_run),
+            "commands_reported_passed_count": commands_reported_passed_count,
+            "tests_passed_count": tests_passed_count,
+            "verified_commands": verified_commands,
         },
         "claims": {
             "claimed_tests_raw": claimed_tests_raw,
@@ -125,7 +105,6 @@ def evaluate_evidence_gate(
         "warnings": warnings,
     }
 
-
 def normalize_path_list(value: Any) -> list[str]:
     if value is None:
         return []
@@ -145,14 +124,12 @@ def normalize_path_list(value: Any) -> list[str]:
                     break
     return paths
 
-
 def normalize_claims_raw(value: Any) -> list[Any]:
     if value is None:
         return []
     if isinstance(value, list):
         return value
     return [value]
-
 
 def normalize_claim(raw: Any) -> dict[str, str] | None:
     if isinstance(raw, dict):
@@ -169,7 +146,6 @@ def normalize_claim(raw: Any) -> dict[str, str] | None:
             return {"path": parsed[0], "description": parsed[1], "source": "string"}
     return None
 
-
 def parse_path_prefix(text: str) -> tuple[str, str] | None:
     stripped = text.strip()
     if not stripped:
@@ -182,14 +158,12 @@ def parse_path_prefix(text: str) -> tuple[str, str] | None:
     description = stripped[len(candidate):].lstrip(":").strip()
     return candidate, description
 
-
 def looks_like_path(value: str) -> bool:
     if not value or any(ch.isspace() for ch in value):
         return False
     return bool(re.search(r"(^|/)(tests?|test_[^/]+|[^/]+_test)\b", value)) or value.endswith(
         ("/tests.py", "_test.py", ".py")
     )
-
 
 def path_matches_claim(changed_test_files: list[str], claimed_test: str) -> bool:
     claimed = claimed_test.strip()
@@ -201,7 +175,6 @@ def path_matches_claim(changed_test_files: list[str], claimed_test: str) -> bool
         or claimed.endswith("/" + changed)
         for changed in changed_test_files
     )
-
 
 def commands_missing_status(commands_run: list[Any]) -> list[str]:
     missing = []
@@ -215,6 +188,27 @@ def commands_missing_status(commands_run: list[Any]) -> list[str]:
             missing.append(command)
     return missing
 
+def commands_status_count(commands_run: list[Any], statuses: set[str]) -> int:
+    return sum(1 for command in commands_run if isinstance(command, dict) and str(command.get("status", "")).strip().lower() in statuses)
+
+def is_test_command(command: str) -> bool:
+    return any(token in command for token in ("tests/runtests.py", "pytest", "unittest", "cargo test", "bun test"))
+
+def verify_reported_passes(commands_run: list[Any]) -> list[dict[str, Any]]:
+    safe_tokens = ("tests/runtests.py", "pytest", "unittest", "git diff --check", "cargo test", "bun test")
+    verified: list[dict[str, Any]] = []
+    for item in commands_run:
+        if len(verified) >= 3 or not isinstance(item, dict):
+            continue
+        command = str(item.get("command") or item.get("cmd") or "").strip()
+        if str(item.get("status", "")).strip().lower() not in {"passed", "pass", "success", "succeeded", "ok"} or not command or not any(token in command for token in safe_tokens):
+            continue
+        try:
+            proc = subprocess.run(command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, timeout=180)
+            verified.append({"command": command, "exit_code": proc.returncode, "output_tail": proc.stdout[-2000:]})
+        except Exception as exc:
+            verified.append({"command": command, "exit_code": None, "error": str(exc)})
+    return verified
 
 def fixup_guidance(hard_failures: list[str], warnings: list[str]) -> str | None:
     if hard_failures:
@@ -230,21 +224,6 @@ def fixup_guidance(hard_failures: list[str], warnings: list[str]) -> str | None:
         )
     return None
 
-
-def read_json(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
-        return None
-    try:
-        value = json.loads(path.read_text())
-    except json.JSONDecodeError as exc:
-        return {"_json_error": str(exc)}
-    return value if isinstance(value, dict) else {"_json_error": "expected object"}
-
-
-def write_gate_record(record: dict[str, Any], path: Path) -> None:
-    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-
-
 def build_embedded_gate_script(
     *,
     audit_path: str,
@@ -254,15 +233,11 @@ def build_embedded_gate_script(
     """Return a self-contained Python script for sandbox workflow execution."""
     return f"""python3 - <<'PY'
 import json
+import subprocess
 import re
 from pathlib import Path
 
-CANNOT_PROVE = [
-    "patch_semantically_fixes_issue",
-    "changed_tests_are_meaningful_regressions",
-    "no_new_test_is_acceptable",
-    "hidden_or_official_tests_would_pass",
-]
+CANNOT_PROVE = ["patch_semantically_fixes_issue", "changed_tests_are_meaningful_regressions", "no_new_test_is_acceptable", "hidden_or_official_tests_would_pass"]
 
 
 def normalize_path_list(value):
@@ -355,6 +330,31 @@ def commands_missing_status(commands_run):
     return missing
 
 
+def commands_status_count(commands_run, statuses):
+    return sum(1 for command in commands_run if isinstance(command, dict) and str(command.get("status", "")).strip().lower() in statuses)
+
+
+def is_test_command(command):
+    return any(token in command for token in ("tests/runtests.py", "pytest", "unittest", "cargo test", "bun test"))
+
+
+def verify_reported_passes(commands_run):
+    safe_tokens = ("tests/runtests.py", "pytest", "unittest", "git diff --check", "cargo test", "bun test")
+    verified = []
+    for item in commands_run:
+        if len(verified) >= 3 or not isinstance(item, dict):
+            continue
+        command = str(item.get("command") or item.get("cmd") or "").strip()
+        if str(item.get("status", "")).strip().lower() not in {{"passed", "pass", "success", "succeeded", "ok"}} or not command or not any(token in command for token in safe_tokens):
+            continue
+        try:
+            proc = subprocess.run(command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, timeout=180)
+            verified.append({{"command": command, "exit_code": proc.returncode, "output_tail": proc.stdout[-2000:]}})
+        except Exception as exc:
+            verified.append({{"command": command, "exit_code": None, "error": str(exc)}})
+    return verified
+
+
 def fixup_guidance(hard_failures, warnings):
     if hard_failures:
         return (
@@ -406,6 +406,9 @@ def evaluate_evidence_gate(audit, contract):
     if not isinstance(commands_run, list):
         warnings.append("commands_run_not_list")
         commands_run = []
+    commands_reported_passed_count = commands_status_count(commands_run, {"passed", "pass", "success", "succeeded", "ok"})
+    verified_commands = verify_reported_passes(commands_run)
+    tests_passed_count = sum(1 for command in verified_commands if command["exit_code"] == 0 and is_test_command(command["command"]))
 
     if audit and audit.get("patch_nonempty") is False:
         hard_failures.append("audit_reports_empty_patch")
@@ -451,6 +454,9 @@ def evaluate_evidence_gate(audit, contract):
             "changed_files": changed_files,
             "test_files_changed": test_files_changed,
             "commands_claimed_count": len(commands_run),
+            "commands_reported_passed_count": commands_reported_passed_count,
+            "tests_passed_count": tests_passed_count,
+            "verified_commands": verified_commands,
         }},
         "claims": {{"claimed_tests_raw": claimed_tests_raw}},
         "derived": {{
@@ -485,22 +491,3 @@ print(json.dumps(record, sort_keys=True))
 raise SystemExit(1 if record["judgment"]["hard_failures"] else 0)
 PY
 """
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run issue-to-PR evidence gate")
-    parser.add_argument("--audit", type=Path, required=True)
-    parser.add_argument("--contract", type=Path, required=True)
-    parser.add_argument("--out", type=Path, required=True)
-    args = parser.parse_args(argv)
-
-    audit = read_json(args.audit) or {}
-    contract = read_json(args.contract) or {}
-    record = evaluate_evidence_gate(audit, contract)
-    write_gate_record(record, args.out)
-    print(json.dumps(record, sort_keys=True))
-    return 1 if record["judgment"]["hard_failures"] else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

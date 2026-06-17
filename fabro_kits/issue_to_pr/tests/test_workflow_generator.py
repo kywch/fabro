@@ -100,7 +100,7 @@ class WorkflowGeneratorTest(unittest.TestCase):
             workflow,
         )
         self.assertIn(
-            'materialize_review_artifacts -> fixup [condition="outcome=failed"]',
+            'materialize_review_artifacts -> review_accountability_gate [condition="outcome=failed"]',
             workflow,
         )
         self.assertIn(
@@ -111,7 +111,7 @@ class WorkflowGeneratorTest(unittest.TestCase):
             'review_accountability_gate -> fixup            [condition="outcome=failed"]',
             workflow,
         )
-        self.assertIn('materialize_review_artifacts -> fixup [label="Fallback"]', workflow)
+        self.assertIn('materialize_review_artifacts -> review_accountability_gate [label="Fallback"]', workflow)
         self.assertIn('review_accountability_gate -> fixup            [label="Fallback"]', workflow)
         validate_generated_workflow(
             workflow,
@@ -127,12 +127,19 @@ class WorkflowGeneratorTest(unittest.TestCase):
         )
 
         self.assertIn("open|closed_by_evidence|rejected|downgraded", workflow)
-        self.assertIn("Every row from", workflow)
-        self.assertIn("must have exactly one", workflow)
+        self.assertIn("Every adversarial row", workflow)
+        self.assertIn("same-id disposition", workflow)
+        self.assertIn("closure_check", workflow)
+        self.assertIn("closure_check_failures", workflow)
+        self.assertIn("closure_requires", workflow)
+        self.assertIn("missing_closure_requirement", workflow)
+        self.assertIn("category_mismatch", workflow)
+        self.assertIn("required_files", workflow)
         self.assertIn("unaccounted_adversarial_rows", workflow)
         self.assertIn("fixup_required_rows", workflow)
+        self.assertIn("offending_diff", workflow)
+        self.assertIn("Repair the whole patch", workflow)
         self.assertIn("Proceed to patch extraction.", workflow)
-
     def test_structured_preflight_rejects_stale_loop_budget(self):
         workflow = generate_issue_to_pr_workflow(
             graph_name="IssueToPr",
