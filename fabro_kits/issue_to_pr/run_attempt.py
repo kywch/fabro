@@ -10,22 +10,6 @@ from pathlib import Path
 from typing import Any
 
 
-def parse_run_ref(stdout: str, stderr: str) -> tuple[str | None, Path | None]:
-    """Parse either a server run ID or local run directory from Fabro output."""
-    run_id = None
-    run_dir = None
-    for line in (stdout + "\n" + stderr).splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("Run:"):
-            continue
-        value = stripped.split("Run:", 1)[1].strip()
-        if "/" in value:
-            run_dir = Path(value.replace("~", str(Path.home())))
-        elif value:
-            run_id = value
-    return run_id, run_dir
-
-
 def parse_json_object(stdout: str) -> dict[str, Any] | None:
     """Parse the first JSON object emitted by a Fabro JSON command."""
     text = stdout.strip()
