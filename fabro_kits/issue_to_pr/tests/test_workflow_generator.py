@@ -135,6 +135,8 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertIn("closure_requires", workflow)
         self.assertIn("missing_closure_requirement", workflow)
         self.assertIn("category_mismatch", workflow)
+        self.assertIn("if it is missing, empty, invalid JSON", workflow)
+        self.assertIn("Do not infer rows from chat history", workflow)
         self.assertIn("required_files", workflow)
         self.assertIn("unaccounted_adversarial_rows", workflow)
         self.assertIn("fixup_required_rows", workflow)

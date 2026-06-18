@@ -324,6 +324,7 @@ Hard contract:
 - Do not modify repository files.
 - Use read-only inspection only. Do not run tests or commands that may write.
 - Machine artifacts outrank claims. Treat {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, and `git diff` as authoritative.
+- First read {ADVERSARIAL_REVIEW_PATH}; if it is missing, empty, invalid JSON, or has no rows list, write process_failed with dispositions=[] and stop. Do not infer rows from chat history or other artifacts.
 
 Use a file-writing tool to overwrite {MODERATOR_FILTER_PATH} with one JSON object before your final answer; escape literal backslashes as JSON \\\\; printing without writing fails:
 {

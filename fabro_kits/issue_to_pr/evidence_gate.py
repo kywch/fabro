@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import inspect
+import ast
 import re
 import subprocess
+from pathlib import Path
 
 SCHEMA_VERSION = 1
 CANNOT_PROVE = ["patch_semantically_fixes_issue", "changed_tests_are_meaningful_regressions", "no_new_test_is_acceptable", "hidden_or_official_tests_would_pass"]
@@ -66,6 +68,7 @@ def evaluate_evidence_gate(
     missing_status = commands_missing_status(commands_run)
     if missing_status:
         warnings.append("commands_missing_status: " + ", ".join(missing_status[:3]))
+    hard_failures.extend(duplicate_test_definitions(test_files_changed))
     status = "failed" if hard_failures else "passed"
     route_decision = "fixup" if hard_failures else "review"
     return {
@@ -176,6 +179,26 @@ def path_matches_claim(changed_test_files, claimed_test):
         for changed in changed_test_files
     )
 
+def duplicate_test_definitions(paths):
+    failures = []
+    for path in paths:
+        file_path = Path(path)
+        if not path.endswith(".py") or not file_path.exists():
+            continue
+        try:
+            tree = ast.parse(file_path.read_text(errors="ignore"))
+        except SyntaxError:
+            continue
+        for scope in [tree] + [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]:
+            seen = set()
+            for node in getattr(scope, "body", []):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or not node.name.startswith("test_"):
+                    continue
+                if node.name in seen:
+                    failures.append(f"duplicate_test_definition: {path}:{node.name}")
+                seen.add(node.name)
+    return failures
+
 def commands_missing_status(commands_run):
     missing = []
     for command in commands_run:
@@ -232,6 +255,7 @@ def build_embedded_gate_script(
 ) -> str:
     """Return a self-contained Python script for sandbox workflow execution."""
     return f"""python3 - <<'PY'
+import ast
 import json
 import re
 import subprocess
@@ -275,6 +299,7 @@ def _embedded_gate_functions_source():
         parse_path_prefix,
         looks_like_path,
         path_matches_claim,
+        duplicate_test_definitions,
         commands_missing_status,
         commands_status_count,
         is_test_command,
