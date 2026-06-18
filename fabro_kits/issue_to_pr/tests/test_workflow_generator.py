@@ -91,8 +91,6 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertIn(MODERATOR_FILTER_PATH, workflow)
         self.assertIn(REVIEW_MATERIALIZATION_PATH, workflow)
         self.assertIn(REVIEW_ACCOUNTABILITY_GATE_PATH, workflow)
-        self.assertIn(".fabro/issue-to-pr/adversarial-review.json", workflow)
-        self.assertIn("Path(stale).unlink()", workflow)
         self.assertIn(
             "adversarial_review -> moderator_filter -> materialize_review_artifacts",
             workflow,

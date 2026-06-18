@@ -415,11 +415,9 @@ import json
 import subprocess
 from pathlib import Path
 
-
 def run(*args):
     proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     return proc.returncode, proc.stdout, proc.stderr
-
 
 _, names, _ = run("git", "diff", "--name-only")
 _, stat, _ = run("git", "diff", "--stat")
@@ -556,7 +554,6 @@ OUT.parent.mkdir(parents=True, exist_ok=True)
 MAJOR = {{"blocker", "critical", "major"}}
 STATES = {{"open", "closed_by_evidence", "rejected", "downgraded"}}
 
-
 def load(path):
     try:
         obj = json.loads(path.read_text())
@@ -566,20 +563,16 @@ def load(path):
         return None, {{"path": str(path), "error": "expected_json_object"}}
     return obj, None
 
-
 def row_id(row):
     value = row.get("id") if isinstance(row, dict) else None
     return None if value in (None, "") else str(value)
 
-
 def as_list(value):
     return value if isinstance(value, list) else []
-
 
 def clean_path(value):
     text = str(value).strip()
     return text[len("/workspace/"):] if text.startswith("/workspace/") else text
-
 
 def has_evidence(row):
     if not isinstance(row, dict):
@@ -591,7 +584,6 @@ def has_evidence(row):
         if isinstance(value, str) and value.strip():
             return True
     return bool(row.get("artifact_path") or row.get("artifact_field"))
-
 
 def tests_executed_successfully(gate):
     if not isinstance(gate, dict):
