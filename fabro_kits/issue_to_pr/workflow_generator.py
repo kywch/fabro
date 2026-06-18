@@ -300,6 +300,7 @@ Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON ob
   "overall_risk": "low|medium|high"
 }
 
+After writing, read {ADVERSARIAL_REVIEW_PATH} back and fix the file if it is missing, empty, or invalid JSON.
 End with exactly the same JSON object on one line. Do not ask how to write it, include Markdown, or output the object twice.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     ).replace(
@@ -352,6 +353,7 @@ Rules:
 - Use rejected only when the row is unsupported or demands universal proof beyond the issue contract. Use downgraded when representative issue-scoped evidence covers the concrete concern.
 - Runtime-test proof requires machine-observed pass fields like tests_passed_count; never use test_evidence_gate.status, changed files, or commands_reported_passed_count to close test-execution rows or mark ready_verified.
 
+After writing, read {MODERATOR_FILTER_PATH} back and fix the file if it is missing, empty, or invalid JSON.
 End with exactly the same JSON object on one line. Do not ask how to write it, include Markdown, or output the object twice.""".replace(
         "{ADVERSARIAL_REVIEW_PATH}", ADVERSARIAL_REVIEW_PATH
     ).replace(
