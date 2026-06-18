@@ -712,18 +712,16 @@ for disposition in dispositions:
         rejected_rows.append(disposition)
 
 unaccounted_rows = [row for rid, row in row_by_id.items() if rid not in seen]
-unaccounted_major_rows = [
-    row for row in unaccounted_rows
-    if str(row.get("severity", "")).lower() in MAJOR
-]
+unaccounted_major_rows = [row for row in unaccounted_rows if str(row.get("severity", "")).lower() in MAJOR]
 blocking_rows = [
     row for row in open_rows
     if str(row_by_id.get(row_id(row), row).get("severity", "")).lower() in MAJOR
 ]
 
 process_failures = []
-if malformed:
-    process_failures.append("review_artifact_missing_or_malformed")
+malformed_names = {{str(item.get("artifact")) for item in malformed if isinstance(item, dict)}}
+if malformed_names & {{"adversarial_review", "moderator_filter", "review_materialization"}}: process_failures.append("review_artifact_missing_or_malformed")
+if "patch" in malformed_names: process_failures.append("patch_malformed_or_scope_drift")
 if any(isinstance(item, dict) and item.get("error") == "tests_not_executed_successfully" for item in malformed):
     process_failures.append("tests_not_executed_successfully")
 if rows and not dispositions:
