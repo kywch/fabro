@@ -251,7 +251,7 @@ def _implement_prompt() -> str:
 Run the most relevant focused single-process test command; for Django prefer tracked files under `tests/` and class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not package-local test files or pytest/django test. If bootstrap fails, fix the invocation before using weaker smoke evidence, and report only real exit results. Ensure `git diff --name-only` lists every claimed changed file; for new files use `git add -N` or edit tracked files.
 For Django docs/ref/settings.txt, edit only the section named by the issue; verify the nearby heading before changing a Default line and revert unrelated hunks such as cache OPTIONS.
 Before finishing, update {VALIDATION_CONTRACT_PATH}; preserve research fields and add changed_files, tests_added as objects with path/test_name_or_scope/behavior_guarded,
-commands_run/status, no_test_justification, residual_risks, final_claims.""".replace(
+commands_run/status, no_test_justification, residual_risks, final_claims. Every changed test file must appear in tests_added or be reverted; commands_run alone is not enough.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     )
 
@@ -374,7 +374,7 @@ latest critic row. Metadata rows are not optional; keep one canonical release/ch
 	fixup_required_rows and malformed_artifacts item; when an artifact names a
 	path/check, repair that exact diff hunk before arguing it is stale. For Django docs/ref/settings.txt, verify the nearby section heading before changing a Default line and revert unrelated hunks such as cache OPTIONS. Then update
 the validation contract with reviewer_objections, changed_files, commands_run,
-residual_risks, and final_claims. Ensure `git diff --name-only` lists every claimed changed file; for Django tests, use tracked files under `tests/`. Prefer focused single-process tests over broad
+residual_risks, and final_claims. Every changed test file must appear in tests_added or be reverted; commands_run alone is not enough. Ensure `git diff --name-only` lists every claimed changed file; for Django tests, use tracked files under `tests/`. Prefer focused single-process tests over broad
 suites; for Django prefer class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not pytest/django test. If the full issue contract remains broken,
 keep it open.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
