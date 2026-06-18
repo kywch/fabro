@@ -357,7 +357,7 @@ Use a file-writing tool to overwrite {MODERATOR_FILTER_PATH} with one JSON objec
 Rules:
 - Every adversarial row needs exactly one same-id disposition and no extra IDs; empty is valid only with zero rows.
 - Keep severe rows open when any required_files are absent from changed_files.
-- Use open for unresolved blocker/major objections.
+- Use open for any unresolved objection. Open rows of any severity block export.
 - Use closed_by_evidence only when cited evidence directly answers the row.
   Never close by denying cited git diff hunks; keep the row open unless current patch evidence disproves them.
 - Use rejected only when the row is unsupported or demands universal proof beyond the issue contract. Use downgraded when representative issue-scoped evidence covers the concrete concern.
@@ -713,10 +713,7 @@ for disposition in dispositions:
 
 unaccounted_rows = [row for rid, row in row_by_id.items() if rid not in seen]
 unaccounted_major_rows = [row for row in unaccounted_rows if str(row.get("severity", "")).lower() in MAJOR]
-blocking_rows = [
-    row for row in open_rows
-    if str(row_by_id.get(row_id(row), row).get("severity", "")).lower() in MAJOR
-]
+blocking_rows = list(open_rows)
 
 process_failures = []
 malformed_names = {{str(item.get("artifact")) for item in malformed if isinstance(item, dict)}}
@@ -737,13 +734,13 @@ if invalid_dispositions:
 if closure_check_failures:
     process_failures.append("invalid_severe_closure_checks")
 if blocking_rows:
-    process_failures.append("open_blocker_or_major_rows")
+    process_failures.append("open_review_rows")
 failed = bool(process_failures)
 fixup_required_rows = (blocking_rows or closure_check_failures or unaccounted_major_rows or unaccounted_rows or invalid_dispositions) + malformed
 readiness = "process_failed" if failed else (
     "ready_verified" if tests_executed_successfully(test_gate) else "ready_unverified"
 )
-report = {{"schema_version": 1, "stage": "review_accountability_gate", "status": "failed" if failed else "passed", "process_status": "process_failed" if failed else "passed", "preferred_next_label": "Fix" if failed else "Approve", "route_decision": "fixup" if failed else "export", "readiness_tier": readiness, "failure_reason": "; ".join(process_failures), "process_failures": process_failures, "adversarial_row_count": len(rows), "moderator_disposition_count": len(dispositions), "open_rows": open_rows, "closed_rows": closed_rows, "downgraded_rows": downgraded_rows, "rejected_rows": rejected_rows, "blocking_rows": blocking_rows, "fixup_required_rows": fixup_required_rows, "unaccounted_adversarial_rows": unaccounted_rows, "unaccounted_major_rows": unaccounted_major_rows, "duplicate_disposition_ids": duplicate_disposition_ids, "orphan_dispositions": orphan_dispositions, "invalid_dispositions": invalid_dispositions, "closure_check_failures": closure_check_failures, "tests_executed_successfully": tests_executed_successfully(test_gate), "materialization": materialization or {{}}, "malformed_artifacts": malformed, "do_not_repeat": ["Do not export until every blocker/major objection is open or closed with cited evidence."] if failed else [], "next_agent_guidance": "; ".join([str((item if isinstance(item, dict) else {{}}).get("falsifiable_check") or (item if isinstance(item, dict) else {{}}).get("check") or (item if isinstance(item, dict) else {{}}).get("reason") or item) for item in fixup_required_rows[:3]]) if failed else "Proceed to patch extraction."}}
+report = {{"schema_version": 1, "stage": "review_accountability_gate", "status": "failed" if failed else "passed", "process_status": "process_failed" if failed else "passed", "preferred_next_label": "Fix" if failed else "Approve", "route_decision": "fixup" if failed else "export", "readiness_tier": readiness, "failure_reason": "; ".join(process_failures), "process_failures": process_failures, "adversarial_row_count": len(rows), "moderator_disposition_count": len(dispositions), "open_rows": open_rows, "closed_rows": closed_rows, "downgraded_rows": downgraded_rows, "rejected_rows": rejected_rows, "blocking_rows": blocking_rows, "fixup_required_rows": fixup_required_rows, "unaccounted_adversarial_rows": unaccounted_rows, "unaccounted_major_rows": unaccounted_major_rows, "duplicate_disposition_ids": duplicate_disposition_ids, "orphan_dispositions": orphan_dispositions, "invalid_dispositions": invalid_dispositions, "closure_check_failures": closure_check_failures, "tests_executed_successfully": tests_executed_successfully(test_gate), "materialization": materialization or {{}}, "malformed_artifacts": malformed, "do_not_repeat": ["Do not export until every review objection is closed, rejected, or downgraded with cited evidence."] if failed else [], "next_agent_guidance": "; ".join([str((item if isinstance(item, dict) else {{}}).get("falsifiable_check") or (item if isinstance(item, dict) else {{}}).get("check") or (item if isinstance(item, dict) else {{}}).get("reason") or item) for item in fixup_required_rows[:3]]) if failed else "Proceed to patch extraction."}}
 OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\\n")
 print(json.dumps(report, sort_keys=True))
 raise SystemExit(1 if failed else 0)

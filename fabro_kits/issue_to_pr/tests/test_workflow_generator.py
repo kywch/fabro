@@ -142,6 +142,8 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertIn("required_files", workflow)
         self.assertIn("unaccounted_adversarial_rows", workflow)
         self.assertIn("fixup_required_rows", workflow)
+        self.assertIn("Open rows of any severity block export", workflow)
+        self.assertIn('process_failures.append(\\"open_review_rows\\")', workflow)
         self.assertIn("offending_diff", workflow)
         self.assertIn('settings_ref.count(\\"The numeric mode', workflow)
         self.assertNotIn('settings_ref.count(\\"+The numeric mode', workflow)
