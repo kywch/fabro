@@ -643,7 +643,7 @@ rows = as_list(adversarial.get("rows") if isinstance(adversarial, dict) else Non
 dispositions = [] if adversarial_error else as_list(moderator.get("dispositions") if isinstance(moderator, dict) else None)
 changed_files = {{clean_path(path) for path in as_list(test_gate.get("changed_files") if isinstance(test_gate, dict) else None)}}
 settings_ref = subprocess.run(["git", "diff", "--", "docs/ref/settings.txt"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout
-if ("``OPTIONS``" in settings_ref and "+Default: ``0o644``" in settings_ref and "Extra parameters to pass to the cache backend" in settings_ref) or settings_ref.count("+The numeric mode (i.e. ``0o644``) to set newly uploaded files to.") > 1: malformed.append({{"artifact": "patch", "path": "docs/ref/settings.txt", "error": "docs_settings_corruption", "check": "cache OPTIONS default changed or FILE_UPLOAD_PERMISSIONS text duplicated", "offending_diff": settings_ref[:1200]}})
+if ("``OPTIONS``" in settings_ref and "+Default: ``0o644``" in settings_ref and "Extra parameters to pass to the cache backend" in settings_ref) or settings_ref.count("The numeric mode (i.e. ``0o644``) to set newly uploaded files to.") > 1: malformed.append({{"artifact": "patch", "path": "docs/ref/settings.txt", "error": "docs_settings_corruption", "check": "cache OPTIONS default changed or FILE_UPLOAD_PERMISSIONS text duplicated", "offending_diff": settings_ref[:1200]}})
 if isinstance(adversarial, dict) and not isinstance(adversarial.get("rows", []), list):
     malformed.append({{"artifact": "adversarial_review", "field": "rows", "error": "expected_list"}})
 if isinstance(moderator, dict) and not isinstance(moderator.get("dispositions", []), list):
