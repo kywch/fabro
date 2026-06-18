@@ -858,6 +858,68 @@ fabro_tools = true
     }
 }
 
+mod run_agent_interactive_questions {
+    use crate::SettingsLayer;
+    use crate::layers::Combine;
+
+    fn parse_settings(source: &str) -> SettingsLayer {
+        source
+            .parse::<SettingsLayer>()
+            .expect("fixture should parse via SettingsLayer")
+    }
+
+    #[test]
+    fn defaults_to_false_when_run_agent_is_absent() {
+        let settings = super::workflow_settings_from_layer(SettingsLayer::default())
+            .expect("empty settings should resolve")
+            .run;
+
+        assert!(!settings.agent.interactive_questions);
+    }
+
+    #[test]
+    fn resolves_true_from_run_agent_table() {
+        let settings = super::workflow_settings_from_toml(
+            r"
+_version = 1
+
+[run.agent]
+interactive_questions = true
+",
+        )
+        .expect("run.agent.interactive_questions should resolve");
+
+        assert!(settings.run.agent.interactive_questions);
+    }
+
+    #[test]
+    fn higher_layer_false_overrides_lower_true() {
+        let workflow = parse_settings(
+            r"
+_version = 1
+
+[run.agent]
+interactive_questions = false
+",
+        );
+        let user = parse_settings(
+            r"
+_version = 1
+
+[run.agent]
+interactive_questions = true
+",
+        );
+        let merged = workflow.combine(user);
+
+        let settings = super::workflow_settings_from_layer(merged)
+            .expect("merged settings should resolve")
+            .run;
+
+        assert!(!settings.agent.interactive_questions);
+    }
+}
+
 mod run_checkpoint_skip_git_hooks {
     //! Layer + resolver tests for `[run.checkpoint] skip_git_hooks`.
 

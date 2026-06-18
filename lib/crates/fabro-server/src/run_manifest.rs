@@ -495,8 +495,10 @@ async fn build_preflight_report(
         ));
     }
     run_environment_capability_check(&mut checks, &resolved_run);
+    let clone_credentials_usable =
+        clone_can_use_github_credentials(sandbox_provider, &resolved_run);
     let needs_github_credentials =
-        sandbox_provider.is_clone_based() || resolved_run.integrations.github.is_token_requested();
+        clone_credentials_usable || resolved_run.integrations.github.is_token_requested();
     let github_app = if needs_github_credentials {
         state
             .github_credentials(github_integration)
@@ -642,6 +644,13 @@ fn clone_disabled_for_provider(provider: SandboxProviderKind, resolved_run: &Run
         SandboxProviderKind::Docker | SandboxProviderKind::Daytona => !resolved_run.clone.enabled,
         SandboxProviderKind::Local => false,
     }
+}
+
+fn clone_can_use_github_credentials(
+    provider: SandboxProviderKind,
+    resolved_run: &RunNamespace,
+) -> bool {
+    provider.is_clone_based() && !clone_disabled_for_provider(provider, resolved_run)
 }
 
 fn run_environment_capability_check(checks: &mut Vec<CheckResult>, resolved_run: &RunNamespace) {
@@ -1607,6 +1616,41 @@ provider = "local"
         assert!(calls.lock().unwrap().is_empty());
     }
 
+    #[test]
+    fn clone_credential_gate_follows_clone_enabled_for_clone_based_providers() {
+        let (_prepared, resolved_disabled) = prepared_and_resolved_for_sandbox(
+            SandboxProviderKind::Docker,
+            false,
+            Some(git_context("https://github.com/acme/widgets", "main")),
+        );
+        assert!(!clone_can_use_github_credentials(
+            SandboxProviderKind::Docker,
+            &resolved_disabled
+        ));
+        assert!(!clone_can_use_github_credentials(
+            SandboxProviderKind::Daytona,
+            &resolved_disabled
+        ));
+
+        let (_prepared, resolved_enabled) = prepared_and_resolved_for_sandbox(
+            SandboxProviderKind::Docker,
+            true,
+            Some(git_context("https://github.com/acme/widgets", "main")),
+        );
+        assert!(clone_can_use_github_credentials(
+            SandboxProviderKind::Docker,
+            &resolved_enabled
+        ));
+        assert!(clone_can_use_github_credentials(
+            SandboxProviderKind::Daytona,
+            &resolved_enabled
+        ));
+        assert!(!clone_can_use_github_credentials(
+            SandboxProviderKind::Local,
+            &resolved_enabled
+        ));
+    }
+
     #[tokio::test]
     async fn repository_access_check_rejects_non_github_origins_before_remote_probe() {
         let (prepared, resolved) = prepared_and_resolved_for_sandbox(
@@ -2533,6 +2577,31 @@ issues = "read"
                 .expect("permissions should be present");
             assert_eq!(permissions.len(), 1);
             assert!(permissions.contains_key("issues"));
+        }
+
+        #[test]
+        fn parses_run_agent_interactive_questions() {
+            let workflow = workflow_with_config(
+                r#"_version = 1
+
+[run.agent]
+interactive_questions = false
+"#,
+            );
+
+            let layer = settings_layer_with_resolved_dockerfiles(
+                &workflow.config.as_ref().unwrap().source,
+                &workflow.config.as_ref().unwrap().path,
+                &workflow.files,
+                SettingsSource::Workflow,
+            )
+            .expect("workflow.toml should parse");
+            let agent = layer
+                .run
+                .expect("run layer should be present")
+                .agent
+                .expect("agent layer should be present");
+            assert_eq!(agent.interactive_questions, Some(false));
         }
 
         #[test]

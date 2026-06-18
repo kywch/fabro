@@ -169,6 +169,7 @@ async fn build_registry(
         let fallback_chain = spec.fallback_chain.clone();
         let mcp_servers = spec.mcp_servers.clone();
         let model_controls = spec.model_controls.clone();
+        let interactive_questions = spec.interactive_questions;
         let tool_secrets_for_api = tool_secrets.clone();
         let llm_source_for_api = Arc::clone(&llm_source);
         let catalog_for_api = Arc::clone(&catalog);
@@ -186,6 +187,7 @@ async fn build_registry(
                 Arc::clone(&catalog_for_api),
             )
             .with_run_model_controls(model_controls.clone())
+            .with_interactive_questions(interactive_questions)
             .with_tool_env_provider(tool_env_provider.clone())
             .with_tool_secrets(tool_secrets_for_api.clone())
             .with_mcp_servers(mcp_servers.clone());
@@ -809,12 +811,13 @@ mod tests {
                 working_directory: std::env::current_dir().unwrap(),
             },
             llm:               LlmSpec {
-                model:          "test-model".to_string(),
-                provider_id:    fabro_model::ProviderId::anthropic(),
-                fallback_chain: Vec::new(),
-                mcp_servers:    Vec::new(),
-                model_controls: RunModelControls::default(),
-                dry_run:        true,
+                model:                 "test-model".to_string(),
+                provider_id:           fabro_model::ProviderId::anthropic(),
+                fallback_chain:        Vec::new(),
+                mcp_servers:           Vec::new(),
+                model_controls:        RunModelControls::default(),
+                interactive_questions: true,
+                dry_run:               true,
             },
             interviewer:       Arc::new(AutoApproveInterviewer::engine()),
             steering_hub:      Arc::new(crate::steering_hub::SteeringHub::new(emitter.clone())),
@@ -891,12 +894,13 @@ mod tests {
                 working_directory: std::env::current_dir().unwrap(),
             },
             llm:               LlmSpec {
-                model:          "test-model".to_string(),
-                provider_id:    fabro_model::ProviderId::anthropic(),
-                fallback_chain: Vec::new(),
-                mcp_servers:    Vec::new(),
-                model_controls: RunModelControls::default(),
-                dry_run:        true,
+                model:                 "test-model".to_string(),
+                provider_id:           fabro_model::ProviderId::anthropic(),
+                fallback_chain:        Vec::new(),
+                mcp_servers:           Vec::new(),
+                model_controls:        RunModelControls::default(),
+                interactive_questions: true,
+                dry_run:               true,
             },
             interviewer:       Arc::new(AutoApproveInterviewer::engine()),
             steering_hub:      Arc::new(crate::steering_hub::SteeringHub::new(emitter.clone())),
@@ -990,12 +994,13 @@ mod tests {
         });
         let (_registry, effective_dry_run) = build_registry(
             &LlmSpec {
-                model:          "claude-opus-4-6".to_string(),
-                provider_id:    fabro_model::ProviderId::anthropic(),
-                fallback_chain: Vec::new(),
-                mcp_servers:    Vec::new(),
-                model_controls: RunModelControls::default(),
-                dry_run:        false,
+                model:                 "claude-opus-4-6".to_string(),
+                provider_id:           fabro_model::ProviderId::anthropic(),
+                fallback_chain:        Vec::new(),
+                mcp_servers:           Vec::new(),
+                model_controls:        RunModelControls::default(),
+                interactive_questions: true,
+                dry_run:               false,
             },
             Arc::new(AutoApproveInterviewer::engine()),
             Arc::new(crate::steering_hub::SteeringHub::new(test_emitter)),
@@ -1089,12 +1094,13 @@ mod tests {
                 working_directory: temp.path().to_path_buf(),
             },
             llm:               LlmSpec {
-                model:          "fake-acp".to_string(),
-                provider_id:    fabro_model::ProviderId::openai(),
-                fallback_chain: Vec::new(),
-                mcp_servers:    Vec::new(),
-                model_controls: RunModelControls::default(),
-                dry_run:        false,
+                model:                 "fake-acp".to_string(),
+                provider_id:           fabro_model::ProviderId::openai(),
+                fallback_chain:        Vec::new(),
+                mcp_servers:           Vec::new(),
+                model_controls:        RunModelControls::default(),
+                interactive_questions: true,
+                dry_run:               false,
             },
             interviewer:       Arc::new(AutoApproveInterviewer::engine()),
             steering_hub:      Arc::new(crate::steering_hub::SteeringHub::new(emitter)),
@@ -1185,12 +1191,13 @@ mod tests {
                 working_directory: std::env::current_dir().unwrap(),
             },
             llm:               LlmSpec {
-                model:          "test-model".to_string(),
-                provider_id:    fabro_model::ProviderId::anthropic(),
-                fallback_chain: Vec::new(),
-                mcp_servers:    Vec::new(),
-                model_controls: RunModelControls::default(),
-                dry_run:        true,
+                model:                 "test-model".to_string(),
+                provider_id:           fabro_model::ProviderId::anthropic(),
+                fallback_chain:        Vec::new(),
+                mcp_servers:           Vec::new(),
+                model_controls:        RunModelControls::default(),
+                interactive_questions: true,
+                dry_run:               true,
             },
             interviewer:       Arc::new(AutoApproveInterviewer::engine()),
             steering_hub:      Arc::new(crate::steering_hub::SteeringHub::new(emitter.clone())),
@@ -1299,12 +1306,13 @@ mod tests {
                 working_directory: std::env::current_dir().unwrap(),
             },
             llm: LlmSpec {
-                model:          "test-model".to_string(),
-                provider_id:    fabro_model::ProviderId::anthropic(),
-                fallback_chain: Vec::new(),
-                mcp_servers:    Vec::new(),
-                model_controls: RunModelControls::default(),
-                dry_run:        true,
+                model:                 "test-model".to_string(),
+                provider_id:           fabro_model::ProviderId::anthropic(),
+                fallback_chain:        Vec::new(),
+                mcp_servers:           Vec::new(),
+                model_controls:        RunModelControls::default(),
+                interactive_questions: true,
+                dry_run:               true,
             },
             interviewer: Arc::new(AutoApproveInterviewer::engine()),
             steering_hub: Arc::new(crate::steering_hub::SteeringHub::new(emitter.clone())),

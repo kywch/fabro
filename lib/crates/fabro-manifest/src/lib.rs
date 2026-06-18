@@ -976,6 +976,48 @@ mod tests {
     }
 
     #[test]
+    fn build_manifest_accepts_run_agent_interactive_questions() {
+        let temp = tempfile::tempdir().unwrap();
+        let workflow_toml = temp.path().join("workflow.toml");
+        let workflow_dot = temp.path().join("workflow.fabro");
+
+        std::fs::write(
+            &workflow_dot,
+            r#"
+digraph Test {
+  start [shape=Mdiamond]
+  exit [shape=Msquare]
+  start -> exit
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &workflow_toml,
+            r#"
+_version = 1
+
+[workflow]
+graph = "workflow.fabro"
+
+[run.agent]
+interactive_questions = false
+"#,
+        )
+        .unwrap();
+
+        let built = build_run_manifest(ManifestBuildInput {
+            workflow: workflow_toml,
+            cwd: temp.path().to_path_buf(),
+            environment_defaults: test_environment_defaults(),
+            ..ManifestBuildInput::default()
+        })
+        .expect("manifest should build with run.agent.interactive_questions");
+
+        assert_eq!(built.manifest.workflows.len(), 1);
+    }
+
+    #[test]
     fn build_manifest_bundles_imports_prompts_and_children() {
         let temp = tempfile::tempdir().unwrap();
         let project = temp.path();

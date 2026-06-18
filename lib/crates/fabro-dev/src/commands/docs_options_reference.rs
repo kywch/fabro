@@ -131,6 +131,7 @@ enabled = true",
             "[run.agent]",
             r#"[run.agent]
 fabro_tools = true
+interactive_questions = false
 permissions = "read-write""#,
         ),
     ]

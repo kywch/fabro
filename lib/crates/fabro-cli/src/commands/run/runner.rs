@@ -1159,14 +1159,16 @@ fn process_env_var(name: &str) -> Option<String> {
 }
 
 /// Hard-gate for the CLI worker path: a run-level token is requested, or
-/// a clone-based sandbox in non-dry-run mode will need credentials to
-/// pull the repository. Pull-request-driven credential acquisition is
-/// handled separately by the caller as a soft fallback.
+/// a clone-based sandbox in non-dry-run mode will use Fabro-managed clone.
+/// Pull-request-driven credential acquisition is handled separately by the
+/// caller as a soft fallback.
 fn requires_github_credentials(run: &RunNamespace) -> bool {
     if run.integrations.github.is_token_requested() {
         return true;
     }
-    run.execution.mode != RunMode::DryRun && run.environment.provider.is_clone_based()
+    run.execution.mode != RunMode::DryRun
+        && run.environment.provider.is_clone_based()
+        && run.clone.enabled
 }
 
 fn install_signal_handlers(
@@ -1780,12 +1782,14 @@ mod tests {
             permissions: HashMap<String, InterpString>,
             provider: &str,
             mode: RunMode,
+            clone_enabled: bool,
         ) -> RunNamespace {
             let mut run = RunNamespace::default();
             run.execution.mode = mode;
             run.environment.provider = provider
                 .parse::<EnvironmentProvider>()
                 .expect("test provider should parse");
+            run.clone.enabled = clone_enabled;
             run.integrations = RunIntegrationsSettings {
                 github: RunIntegrationsGithubSettings { permissions },
             };
@@ -1797,28 +1801,37 @@ mod tests {
             let permissions = HashMap::from([("issues".to_string(), InterpString::parse("read"))]);
             // Even with local sandbox + dry-run, non-empty permissions
             // force credential acquisition.
-            let run = run_with(permissions, "local", RunMode::DryRun);
+            let run = run_with(permissions, "local", RunMode::DryRun, false);
             assert!(requires_github_credentials(&run));
         }
 
         #[test]
-        fn requires_github_credentials_for_clone_based_provider() {
-            let run = run_with(HashMap::new(), "docker", RunMode::Normal);
+        fn requires_github_credentials_for_clone_based_provider_when_clone_enabled() {
+            let run = run_with(HashMap::new(), "docker", RunMode::Normal, true);
             assert!(requires_github_credentials(&run));
 
-            let daytona = run_with(HashMap::new(), "daytona", RunMode::Normal);
+            let daytona = run_with(HashMap::new(), "daytona", RunMode::Normal, true);
             assert!(requires_github_credentials(&daytona));
         }
 
         #[test]
+        fn does_not_require_github_credentials_for_clone_provider_when_clone_disabled() {
+            let run = run_with(HashMap::new(), "docker", RunMode::Normal, false);
+            assert!(!requires_github_credentials(&run));
+
+            let daytona = run_with(HashMap::new(), "daytona", RunMode::Normal, false);
+            assert!(!requires_github_credentials(&daytona));
+        }
+
+        #[test]
         fn does_not_require_github_credentials_for_local_clean_run() {
-            let run = run_with(HashMap::new(), "local", RunMode::Normal);
+            let run = run_with(HashMap::new(), "local", RunMode::Normal, true);
             assert!(!requires_github_credentials(&run));
         }
 
         #[test]
         fn does_not_require_github_credentials_for_clone_provider_in_dry_run() {
-            let run = run_with(HashMap::new(), "docker", RunMode::DryRun);
+            let run = run_with(HashMap::new(), "docker", RunMode::DryRun, true);
             assert!(!requires_github_credentials(&run));
         }
     }

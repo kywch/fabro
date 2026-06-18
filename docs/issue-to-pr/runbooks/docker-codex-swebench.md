@@ -185,6 +185,36 @@ provider/model you are testing is expected to work with an API key.
 The model probe is the auth check. If it fails, fix provider auth before running
 SWE-bench; generation will otherwise fail inside the workflow.
 
+### Fresh Local Server Smoke
+
+When testing the current checkout with a throwaway local server, authenticate
+that fresh server separately. A clean `HOME`/storage directory will not inherit
+the host server's `OPENAI_CODEX` vault secret, even if the default Fabro server
+already passes `model test`.
+
+Use an explicit HTTP target for the smoke:
+
+```bash
+export FABRO_SERVER=http://127.0.0.1:$FABRO_PORT/api/v1
+export HOME=/path/to/fresh/fabro-home
+
+"$FABRO_BIN" auth login \
+  --server "$FABRO_SERVER" \
+  --dev-token "$FABRO_DEV_TOKEN"
+"$FABRO_BIN" provider login --provider openai \
+  --server "$FABRO_SERVER"
+"$FABRO_BIN" model test \
+  --server "$FABRO_SERVER" \
+  --provider openai \
+  --model gpt-5.4-mini
+```
+
+Avoid Unix-socket targets for this smoke unless you have also written complete
+server settings into the active `HOME`. Some CLI paths may attempt local
+auto-start for socket targets and fail before reaching the already-running
+server. An HTTP target plus `FABRO_SERVER` keeps subprocesses, including
+`run_eval.py`, pointed at the intended server.
+
 ## Python Environment
 
 Create a local scratch environment:
@@ -314,6 +344,8 @@ summary; do not treat smoke success as a resolved SWE-bench task.
 | Server rejects dev token | token is not `fabro_dev_` plus 64 hex chars | inspect `tmp/issue-to-pr-smoke/.env` |
 | Docker sandbox never starts | Fabro container cannot reach Docker socket | `docker logs fabro-issue-to-pr-smoke-fabro-1` |
 | `model test` fails | OpenAI/Codex auth missing or expired | rerun `"$FABRO_BIN" provider login --provider openai --server http://127.0.0.1:32276/api/v1` |
+| Fresh checkout server says no LLM providers configured | `OPENAI_CODEX` exists only in another server vault | run `auth login`, `provider login --provider openai`, and `model test` against the fresh server target |
+| Fresh socket smoke tries to start another server | CLI socket target auto-start used incomplete active settings | prefer an explicit HTTP target and export `FABRO_SERVER` for the eval subprocess |
 | Run waits for input | workflow is interactive or missing auto approval | use `--auto-approve` and noninteractive prompts |
 | No patch | agent made no diff or review rejected before publish | inspect `run.json`, `candidate`, and `fabro/dump/events.jsonl` |
 | Prediction patch is blank | candidate was failed/rejected | inspect `output/patch.diff` and `candidate.state` |

@@ -432,17 +432,19 @@ enabled = true
 
 ## `[run.agent]`
 
-`[run.agent]` — agent knobs only (Fabro tools, permissions, MCPs)
+`[run.agent]` — agent knobs only (Fabro tools, interactive questions, permissions, MCPs)
 
 ```toml title="settings.toml"
 [run.agent]
 fabro_tools = true
+interactive_questions = false
 permissions = "read-write"
 ```
 
 | Key | Type / values | Default | Description |
 |---|---|---|---|
 | `fabro_tools` | boolean | false | Allow workflow agents to use Fabro run-management tools. |
+| `interactive_questions` | boolean | false | Allow workflow agents to ask human questions through model-native tools. |
 | `mcps` | table | None | Agent-scoped MCP server entries, keyed by name. |
 | `permissions` | "read-only" \| "read-write" \| "full" | "read-write" | Default tool permission level for workflow agents. |
 

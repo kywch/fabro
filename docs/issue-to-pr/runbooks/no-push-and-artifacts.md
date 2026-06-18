@@ -24,6 +24,9 @@ enabled = false
 [run.meta_branch]
 enabled = false
 
+[run.integrations.github]
+permissions = {}
+
 [run.environment]
 id = "docker"
 ```
@@ -34,6 +37,9 @@ setup stage is responsible for cloning the benchmark repository:
 ```toml
 [run.clone]
 enabled = false
+
+[run.integrations.github]
+permissions = {}
 ```
 
 If debug refs are desired, push only to a scratch fork or explicitly configured

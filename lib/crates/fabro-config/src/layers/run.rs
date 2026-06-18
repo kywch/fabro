@@ -383,7 +383,8 @@ pub struct InterviewProviderLayer {
     pub channel: Option<InterpString>,
 }
 
-/// `[run.agent]` — agent knobs only (Fabro tools, permissions, MCPs).
+/// `[run.agent]` — agent knobs only (Fabro tools, interactive questions,
+/// permissions, MCPs).
 #[derive(
     Debug,
     Clone,
@@ -400,6 +401,11 @@ pub struct RunAgentLayer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[option(default = "false", value_type = "boolean")]
     pub fabro_tools: Option<bool>,
+
+    /// Allow workflow agents to ask human questions through model-native tools.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[option(default = "false", value_type = "boolean")]
+    pub interactive_questions: Option<bool>,
 
     /// Default tool permission level for workflow agents.
     #[serde(default, skip_serializing_if = "Option::is_none")]

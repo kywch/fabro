@@ -21,6 +21,8 @@ import type { AgentPermissions } from './agent-permissions';
 import type { McpServerSettings } from './mcp-server-settings';
 
 export interface RunAgentSettings {
+    'fabro_tools': boolean;
+    'interactive_questions': boolean;
     'permissions': AgentPermissions | null;
     'mcps': { [key: string]: McpServerSettings; };
 }

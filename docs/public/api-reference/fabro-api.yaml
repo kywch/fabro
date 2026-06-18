@@ -13549,8 +13549,13 @@ components:
 
     RunAgentSettings:
       type: object
-      required: [permissions, mcps]
+      required: [fabro_tools, interactive_questions, permissions, mcps]
       properties:
+        fabro_tools:
+          type: boolean
+        interactive_questions:
+          type: boolean
+          default: false
         permissions:
           oneOf:
             - $ref: "#/components/schemas/AgentPermissions"

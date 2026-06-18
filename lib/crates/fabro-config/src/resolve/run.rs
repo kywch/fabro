@@ -276,9 +276,10 @@ fn resolve_agent(agent: Option<&RunAgentLayer>) -> RunAgentSettings {
     };
 
     RunAgentSettings {
-        fabro_tools: agent.fabro_tools.unwrap_or(false),
-        permissions: agent.permissions,
-        mcps:        agent
+        fabro_tools:           agent.fabro_tools.unwrap_or(false),
+        interactive_questions: agent.interactive_questions.unwrap_or(false),
+        permissions:           agent.permissions,
+        mcps:                  agent
             .mcps
             .iter()
             .map(|(name, entry)| (name.clone(), resolve_mcp_entry(name, entry)))

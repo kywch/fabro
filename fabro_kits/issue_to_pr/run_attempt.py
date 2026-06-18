@@ -26,6 +26,24 @@ def parse_run_ref(stdout: str, stderr: str) -> tuple[str | None, Path | None]:
     return run_id, run_dir
 
 
+def parse_json_object(stdout: str) -> dict[str, Any] | None:
+    """Parse the first JSON object emitted by a Fabro JSON command."""
+    text = stdout.strip()
+    if not text:
+        return None
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        return _last_json_object(stdout)
+    return value if isinstance(value, dict) else None
+
+
+def parse_run_id_json(stdout: str) -> str | None:
+    value = parse_json_object(stdout)
+    run_id = value.get("run_id") if isinstance(value, dict) else None
+    return run_id if isinstance(run_id, str) and run_id else None
+
+
 def dump_run(
     fabro_bin: str,
     run_id: str,
@@ -37,12 +55,56 @@ def dump_run(
     if dump_dir.exists():
         shutil.rmtree(dump_dir)
     proc = subprocess.run(
-        [fabro_bin, "dump", "--output", str(dump_dir), run_id],
+        [fabro_bin, "--json", "dump", "--output", str(dump_dir), run_id],
         capture_output=True,
         text=True,
         timeout=timeout,
     )
+    value = parse_json_object(proc.stdout)
+    output_dir = value.get("output_dir") if isinstance(value, dict) else None
+    if proc.returncode == 0 and isinstance(output_dir, str):
+        return Path(output_dir)
     return dump_dir if proc.returncode == 0 else None
+
+
+def fetch_run_diff(
+    fabro_bin: str,
+    run_id: str,
+    timeout: int = 120,
+) -> str | None:
+    """Return the canonical run diff when Fabro has one stored."""
+    proc = subprocess.run(
+        [fabro_bin, "--json", "diff", run_id],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if proc.returncode != 0:
+        return None
+    value = parse_json_object(proc.stdout)
+    diff = value.get("diff") if isinstance(value, dict) else None
+    return diff if isinstance(diff, str) and diff.strip() else None
+
+
+def write_events_jsonl(
+    fabro_bin: str,
+    run_id: str,
+    output_dir: Path,
+    timeout: int = 120,
+) -> Path | None:
+    """Fetch durable run events through the Fabro CLI JSONL surface."""
+    proc = subprocess.run(
+        [fabro_bin, "--json", "events", run_id],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    output_dir.mkdir(parents=True, exist_ok=True)
+    events_path = output_dir / "events.jsonl"
+    events_path.write_text(proc.stdout)
+    return events_path
 
 
 def find_patch(run_dir: Path) -> str | None:
@@ -235,11 +297,19 @@ def trajectory_entry(event: dict[str, Any]) -> dict[str, Any] | None:
     return {key: value for key, value in entry.items() if value is not None}
 
 
-def write_trajectory_from_events(dump_dir: Path) -> Path | None:
-    events_path = dump_dir / "events.jsonl"
+def write_trajectory_from_events(
+    events_path_or_dir: Path,
+    trajectory_path: Path | None = None,
+) -> Path | None:
+    events_path = (
+        events_path_or_dir / "events.jsonl"
+        if events_path_or_dir.is_dir()
+        else events_path_or_dir
+    )
     if not events_path.exists():
         return None
-    trajectory_path = dump_dir / "trajectory.jsonl"
+    if trajectory_path is None:
+        trajectory_path = events_path.parent / "trajectory.jsonl"
     count = 0
     with events_path.open() as events, trajectory_path.open("w") as trajectory:
         for line in events:

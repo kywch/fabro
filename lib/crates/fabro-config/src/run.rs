@@ -188,6 +188,29 @@ mod tests {
     use crate::RunGoalLayer;
 
     #[test]
+    fn parses_workflow_config_with_run_agent_interactive_questions() {
+        let run = parse_run_layer_from_settings_toml(
+            r#"
+_version = 1
+
+[workflow]
+graph = "workflow.fabro"
+
+[run.agent]
+interactive_questions = false
+"#,
+        )
+        .expect("workflow-local run config should parse");
+
+        assert_eq!(
+            run.agent
+                .expect("run.agent should be present")
+                .interactive_questions,
+            Some(false)
+        );
+    }
+
+    #[test]
     fn load_run_config_rewrites_relative_goal_file_path() {
         let tmp = tempfile::tempdir().unwrap();
         let workflow_dir = tmp.path().join("fabro").join("workflows").join("demo");

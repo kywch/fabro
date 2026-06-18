@@ -447,6 +447,7 @@ impl RunSession {
                 fallback_chain: llm.fallback_chain,
                 mcp_servers,
                 model_controls: resolved.model.controls.clone(),
+                interactive_questions: resolved.agent.interactive_questions,
                 dry_run: resolved.execution.mode == RunMode::DryRun,
             },
             interviewer,

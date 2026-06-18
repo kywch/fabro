@@ -997,12 +997,25 @@ pub struct InterviewProviderSettings {
     pub channel: Option<InterpString>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunAgentSettings {
     #[serde(default)]
-    pub fabro_tools: bool,
-    pub permissions: Option<AgentPermissions>,
-    pub mcps:        HashMap<String, McpServerSettings>,
+    pub fabro_tools:           bool,
+    #[serde(default)]
+    pub interactive_questions: bool,
+    pub permissions:           Option<AgentPermissions>,
+    pub mcps:                  HashMap<String, McpServerSettings>,
+}
+
+impl Default for RunAgentSettings {
+    fn default() -> Self {
+        Self {
+            fabro_tools:           false,
+            interactive_questions: false,
+            permissions:           None,
+            mcps:                  HashMap::new(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1018,6 +1031,7 @@ mod run_agent_settings_tests {
         .expect("legacy run agent settings should deserialize");
 
         assert!(!settings.fabro_tools);
+        assert!(!settings.interactive_questions);
     }
 }
 

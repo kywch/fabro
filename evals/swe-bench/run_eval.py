@@ -39,13 +39,16 @@ from fabro_kits.issue_to_pr.artifacts import (
 )
 from fabro_kits.issue_to_pr.run_attempt import (
     dump_run,
+    fetch_run_diff,
     find_audit_record,
     find_json_stage_record,
     find_patch,
     find_review_record,
     find_test_evidence_gate_record,
     find_verify_record,
-    parse_run_ref,
+    parse_json_object,
+    parse_run_id_json,
+    write_events_jsonl,
     write_trajectory_from_events,
 )
 from fabro_kits.issue_to_pr.workflow_generator import (
@@ -301,6 +304,12 @@ def generate_workflow_toml(
         '[run.meta_branch]',
         'enabled = false',
         '',
+        '[run.integrations.github]',
+        'permissions = {}',
+        '',
+        '[run.agent]',
+        'interactive_questions = false',
+        '',
         '[run.environment]',
         f'id = "swebench-{sandbox_provider}"',
         '',
@@ -402,8 +411,9 @@ def run_instance(
         toml_file.write_text(toml_content)
 
         cmd = [
-            fabro_bin, "run", str(toml_file),
+            fabro_bin, "--json", "run", str(toml_file),
             "--auto-approve",
+            "--detach",
             "--model", model,
             "--provider", provider,
             "--goal-file", str(goal_file),
@@ -411,33 +421,79 @@ def run_instance(
         ]
 
         log.debug(f"[{instance_id}] Starting fabro run")
-        proc = subprocess.run(
+        launch_proc = subprocess.run(
             cmd,
             cwd="/tmp",
-            timeout=timeout,
+            timeout=120,
             capture_output=True,
             text=True,
         )
 
-        run_id, fabro_run_dir = parse_run_ref(proc.stdout, proc.stderr)
+        run_id = parse_run_id_json(launch_proc.stdout)
+        fabro_run_dir = None
         result["fabro_run_dir"] = str(fabro_run_dir) if fabro_run_dir else None
         result["fabro_run_id"] = run_id
-        dumped = dump_run(fabro_bin, run_id, config_dir, timeout=120) if run_id else None
-        if dumped:
-            result["fabro_dump_dir"] = str(dumped)
-            events_path = dumped / "events.jsonl"
-            if events_path.exists():
-                result["events_path"] = str(events_path)
-            trajectory_path = write_trajectory_from_events(dumped)
+
+        if launch_proc.returncode != 0 or not run_id:
+            result["error"] = (
+                f"fabro launch exited with code {launch_proc.returncode}"
+                if launch_proc.returncode != 0
+                else "fabro launch did not return a run_id"
+            )
+            result["status"] = "failed"
+            (config_dir / "fabro_stderr.log").write_text(launch_proc.stderr)
+            (config_dir / "fabro_stdout.log").write_text(launch_proc.stdout)
+            log.debug(f"[{instance_id}] fabro launch stderr: {launch_proc.stderr[-300:]}")
+            raise RuntimeError(result["error"])
+
+        wait_cmd = [
+            fabro_bin,
+            "--json",
+            "wait",
+            run_id,
+            "--timeout",
+            str(timeout),
+        ]
+        wait_proc = subprocess.run(
+            wait_cmd,
+            cwd="/tmp",
+            timeout=timeout + 30,
+            capture_output=True,
+            text=True,
+        )
+        wait_result = parse_json_object(wait_proc.stdout) or {}
+        wait_status = wait_result.get("status")
+        if isinstance(wait_result, dict):
+            result["fabro_wait"] = wait_result
+
+        events_path = write_events_jsonl(fabro_bin, run_id, config_dir, timeout=120)
+        if events_path:
+            result["events_path"] = str(events_path)
+            trajectory_path = write_trajectory_from_events(events_path)
             if trajectory_path:
                 result["trajectory_path"] = str(trajectory_path)
 
-        if proc.returncode != 0:
-            result["error"] = f"fabro exited with code {proc.returncode}"
+        dumped = dump_run(fabro_bin, run_id, config_dir, timeout=120) if run_id else None
+        if dumped:
+            result["fabro_dump_dir"] = str(dumped)
+            if not result.get("events_path"):
+                dump_events_path = dumped / "events.jsonl"
+                if dump_events_path.exists():
+                    result["events_path"] = str(dump_events_path)
+                    trajectory_path = write_trajectory_from_events(dump_events_path)
+                    if trajectory_path:
+                        result["trajectory_path"] = str(trajectory_path)
+
+        if wait_proc.returncode != 0:
+            result["error"] = (
+                f"fabro wait exited with code {wait_proc.returncode}"
+                if not wait_status
+                else f"fabro run ended with status {wait_status}"
+            )
             result["status"] = "failed"
-            (config_dir / "fabro_stderr.log").write_text(proc.stderr)
-            (config_dir / "fabro_stdout.log").write_text(proc.stdout)
-            log.debug(f"[{instance_id}] fabro stderr: {proc.stderr[-300:]}")
+            (config_dir / "fabro_stderr.log").write_text(wait_proc.stderr)
+            (config_dir / "fabro_stdout.log").write_text(wait_proc.stdout)
+            log.debug(f"[{instance_id}] fabro wait stderr: {wait_proc.stderr[-300:]}")
         else:
             result["status"] = "completed"
 
@@ -526,8 +582,10 @@ def run_instance(
                 review = find_review_record(dumped)
             result["review"] = review
 
-        # Extract patch from the fabro run dir
-        patch = find_patch(fabro_run_dir) if fabro_run_dir else None
+        # Prefer Fabro's canonical run diff, then fall back to workflow stage output.
+        patch = fetch_run_diff(fabro_bin, run_id)
+        if not patch:
+            patch = find_patch(fabro_run_dir) if fabro_run_dir else None
         if not patch and dumped:
             patch = find_patch(dumped)
         if patch and patch.strip():
@@ -559,7 +617,7 @@ def run_instance(
                     result["review_accountability_gate"].get("failure_reason")
                     or "Review accountability gate blocked export"
                 )
-            elif proc.returncode == 0:
+            elif wait_proc.returncode == 0:
                 result["status"] = "completed"
             if (
                 workflow_profile == STRUCTURED_MODERATED_PROFILE

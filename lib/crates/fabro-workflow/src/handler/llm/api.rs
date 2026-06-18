@@ -577,23 +577,34 @@ fn spawn_event_forwarder(
     });
 }
 
+fn register_question_tools_if_enabled(
+    enabled: bool,
+    profile_kind: AgentProfileKind,
+    registry: &mut ToolRegistry,
+) {
+    if enabled {
+        register_question_tools(profile_kind, registry);
+    }
+}
+
 /// LLM backend that delegates to an `agent` Session per invocation.
 ///
 /// For `full` fidelity nodes sharing a thread key, sessions are cached
 /// and reused so the LLM sees the full conversation history.
 pub struct AgentApiBackend {
-    model:              String,
-    provider_id:        ProviderId,
-    fallback_chain:     Vec<FallbackTarget>,
-    sessions:           Mutex<HashMap<String, Session>>,
-    tool_env:           Option<Arc<dyn ToolEnvProvider>>,
-    mcp_servers:        Vec<McpServerSettings>,
-    tool_secrets:       ToolSecrets,
-    run_model_controls: RunModelControls,
-    source:             Arc<dyn CredentialSource>,
-    steering_hub:       Arc<SteeringHub>,
-    catalog:            Arc<Catalog>,
-    fabro_run_tools:    Option<FabroRunToolServices>,
+    model:                 String,
+    provider_id:           ProviderId,
+    fallback_chain:        Vec<FallbackTarget>,
+    sessions:              Mutex<HashMap<String, Session>>,
+    tool_env:              Option<Arc<dyn ToolEnvProvider>>,
+    mcp_servers:           Vec<McpServerSettings>,
+    tool_secrets:          ToolSecrets,
+    run_model_controls:    RunModelControls,
+    source:                Arc<dyn CredentialSource>,
+    steering_hub:          Arc<SteeringHub>,
+    catalog:               Arc<Catalog>,
+    fabro_run_tools:       Option<FabroRunToolServices>,
+    interactive_questions: bool,
 }
 
 struct OneShotCompletion {
@@ -643,6 +654,7 @@ impl AgentApiBackend {
             steering_hub,
             catalog,
             fabro_run_tools: None,
+            interactive_questions: false,
         }
     }
 
@@ -698,6 +710,12 @@ impl AgentApiBackend {
         self
     }
 
+    #[must_use]
+    pub fn with_interactive_questions(mut self, enabled: bool) -> Self {
+        self.interactive_questions = enabled;
+        self
+    }
+
     fn resolve_effective_request_controls(
         &self,
         node: &Node,
@@ -744,6 +762,7 @@ impl AgentApiBackend {
             self.mcp_servers.clone(),
             self.tool_secrets.clone(),
             self.fabro_run_tools.clone(),
+            self.interactive_questions,
         )
         .await
     }
@@ -761,6 +780,7 @@ impl AgentApiBackend {
         mcp_servers: Vec<McpServerSettings>,
         tool_secrets: ToolSecrets,
         fabro_run_tools: Option<FabroRunToolServices>,
+        interactive_questions: bool,
     ) -> Result<Session, Error> {
         let controls = effective_request_controls(run_model_controls, node)?;
         let client = Client::from_source(source, Arc::clone(&catalog))
@@ -836,7 +856,11 @@ impl AgentApiBackend {
         });
 
         profile.register_subagent_tools(manager, factory, 0);
-        register_question_tools(provider.profile_kind, profile.tool_registry_mut());
+        register_question_tools_if_enabled(
+            interactive_questions,
+            provider.profile_kind,
+            profile.tool_registry_mut(),
+        );
         if let Some(services) = fabro_run_tools {
             register_fabro_run_tools(profile.tool_registry_mut(), &services);
         }
@@ -1342,6 +1366,7 @@ impl CodergenBackend for AgentApiBackend {
                             self.mcp_servers.clone(),
                             self.tool_secrets.clone(),
                             self.fabro_run_tools.clone(),
+                            self.interactive_questions,
                         )
                         .await;
                         if cancel_token.is_cancelled() {
@@ -2515,6 +2540,53 @@ reasoning = false
         assert!(names.contains(&"send_input".to_string()));
         assert!(names.contains(&"wait".to_string()));
         assert!(names.contains(&"close_agent".to_string()));
+    }
+
+    #[test]
+    fn question_tools_are_registered_only_when_enabled() {
+        let mut openai_registry = ToolRegistry::new();
+        register_question_tools_if_enabled(true, AgentProfileKind::OpenAi, &mut openai_registry);
+        assert!(
+            openai_registry
+                .names()
+                .contains(&fabro_agent::OPENAI_REQUEST_USER_INPUT_TOOL.to_string())
+        );
+
+        let mut disabled_openai_registry = ToolRegistry::new();
+        register_question_tools_if_enabled(
+            false,
+            AgentProfileKind::OpenAi,
+            &mut disabled_openai_registry,
+        );
+        assert!(
+            !disabled_openai_registry
+                .names()
+                .contains(&fabro_agent::OPENAI_REQUEST_USER_INPUT_TOOL.to_string())
+        );
+
+        let mut anthropic_registry = ToolRegistry::new();
+        register_question_tools_if_enabled(
+            true,
+            AgentProfileKind::Anthropic,
+            &mut anthropic_registry,
+        );
+        assert!(
+            anthropic_registry
+                .names()
+                .contains(&fabro_agent::ANTHROPIC_ASK_USER_QUESTION_TOOL.to_string())
+        );
+
+        let mut disabled_anthropic_registry = ToolRegistry::new();
+        register_question_tools_if_enabled(
+            false,
+            AgentProfileKind::Anthropic,
+            &mut disabled_anthropic_registry,
+        );
+        assert!(
+            !disabled_anthropic_registry
+                .names()
+                .contains(&fabro_agent::ANTHROPIC_ASK_USER_QUESTION_TOOL.to_string())
+        );
     }
 
     #[test]

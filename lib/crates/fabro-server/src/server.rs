@@ -3910,11 +3910,15 @@ async fn execute_run_in_process(state: Arc<AppState>, run_id: RunId) {
         let settings = &run_spec.settings.run;
         let clone_can_use_github_credentials = settings.execution.mode != RunMode::DryRun
             && settings.environment.provider.is_clone_based()
+            && settings.clone.enabled
             && run_spec
                 .repo_origin_url()
                 .is_some_and(|origin| !origin.trim().is_empty());
-        let pull_request_can_use_github_credentials =
-            settings.execution.mode != RunMode::DryRun && settings.pull_request.is_some();
+        let pull_request_can_use_github_credentials = settings.execution.mode != RunMode::DryRun
+            && settings
+                .pull_request
+                .as_ref()
+                .is_some_and(|pull_request| pull_request.enabled);
         if settings.integrations.github.is_token_requested() {
             state.github_credentials(github_settings)
         } else if clone_can_use_github_credentials || pull_request_can_use_github_credentials {

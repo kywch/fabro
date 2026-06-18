@@ -14,3 +14,6 @@ enabled = false
 
 [run.meta_branch]
 enabled = false
+
+[run.integrations.github]
+permissions = {}
