@@ -345,7 +345,7 @@ Use a file-writing tool to overwrite {MODERATOR_FILTER_PATH} with one JSON objec
       "category": "code|tests|metadata|process",
       "severity": "blocker|major|minor|info",
       "evidence": ["<required for closed_by_evidence or downgraded>"],
-      "closure_check": "<required for closed/downgraded/rejected blocker|major>",
+      "closure_check": "<required for closed/downgraded/rejected rows>",
       "reason": "<why this disposition is evidence-bound>"
     }
   ],
@@ -361,6 +361,7 @@ Rules:
 - Use closed_by_evidence only when cited evidence directly answers the row.
   Never close by denying cited git diff hunks; keep the row open unless current patch evidence disproves them.
 - Use rejected only when the row is unsupported or demands universal proof beyond the issue contract. Use downgraded when representative issue-scoped evidence covers the concrete concern.
+- Every closed_by_evidence, downgraded, or rejected row must include a nonempty closure_check.
 - Runtime-test proof requires machine-observed pass fields like tests_passed_count; never use test_evidence_gate.status, changed files, or commands_reported_passed_count to close test-execution rows or mark ready_verified.
 
 After writing, read {MODERATOR_FILTER_PATH} back and fix the file if it is missing, empty, or invalid JSON.
@@ -687,7 +688,7 @@ for disposition in dispositions:
         continue
     severe = str(row_by_id.get(did, {{}}).get("severity", disposition.get("severity", ""))).lower() in MAJOR
     closure_check = str(disposition.get("closure_check", "")).strip()
-    if severe and state in {{"closed_by_evidence", "downgraded", "rejected"}} and not closure_check and (state == "rejected" or not has_evidence(disposition) or not str(disposition.get("reason", "")).strip()):
+    if state in {{"closed_by_evidence", "downgraded", "rejected"}} and not closure_check:
         closure_check_failures.append(disposition)
     if severe and did in row_by_id and str(disposition.get("category", "")).lower() != str(row_by_id[did].get("category", "")).lower():
         disposition["category_mismatch"] = {{"row": row_by_id[did].get("category"), "disposition": disposition.get("category")}}
@@ -732,7 +733,7 @@ if duplicate_disposition_ids:
 if invalid_dispositions:
     process_failures.append("invalid_moderator_dispositions")
 if closure_check_failures:
-    process_failures.append("invalid_severe_closure_checks")
+    process_failures.append("invalid_closure_checks")
 if blocking_rows:
     process_failures.append("open_review_rows")
 failed = bool(process_failures)

@@ -133,7 +133,7 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertIn("Every adversarial row", workflow)
         self.assertIn("same-id disposition", workflow)
         self.assertIn("closure_check", workflow)
-        self.assertIn("closure_check_failures", workflow)
+        self.assertIn("invalid_closure_checks", workflow)
         self.assertIn("closure_requires", workflow)
         self.assertIn("missing_closure_requirement", workflow)
         self.assertIn("category_mismatch", workflow)
