@@ -254,6 +254,7 @@ def read_json(path):
 
 
 def write_gate_record(record, path):
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\\n")
 
 audit = read_json(Path({audit_path!r})) or {{}}

@@ -14,13 +14,14 @@ VERIFY_DIFF_CHECK = "diff-check"
 TEMPLATE_START_MARKERS = ("{{", "{%", "{#")
 STRUCTURED_FIXUP_MAX_VISITS = 3
 STRUCTURED_VERIFY_REVIEW_MAX_VISITS = STRUCTURED_FIXUP_MAX_VISITS + 1
-VALIDATION_CONTRACT_PATH = "/tmp/fabro-validation.json"
-DIFF_AUDIT_PATH = "/tmp/fabro-diff-audit.json"
-TEST_EVIDENCE_GATE_PATH = "/tmp/fabro-test-evidence-gate.json"
-ADVERSARIAL_REVIEW_PATH = "/tmp/fabro-adversarial-review.json"
-MODERATOR_FILTER_PATH = "/tmp/fabro-moderator-filter.json"
-REVIEW_MATERIALIZATION_PATH = "/tmp/fabro-review-materialization.json"
-REVIEW_ACCOUNTABILITY_GATE_PATH = "/tmp/fabro-review-accountability-gate.json"
+ARTIFACT_DIR = ".fabro/issue-to-pr"
+VALIDATION_CONTRACT_PATH = f"{ARTIFACT_DIR}/validation.json"
+DIFF_AUDIT_PATH = f"{ARTIFACT_DIR}/diff-audit.json"
+TEST_EVIDENCE_GATE_PATH = f"{ARTIFACT_DIR}/test-evidence-gate.json"
+ADVERSARIAL_REVIEW_PATH = f"{ARTIFACT_DIR}/adversarial-review.json"
+MODERATOR_FILTER_PATH = f"{ARTIFACT_DIR}/moderator-filter.json"
+REVIEW_MATERIALIZATION_PATH = f"{ARTIFACT_DIR}/review-materialization.json"
+REVIEW_ACCOUNTABILITY_GATE_PATH = f"{ARTIFACT_DIR}/review-accountability-gate.json"
 
 
 def dot_escape(text: str) -> str:
@@ -439,7 +440,11 @@ audit = {{
     "test_files_changed": test_files,
     "diff_stat": [line for line in stat.splitlines() if line.strip()],
 }}
-Path("{DIFF_AUDIT_PATH}").write_text(json.dumps(audit, indent=2) + "\\n")
+for stale in ("{ADVERSARIAL_REVIEW_PATH}", "{MODERATOR_FILTER_PATH}", "{REVIEW_MATERIALIZATION_PATH}", "{REVIEW_ACCOUNTABILITY_GATE_PATH}"):
+    if Path(stale).exists(): Path(stale).unlink()
+out = Path("{DIFF_AUDIT_PATH}")
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text(json.dumps(audit, indent=2) + "\\n")
 print(json.dumps(audit, sort_keys=True))
 PY
 """
@@ -464,7 +469,11 @@ SOURCES = {{
     "moderator_filter": Path("{MODERATOR_FILTER_PATH}"),
 }}
 OUT = Path("{REVIEW_MATERIALIZATION_PATH}")
-
+OUT.parent.mkdir(parents=True, exist_ok=True)
+REQUIRED_KEYS = {{
+    "adversarial_review": ("schema_version", "stage", "summary", "rows", "overall_risk"),
+    "moderator_filter": ("schema_version", "stage", "dispositions", "readiness_tier", "next_agent_guidance"),
+}}
 
 def load(name, path):
     try:
@@ -492,7 +501,6 @@ def load(name, path):
         return None, {{"artifact": name, "path": str(path), "error": "expected_json_object"}}
     return None, {{"artifact": name, "path": str(path), "error": "invalid_json_object"}}
 
-
 errors = []
 loaded = {{}}
 for name, path in SOURCES.items():
@@ -501,24 +509,26 @@ for name, path in SOURCES.items():
     if error:
         errors.append(error)
 
+for name, value in loaded.items():
+    if not isinstance(value, dict):
+        continue
+    missing = [key for key in REQUIRED_KEYS[name] if key not in value]
+    if missing:
+        errors.append({{"artifact": name, "path": str(SOURCES[name]), "error": "missing_required_keys", "keys": missing}})
+    if value.get("stage") not in (None, name):
+        errors.append({{"artifact": name, "path": str(SOURCES[name]), "error": "wrong_stage", "stage": value.get("stage")}})
+
 rows = loaded["adversarial_review"].get("rows")
 dispositions = loaded["moderator_filter"].get("dispositions")
 rows = rows if isinstance(rows, list) else []
 dispositions = dispositions if isinstance(dispositions, list) else []
-row_ids = [
-    str(row.get("id"))
-    for row in rows
-    if isinstance(row, dict) and row.get("id") not in (None, "")
-]
-disposition_ids = [
-    str(row.get("id"))
-    for row in dispositions
-    if isinstance(row, dict) and row.get("id") not in (None, "")
-]
+row_ids = [str(row.get("id")) for row in rows if isinstance(row, dict) and row.get("id") not in (None, "")]
+disposition_ids = [str(row.get("id")) for row in dispositions if isinstance(row, dict) and row.get("id") not in (None, "")]
+status = "failed" if errors or (row_ids and not disposition_ids) or any(did not in row_ids for did in disposition_ids) else "passed"
 report = {{
     "schema_version": 1,
     "stage": "review_materialization",
-    "status": "failed" if errors or (row_ids and not disposition_ids) or any(did not in row_ids for did in disposition_ids) else "passed",
+    "status": status,
     "sources": {{name: str(path) for name, path in SOURCES.items()}},
     "adversarial_row_ids": row_ids,
     "moderator_disposition_ids": disposition_ids,
@@ -527,7 +537,7 @@ report = {{
 }}
 OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
 print(json.dumps(report, sort_keys=True))
-raise SystemExit(1 if errors else 0)
+raise SystemExit(1 if status != "passed" else 0)
 PY
 """
 
@@ -542,6 +552,7 @@ MODERATOR = Path("{MODERATOR_FILTER_PATH}")
 TEST_GATE = Path("{TEST_EVIDENCE_GATE_PATH}")
 MATERIALIZATION = Path("{REVIEW_MATERIALIZATION_PATH}")
 OUT = Path("{REVIEW_ACCOUNTABILITY_GATE_PATH}")
+OUT.parent.mkdir(parents=True, exist_ok=True)
 MAJOR = {{"blocker", "critical", "major"}}
 STATES = {{"open", "closed_by_evidence", "rejected", "downgraded"}}
 
