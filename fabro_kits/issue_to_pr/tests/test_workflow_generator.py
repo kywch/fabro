@@ -145,7 +145,7 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertIn("offending_diff", workflow)
         self.assertIn('settings_ref.count(\\"The numeric mode', workflow)
         self.assertNotIn('settings_ref.count(\\"+The numeric mode', workflow)
-        self.assertIn("Repair the whole patch", workflow)
+        self.assertIn("treat open rows as a checklist", workflow)
         self.assertIn("Proceed to patch extraction.", workflow)
     def test_structured_preflight_rejects_stale_loop_budget(self):
         workflow = generate_issue_to_pr_workflow(

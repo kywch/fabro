@@ -380,8 +380,8 @@ def _fixup_prompt() -> str:
 /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH}, {DIFF_AUDIT_PATH}, and when
 present {REVIEW_ACCOUNTABILITY_GATE_PATH}. Repair the whole patch, not only the
 latest critic row. Metadata rows are not optional; keep one canonical release/changelog note. Testable behavior rows need changed regression tests in git diff; runtime-only evidence is not enough. Compatibility rows need representative tests with real fields/behavior, not only default or proxy-only paths. Inspect changed files for unrelated hunks. Address every
-	fixup_required_rows and malformed_artifacts item; when an artifact names a
-	path/check, repair that exact diff hunk before arguing it is stale. For Django docs/ref/settings.txt, verify the nearby section heading before changing a Default line and revert unrelated hunks such as cache OPTIONS. Then update
+		fixup_required_rows and malformed_artifacts item; treat open rows as a checklist: edit required_files, run the closure_check/falsifiable_check when present, and cite the command. When an artifact names a
+		path/check, repair that exact diff hunk before arguing it is stale; revert broad generated hunks first. For Django docs/ref/settings.txt, verify the nearby section heading before changing a Default line and revert unrelated hunks such as cache OPTIONS. Then update
 the validation contract with reviewer_objections, changed_files, commands_run,
 residual_risks, and final_claims. Every changed test file must appear in tests_added or be reverted; commands_run alone is not enough. Ensure `git diff --name-only` lists every claimed changed file; for Django tests, use tracked files under `tests/`. Prefer focused single-process tests over broad
 suites; for Django prefer class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not pytest/django test. If the full issue contract remains broken,
