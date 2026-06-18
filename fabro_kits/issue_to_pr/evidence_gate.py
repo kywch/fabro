@@ -41,7 +41,7 @@ def evaluate_evidence_gate(
     if normalized_paths and not test_files_changed:
         hard_failures.append("validation_claims_tests_but_diff_has_no_test_files")
     elif normalized_paths:
-        missing = [path for path in normalized_paths if not path_matches_claim(test_files_changed, path)]
+        missing = [path for path in normalized_paths if not path_matches_claim(test_files_changed, path)] + [path for path in test_files_changed if not path_matches_claim(normalized_paths, path)]
         if missing:
             hard_failures.append("validation_claims_tests_not_in_diff: " + ", ".join(missing))
     unparseable_claims = [
@@ -415,9 +415,7 @@ def evaluate_evidence_gate(audit, contract):
     if normalized_paths and not test_files_changed:
         hard_failures.append("validation_claims_tests_but_diff_has_no_test_files")
     elif normalized_paths:
-        missing = [
-            path for path in normalized_paths if not path_matches_claim(test_files_changed, path)
-        ]
+        missing = [path for path in normalized_paths if not path_matches_claim(test_files_changed, path)] + [path for path in test_files_changed if not path_matches_claim(normalized_paths, path)]
         if missing:
             hard_failures.append("validation_claims_tests_not_in_diff: " + ", ".join(missing))
 

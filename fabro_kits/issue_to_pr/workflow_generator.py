@@ -246,8 +246,8 @@ research_assumptions. End with acceptance criteria and test plan.""".replace(
 
 def _implement_prompt() -> str:
     return """Fix the issue with the smallest defensible patch. Do not ask questions or call request_user_input.
-	Use /tmp/fabro-research.md when present. Satisfy all acceptance criteria, including requested release/changelog notes, not only the title. Add/update regression tests when behavior is testable.
-Run the most relevant focused single-process test command; for Django prefer class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not pytest/django test. If bootstrap fails, fix the invocation before using weaker smoke evidence, and report only real exit results.
+	Use /tmp/fabro-research.md when present. Satisfy all acceptance criteria, including requested release/changelog notes, not only the title; if the contract names a release/changelog file, add one canonical note in the first patch. For testable behavior changes, change a regression test file in git diff; running existing tests alone is not enough.
+Run the most relevant focused single-process test command; for Django prefer tracked files under `tests/` and class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not package-local test files or pytest/django test. If bootstrap fails, fix the invocation before using weaker smoke evidence, and report only real exit results. Ensure `git diff --name-only` lists every claimed changed file; for new files use `git add -N` or edit tracked files.
 Before finishing, update {VALIDATION_CONTRACT_PATH}; preserve research fields and add changed_files, tests_added as objects with path/test_name_or_scope/behavior_guarded,
 commands_run/status, no_test_justification, residual_risks, final_claims.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
@@ -274,7 +274,7 @@ this routing JSON:
 
 def _adversarial_review_prompt() -> str:
     return """Adversarially review the patch, read-only. Do not ask questions,
-modify files, or run mutating commands. Be critical; the moderator will filter.
+modify files, or run mutating commands. Be critical; wrong requested release/changelog targets are major. Blocker/major rows must be bounded to the issue/current diff, not universal proof over all possible integrations.
 Use the issue, /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH},
 {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, git diff, and touched files.
 
@@ -317,12 +317,12 @@ This is pass 2 of a three-stage review pattern. Filter only the rows from
 {ADVERSARIAL_REVIEW_PATH}. Do not invent objections.
 
 Hard contract:
-- Do not ask the user questions.
+- Do not ask or call request_user_input; if uncertain, keep the row open and write JSON.
 - Do not modify repository files.
 - Use read-only inspection only. Do not run tests or commands that may write.
 - Machine artifacts outrank claims. Treat {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, and `git diff` as authoritative.
 
-Overwrite {MODERATOR_FILTER_PATH} with one JSON object; escape literal backslashes as JSON \\\\; printing without writing fails:
+Use a file-writing tool to overwrite {MODERATOR_FILTER_PATH} with one JSON object before your final answer; escape literal backslashes as JSON \\\\; printing without writing fails:
 {
   "schema_version": 1,
   "stage": "moderator_filter",
@@ -343,12 +343,12 @@ Overwrite {MODERATOR_FILTER_PATH} with one JSON object; escape literal backslash
 }
 
 Rules:
-- Every adversarial row needs exactly one same-id disposition; empty is valid only with zero rows.
+- Every adversarial row needs exactly one same-id disposition and no extra IDs; empty is valid only with zero rows.
 - Keep severe rows open when any required_files are absent from changed_files.
 - Use open for unresolved blocker/major objections.
 - Use closed_by_evidence only when cited evidence directly answers the row.
   Never close by denying cited git diff hunks; keep the row open unless current patch evidence disproves them.
-- Use rejected only when the row is unsupported. Use downgraded only with evidence.
+- Use rejected only when the row is unsupported or demands universal proof beyond the issue contract. Use downgraded when representative issue-scoped evidence covers the concrete concern.
 - Runtime-test proof requires machine-observed pass fields like tests_passed_count; never use test_evidence_gate.status, changed files, or commands_reported_passed_count to close test-execution rows or mark ready_verified.
 
 End with exactly the same JSON object on one line. Do not ask how to write it, include Markdown, or output the object twice.""".replace(
@@ -366,11 +366,11 @@ def _fixup_prompt() -> str:
     return """A quality gate failed. Do not ask questions. Re-read the original goal,
 /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH}, {DIFF_AUDIT_PATH}, and when
 present {REVIEW_ACCOUNTABILITY_GATE_PATH}. Repair the whole patch, not only the
-latest critic row. Inspect changed files for unrelated hunks. Address every
+latest critic row. Metadata rows are not optional; keep one canonical release/changelog note. Testable behavior rows need changed regression tests in git diff; runtime-only evidence is not enough. Compatibility rows need representative tests with real fields/behavior, not only default or proxy-only paths. Inspect changed files for unrelated hunks. Address every
 	fixup_required_rows and malformed_artifacts item; when an artifact names a
 	path/check, repair that exact diff hunk before arguing it is stale. Then update
 the validation contract with reviewer_objections, changed_files, commands_run,
-residual_risks, and final_claims. Prefer focused single-process tests over broad
+residual_risks, and final_claims. Ensure `git diff --name-only` lists every claimed changed file; for Django tests, use tracked files under `tests/`. Prefer focused single-process tests over broad
 suites; for Django prefer class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not pytest/django test. If the full issue contract remains broken,
 keep it open.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
@@ -604,9 +604,9 @@ malformed = [err for err in (
 ) if err]
 if isinstance(materialization, dict) and materialization.get("status") != "passed":
     malformed.extend(as_list(materialization.get("errors")))
-if not tests_executed_successfully(test_gate): malformed.append({{"artifact": "test_evidence_gate", "error": "tests_not_executed_successfully"}})
+if not tests_executed_successfully(test_gate): malformed.append({{"artifact": "test_evidence_gate", "error": "tests_not_executed_successfully", "reason": "Run the changed or claimed tests and record a passing command in validation."}})
 rows = as_list(adversarial.get("rows") if isinstance(adversarial, dict) else None)
-dispositions = as_list(moderator.get("dispositions") if isinstance(moderator, dict) else None)
+dispositions = [] if adversarial_error else as_list(moderator.get("dispositions") if isinstance(moderator, dict) else None)
 changed_files = {{clean_path(path) for path in as_list(test_gate.get("changed_files") if isinstance(test_gate, dict) else None)}}
 settings_ref = subprocess.run(["git", "diff", "--", "docs/ref/settings.txt"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout
 if ("``OPTIONS``" in settings_ref and "+Default: ``0o644``" in settings_ref and "Extra parameters to pass to the cache backend" in settings_ref) or settings_ref.count("+The numeric mode (i.e. ``0o644``) to set newly uploaded files to.") > 1: malformed.append({{"artifact": "patch", "path": "docs/ref/settings.txt", "error": "docs_settings_corruption", "check": "cache OPTIONS default changed or FILE_UPLOAD_PERMISSIONS text duplicated", "offending_diff": settings_ref[:1200]}})
@@ -653,11 +653,10 @@ for disposition in dispositions:
         continue
     severe = str(row_by_id.get(did, {{}}).get("severity", disposition.get("severity", ""))).lower() in MAJOR
     closure_check = str(disposition.get("closure_check", "")).strip()
-    if severe and state in {{"closed_by_evidence", "downgraded", "rejected"}} and not closure_check:
+    if severe and state in {{"closed_by_evidence", "downgraded", "rejected"}} and not closure_check and (state == "rejected" or not has_evidence(disposition) or not str(disposition.get("reason", "")).strip()):
         closure_check_failures.append(disposition)
     if severe and did in row_by_id and str(disposition.get("category", "")).lower() != str(row_by_id[did].get("category", "")).lower():
         disposition["category_mismatch"] = {{"row": row_by_id[did].get("category"), "disposition": disposition.get("category")}}
-        closure_check_failures.append(disposition)
     missing_required = [path for path in (clean_path(path) for path in as_list(row_by_id.get(did, {{}}).get("required_files"))) if path not in changed_files]
     if severe and state in {{"closed_by_evidence", "downgraded", "rejected"}} and missing_required:
         disposition["missing_required_files"] = missing_required
@@ -685,7 +684,7 @@ unaccounted_major_rows = [
 ]
 blocking_rows = [
     row for row in open_rows
-    if str(row.get("severity", "")).lower() in MAJOR
+    if str(row_by_id.get(row_id(row), row).get("severity", "")).lower() in MAJOR
 ]
 
 process_failures = []
@@ -701,8 +700,6 @@ elif unaccounted_rows:
     process_failures.append("unaccounted_adversarial_rows")
 if duplicate_disposition_ids:
     process_failures.append("duplicate_moderator_dispositions")
-if orphan_dispositions:
-    process_failures.append("orphan_moderator_dispositions")
 if invalid_dispositions:
     process_failures.append("invalid_moderator_dispositions")
 if closure_check_failures:
@@ -710,7 +707,7 @@ if closure_check_failures:
 if blocking_rows:
     process_failures.append("open_blocker_or_major_rows")
 failed = bool(process_failures)
-fixup_required_rows = (blocking_rows or unaccounted_major_rows or unaccounted_rows or invalid_dispositions or orphan_dispositions) + malformed
+fixup_required_rows = (blocking_rows or closure_check_failures or unaccounted_major_rows or unaccounted_rows or invalid_dispositions) + malformed
 readiness = "process_failed" if failed else (
     "ready_verified" if tests_executed_successfully(test_gate) else "ready_unverified"
 )
