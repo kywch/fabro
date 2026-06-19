@@ -189,6 +189,35 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(test_gate["status"], "passed")
             self.assertEqual(test_gate["judgment"]["hard_failures"], [])
 
+    def test_mini_swe_minor_review_risk_does_not_overblock_good_patch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_mini_swe(
+                "overblocking-good-patch-with-minor-risk",
+                output_dir=output_dir,
+                attempt="scripted",
+            )
+
+            self.assertEqual(summary["failures"], [])
+            self.assertEqual(summary["total"], 1)
+            self.assertEqual(summary["patch_pass"], 1)
+            self.assertEqual(summary["artifact_pass"], 1)
+            self.assertEqual(summary["export_pass"], 1)
+            self.assertEqual(summary["false_blanks"], 0)
+
+            run_dir = output_dir / "runs" / "overblocking-good-patch-with-minor-risk--001"
+            prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
+            gate = json.loads((run_dir / "output" / "review_accountability_gate.json").read_text())
+            run = json.loads((run_dir / "run.json").read_text())
+
+            self.assertTrue(prediction["model_patch"])
+            self.assertEqual(gate["route_decision"], "export")
+            self.assertEqual(gate["adversarial_row_count"], 1)
+            self.assertEqual(gate["downgraded_rows"][0]["id"], "minor-001")
+            self.assertEqual(gate["process_failures"], [])
+            self.assertEqual(run["eval"]["review_precision"], "pass")
+            self.assertEqual(run["eval"]["moderation_outcome"], "correct")
+
     @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
     def test_mini_swe_workflow_slice_exports_and_is_b2_eligible(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -275,6 +304,34 @@ class LightEvalReplayTest(unittest.TestCase):
                 run["eval"]["honesty_failures"],
                 ["runtime_proof_missing_command_id"],
             )
+
+    @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
+    def test_mini_swe_workflow_slice_minor_review_risk_exports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_mini_swe(
+                "overblocking-good-patch-with-minor-risk",
+                output_dir=output_dir,
+                attempt="workflow-slice",
+            )
+
+            self.assertEqual(summary["failures"], [])
+            self.assertEqual(summary["b2_eligible"], 1)
+            self.assertEqual(summary["patch_pass"], 1)
+            self.assertEqual(summary["artifact_pass"], 1)
+            self.assertEqual(summary["export_pass"], 1)
+
+            run_dir = output_dir / "runs" / "overblocking-good-patch-with-minor-risk--001"
+            prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
+            gate = json.loads((run_dir / "output" / "review_accountability_gate.json").read_text())
+            run = json.loads((run_dir / "run.json").read_text())
+
+            self.assertTrue(prediction["model_patch"])
+            self.assertEqual(gate["route_decision"], "export")
+            self.assertEqual(gate["downgraded_rows"][0]["id"], "minor-001")
+            self.assertTrue(run["eval"]["b2_eligible"])
+            self.assertEqual(run["eval"]["review_precision"], "pass")
+            self.assertEqual(run["eval"]["moderation_outcome"], "correct")
 
     def test_mini_swe_grader_derives_independent_outcomes(self):
         case = MiniSweCase(

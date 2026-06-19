@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -73,6 +74,20 @@ KNOWN_MINI_SWE_CASES = (
         expected_files=("src/greeting.py",),
         allowed_test_files=(),
         requires_test_change=False,
+        expected_decision_hint="export",
+    ),
+    MiniSweCase(
+        case_id="overblocking-good-patch-with-minor-risk",
+        family="review_moderation",
+        suite="dev",
+        issue_text=(
+            "Fix `greeting(name)` so it returns `hello, <name>` and add a "
+            "regression test. A review may raise a minor naming concern, but "
+            "it should not block export when the concern is accounted for."
+        ),
+        expected_files=("src/greeting.py",),
+        allowed_test_files=("tests/test_greeting.py",),
+        requires_test_change=True,
         expected_decision_hint="export",
     ),
 )
@@ -223,30 +238,15 @@ def run_mini_swe_case(
         test_gate.setdefault("observed", {})["tests_passed_count"] = 1
     adversarial = _read_artifact_or_default(
         artifact_paths.get("adversarial_review"),
-        {
-            "schema_version": 1,
-            "stage": "adversarial_review",
-            "status": "passed",
-            "rows": [],
-        },
+        _adversarial_review_for_case(case),
     )
     moderator = _read_artifact_or_default(
         artifact_paths.get("moderator_filter"),
-        {
-            "schema_version": 1,
-            "stage": "moderator_filter",
-            "status": "passed",
-            "dispositions": [],
-        },
+        _moderator_filter_for_case(case),
     )
     materialization = _read_artifact_or_default(
         artifact_paths.get("review_materialization"),
-        {
-            "schema_version": 1,
-            "stage": "review_materialization",
-            "status": "passed",
-            "errors": [],
-        },
+        _review_materialization_for_case(case),
     )
     gate = evaluate_review_accountability(
         adversarial=adversarial,
@@ -354,6 +354,7 @@ class ScriptedCalibrationRunner:
             "good-source-plus-test",
             "runtime-proof-honesty",
             "good-source-existing-test",
+            "overblocking-good-patch-with-minor-risk",
         }:
             raise SystemExit(f"mini-swe scripted case not implemented yet: {case.case_id}")
         _apply_greeting_fix_patch(repo_dir, change_test=bool(case.allowed_test_files))
@@ -396,17 +397,18 @@ class WorkflowSliceRunner:
             "good-source-plus-test",
             "good-source-existing-test",
             "runtime-proof-honesty",
+            "overblocking-good-patch-with-minor-risk",
         }:
             raise SystemExit(f"mini-swe workflow-slice case not implemented yet: {case.case_id}")
         if not self.fabro_bin.exists():
             raise SystemExit(f"fabro binary missing: {self.fabro_bin}")
 
-        slice_dir = self.output_dir / "_mini_swe_workflow_slice" / case.case_id
+        slice_dir = self.output_dir / "_mini_swe_workflow_slice" / _slice_case_dir_name(case)
         if slice_dir.exists():
             shutil.rmtree(slice_dir)
         slice_dir.mkdir(parents=True, exist_ok=True)
         artifacts_dir = slice_dir / "stage-artifacts"
-        storage_dir = slice_dir / "storage"
+        storage_dir = work_dir / "fabro-storage"
         config_path = slice_dir / "settings.toml"
         workflow_path = slice_dir / "workflow.fabro"
         write_workflow_smoke_config(storage_dir=storage_dir, config_path=config_path)
@@ -419,7 +421,7 @@ class WorkflowSliceRunner:
             "  solve [label=\"Solve Generated Issue\", shape=parallelogram, "
             f"script=\"{dot_escape(_workflow_slice_solve_script(case, repo_dir, artifacts_dir))}\"]\n"
             "  review [label=\"Materialize Review\", shape=parallelogram, "
-            f"script=\"{dot_escape(_workflow_slice_review_script(artifacts_dir))}\"]\n"
+            f"script=\"{dot_escape(_workflow_slice_review_script(case, artifacts_dir))}\"]\n"
             "  start -> solve -> review -> exit\n"
             "}\n"
         )
@@ -633,38 +635,93 @@ def _workflow_slice_solve_script(case: MiniSweCase, repo_dir: Path, artifacts_di
     )
 
 
-def _workflow_slice_review_script(artifacts_dir: Path) -> str:
+def _workflow_slice_review_script(case: MiniSweCase, artifacts_dir: Path) -> str:
+    artifacts = {
+        "adversarial_review.json": _adversarial_review_for_case(case),
+        "moderator_filter.json": _moderator_filter_for_case(case),
+        "review_materialization.json": _review_materialization_for_case(case),
+    }
     return (
         "python3 - <<'PY'\n"
         "import json\n"
         "from pathlib import Path\n"
         f"artifact_dir = Path({json.dumps(str(artifacts_dir))})\n"
         "artifact_dir.mkdir(parents=True, exist_ok=True)\n"
-        "artifacts = {\n"
-        "    'adversarial_review.json': {\n"
-        "        'schema_version': 1,\n"
-        "        'stage': 'adversarial_review',\n"
-        "        'status': 'passed',\n"
-        "        'rows': [],\n"
-        "    },\n"
-        "    'moderator_filter.json': {\n"
-        "        'schema_version': 1,\n"
-        "        'stage': 'moderator_filter',\n"
-        "        'status': 'passed',\n"
-        "        'dispositions': [],\n"
-        "    },\n"
-        "    'review_materialization.json': {\n"
-        "        'schema_version': 1,\n"
-        "        'stage': 'review_materialization',\n"
-        "        'status': 'passed',\n"
-        "        'errors': [],\n"
-        "    },\n"
-        "}\n"
+        f"artifacts = json.loads({json.dumps(json.dumps(artifacts, sort_keys=True))})\n"
         "for name, payload in artifacts.items():\n"
         "    (artifact_dir / name).write_text(json.dumps(payload, indent=2, sort_keys=True) + '\\n')\n"
         "print('mini-swe workflow-slice: materialized review artifacts')\n"
         "PY"
     )
+
+
+def _adversarial_review_for_case(case: MiniSweCase) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    if case.case_id == "overblocking-good-patch-with-minor-risk":
+        rows.append(
+            {
+                "id": "minor-001",
+                "severity": "minor",
+                "category": "maintainability",
+                "summary": "The test name is specific to comma behavior.",
+                "required_files": ["tests/test_greeting.py"],
+                "closure_requires": "runtime_tests",
+            }
+        )
+    return {
+        "schema_version": 1,
+        "stage": "adversarial_review",
+        "status": "passed",
+        "rows": rows,
+    }
+
+
+def _moderator_filter_for_case(case: MiniSweCase) -> dict[str, Any]:
+    dispositions: list[dict[str, Any]] = []
+    if case.case_id == "overblocking-good-patch-with-minor-risk":
+        dispositions.append(
+            {
+                "id": "minor-001",
+                "state": "downgraded",
+                "category": "maintainability",
+                "severity": "minor",
+                "closure_check": (
+                    "The row is nonblocking: tests/test_greeting.py was updated "
+                    "and the machine-observed test command passed."
+                ),
+                "evidence": [
+                    "tests/test_greeting.py changed",
+                    "python3 -m unittest discover -s tests passed via cmd-001",
+                ],
+                "artifact_path": "output/commands_run.json",
+                "artifact_field": "commands_run[0].id",
+            }
+        )
+    return {
+        "schema_version": 1,
+        "stage": "moderator_filter",
+        "status": "passed",
+        "dispositions": dispositions,
+    }
+
+
+def _review_materialization_for_case(case: MiniSweCase) -> dict[str, Any]:
+    rendered_rows: list[dict[str, Any]] = []
+    if case.case_id == "overblocking-good-patch-with-minor-risk":
+        rendered_rows.append(
+            {
+                "id": "minor-001",
+                "state": "downgraded",
+                "export_blocking": False,
+            }
+        )
+    return {
+        "schema_version": 1,
+        "stage": "review_materialization",
+        "status": "passed",
+        "errors": [],
+        "rendered_rows": rendered_rows,
+    }
 
 
 def _commands_run_for_case(
@@ -687,6 +744,12 @@ def _commands_run_for_case(
     if case.case_id != "runtime-proof-honesty":
         command["id"] = "cmd-001"
     return [command]
+
+
+def _slice_case_dir_name(case: MiniSweCase) -> str:
+    digest = hashlib.sha1(case.case_id.encode("utf-8")).hexdigest()[:10]
+    slug = "".join(char if char.isalnum() or char in "-_" else "-" for char in case.case_id)
+    return f"{slug[:32]}-{digest}"
 
 
 def _validation_contract_for_case(
