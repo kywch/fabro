@@ -133,6 +133,9 @@ def run_mini_swe(
     docker_image: str = DEFAULT_SYNTHETIC_DOCKER_IMAGE,
     model: str | None = None,
     provider: str | None = None,
+    credential_bridge: str = "off",
+    auth_storage_dir: Path | None = None,
+    credential_preflight: bool = False,
     seed: int | None = None,
     fail_fast: bool = False,
 ) -> dict[str, Any]:
@@ -144,6 +147,14 @@ def run_mini_swe(
         raise SystemExit(f"mini-swe substrate not implemented yet: {substrate}")
     if substrate == "docker" and attempt != "scripted":
         raise SystemExit("mini-swe docker substrate is only implemented for scripted attempts")
+    if credential_bridge not in {"off", "openai-codex"}:
+        raise SystemExit(f"unknown mini-swe credential bridge: {credential_bridge}")
+    if credential_bridge != "off" and attempt != "model":
+        raise SystemExit("--credential-bridge is only supported with --attempt model")
+    if credential_preflight and attempt != "model":
+        raise SystemExit("--credential-preflight is only supported with --attempt model")
+    if credential_bridge == "openai-codex" and auth_storage_dir is None:
+        raise SystemExit("--auth-storage-dir is required with --credential-bridge openai-codex")
     if output_dir is None:
         with tempfile.TemporaryDirectory() as tmp:
             return _run_mini_swe_to_dir(
@@ -155,6 +166,9 @@ def run_mini_swe(
                 docker_image=docker_image,
                 model=model,
                 provider=provider,
+                credential_bridge=credential_bridge,
+                auth_storage_dir=auth_storage_dir,
+                credential_preflight=credential_preflight,
                 seed=seed,
                 fail_fast=fail_fast,
             )
@@ -168,6 +182,9 @@ def run_mini_swe(
         docker_image=docker_image,
         model=model,
         provider=provider,
+        credential_bridge=credential_bridge,
+        auth_storage_dir=auth_storage_dir,
+        credential_preflight=credential_preflight,
         seed=seed,
         fail_fast=fail_fast,
     )
@@ -201,6 +218,9 @@ def _run_mini_swe_to_dir(
     docker_image: str,
     model: str | None,
     provider: str | None,
+    credential_bridge: str,
+    auth_storage_dir: Path | None,
+    credential_preflight: bool,
     seed: int | None,
     fail_fast: bool,
 ) -> dict[str, Any]:
@@ -209,16 +229,25 @@ def _run_mini_swe_to_dir(
     manifest = load_or_init_manifest(output_dir)
 
     for case in cases:
-        case_result = run_mini_swe_case(
-            case,
-            output_dir=output_dir,
-            attempt=attempt,
-            substrate=substrate,
-            fabro_bin=fabro_bin,
-            docker_image=docker_image,
-            model=model,
-            provider=provider,
-        )
+        try:
+            case_result = run_mini_swe_case(
+                case,
+                output_dir=output_dir,
+                attempt=attempt,
+                substrate=substrate,
+                fabro_bin=fabro_bin,
+                docker_image=docker_image,
+                model=model,
+                provider=provider,
+                credential_bridge=credential_bridge,
+                auth_storage_dir=auth_storage_dir,
+                credential_preflight=credential_preflight,
+            )
+        except _MiniSweProcessBlock as exc:
+            failures.append(exc.to_failure(task_id=case.case_id, attempt=attempt))
+            if fail_fast:
+                break
+            continue
         results.append(case_result["result"])
         failures.extend(case_result["failures"])
         update_manifest_for_run(
@@ -259,6 +288,9 @@ def run_mini_swe_case(
     docker_image: str = DEFAULT_SYNTHETIC_DOCKER_IMAGE,
     model: str | None = None,
     provider: str | None = None,
+    credential_bridge: str = "off",
+    auth_storage_dir: Path | None = None,
+    credential_preflight: bool = False,
 ) -> dict[str, Any]:
     """Run one mini-SWE case."""
     if attempt not in {"scripted", "workflow-slice", "model"}:
@@ -267,6 +299,14 @@ def run_mini_swe_case(
         raise SystemExit(f"mini-swe substrate not implemented yet: {substrate}")
     if substrate == "docker" and attempt != "scripted":
         raise SystemExit("mini-swe docker substrate is only implemented for scripted attempts")
+    if credential_bridge not in {"off", "openai-codex"}:
+        raise SystemExit(f"unknown mini-swe credential bridge: {credential_bridge}")
+    if credential_bridge != "off" and attempt != "model":
+        raise SystemExit("--credential-bridge is only supported with --attempt model")
+    if credential_preflight and attempt != "model":
+        raise SystemExit("--credential-preflight is only supported with --attempt model")
+    if credential_bridge == "openai-codex" and auth_storage_dir is None:
+        raise SystemExit("--auth-storage-dir is required with --credential-bridge openai-codex")
 
     with tempfile.TemporaryDirectory() as tmp:
         work_dir = Path(tmp)
@@ -283,6 +323,9 @@ def run_mini_swe_case(
                 fabro_bin=fabro_bin,
                 model=model,
                 provider=provider,
+                credential_bridge=credential_bridge,
+                auth_storage_dir=auth_storage_dir,
+                credential_preflight=credential_preflight,
             )
         attempt_result = runner.run(case, repo_dir, work_dir)
 
@@ -654,11 +697,17 @@ class ModelWorkflowRunner:
         fabro_bin: Path,
         model: str | None,
         provider: str | None,
+        credential_bridge: str = "off",
+        auth_storage_dir: Path | None = None,
+        credential_preflight: bool = False,
     ) -> None:
         self.output_dir = output_dir
         self.fabro_bin = fabro_bin
         self.model = model
         self.provider = provider
+        self.credential_bridge = credential_bridge
+        self.auth_storage_dir = auth_storage_dir
+        self.credential_preflight = credential_preflight
 
     def run(self, case: MiniSweCase, repo_dir: Path, work_dir: Path) -> AttemptResult:
         if not self.fabro_bin.exists():
@@ -670,10 +719,29 @@ class ModelWorkflowRunner:
         run_dir.mkdir(parents=True, exist_ok=True)
         artifacts_dir = run_dir / "stage-artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
+        command_cwd = run_dir / "command-cwd"
+        command_cwd.mkdir()
+        model_workspace = run_dir / "workspace"
+        model_workspace.mkdir()
         storage_dir = work_dir / "fabro-model-storage"
         config_path = run_dir / "settings.toml"
         workflow_path = run_dir / "workflow.fabro"
         write_workflow_smoke_config(storage_dir=storage_dir, config_path=config_path)
+        _append_working_dir_config(config_path, model_workspace)
+        credential_bridge_report = _bridge_model_credentials(
+            bridge=self.credential_bridge,
+            source_storage_dir=self.auth_storage_dir,
+            target_storage_dir=storage_dir,
+        )
+        (run_dir / "credential_bridge.json").write_text(
+            json.dumps(credential_bridge_report, indent=2, sort_keys=True) + "\n"
+        )
+        if self.credential_bridge == "openai-codex" and credential_bridge_report.get("status") != "copied":
+            raise _MiniSweProcessBlock(
+                reason="credential_bridge_failed",
+                message="mini-swe Codex credential bridge failed before model execution.",
+                detail=f"credential bridge status: {credential_bridge_report.get('status')}",
+            )
         workflow = generate_issue_to_pr_workflow(
             graph_name="MiniSweModelWorkflow",
             setup_script=_model_setup_script(repo_dir),
@@ -688,6 +756,36 @@ class ModelWorkflowRunner:
         workflow_path.write_text(workflow)
 
         env = workflow_smoke_env(config_path=config_path, storage_dir=storage_dir)
+        if self.credential_bridge == "openai-codex" and "OPENAI_API_KEY" in env:
+            env = dict(env)
+            env.pop("OPENAI_API_KEY", None)
+            credential_bridge_report["scrubbed_env_secret_names"] = ["OPENAI_API_KEY"]
+            (run_dir / "credential_bridge.json").write_text(
+                json.dumps(credential_bridge_report, indent=2, sort_keys=True) + "\n"
+            )
+        preflight_report = _credential_preflight_report(
+            fabro_bin=self.fabro_bin,
+            env=env,
+            enabled=self.credential_preflight,
+            provider=self.provider or ("openai" if self.credential_bridge == "openai-codex" else None),
+            model=self.model,
+        )
+        (run_dir / "credential_preflight.json").write_text(
+            json.dumps(preflight_report, indent=2, sort_keys=True) + "\n"
+        )
+        if self.credential_preflight and preflight_report.get("status") == "failed":
+            stop_proc = run_fabro_command(
+                self.fabro_bin,
+                ["--no-upgrade-check", "server", "stop", "--storage-dir", str(storage_dir)],
+                env=env,
+            )
+            (run_dir / "stop.stdout").write_text(stop_proc.stdout)
+            (run_dir / "stop.stderr").write_text(stop_proc.stderr)
+            raise _MiniSweProcessBlock(
+                reason="credential_preflight_failed",
+                message="mini-swe model credential preflight failed; fix provider auth before running model attempts.",
+                detail=f"fabro model test exited with status {preflight_report.get('returncode')}",
+            )
         args = [
             "--no-upgrade-check",
             "run",
@@ -707,6 +805,7 @@ class ModelWorkflowRunner:
             args,
             env=env,
             timeout=600,
+            cwd=command_cwd,
         )
         (run_dir / "run.stdout").write_text(run_proc.stdout)
         (run_dir / "run.stderr").write_text(run_proc.stderr)
@@ -717,20 +816,40 @@ class ModelWorkflowRunner:
         try:
             if run_proc.returncode != 0:
                 if "No LLM providers configured" in run_proc.stderr:
-                    raise SystemExit(
-                        "mini-swe model attempt needs a configured LLM provider. "
-                        "Set ANTHROPIC_API_KEY or OPENAI_API_KEY, pass --provider/--model "
-                        "for an already configured provider, or use --attempt workflow-slice "
-                        "for deterministic local coverage."
+                    raise _MiniSweProcessBlock(
+                        reason="provider_not_configured",
+                        message=(
+                            "mini-swe model attempt needs a configured LLM provider. "
+                            "Set ANTHROPIC_API_KEY or OPENAI_API_KEY, pass --provider/--model "
+                            "for an already configured provider, or use --attempt workflow-slice "
+                            "for deterministic local coverage."
+                        ),
+                        detail=run_proc.stderr[-4000:],
                     )
-                raise RuntimeError(f"mini-swe model workflow failed: {run_proc.stderr[-4000:]}")
+                raise _MiniSweProcessBlock(
+                    reason="model_workflow_failed",
+                    message="mini-swe model workflow failed before grading artifacts",
+                    detail=run_proc.stderr[-4000:],
+                )
             if not fabro_run_id:
-                raise RuntimeError("mini-swe model workflow did not report a run id")
+                raise _MiniSweProcessBlock(
+                    reason="model_workflow_run_id_missing",
+                    message="mini-swe model workflow did not report a run id",
+                    detail=run_transcript[-4000:],
+                )
             if "Status:    SUCCEEDED" not in run_transcript:
-                raise RuntimeError("mini-swe model workflow did not report SUCCEEDED")
+                raise _MiniSweProcessBlock(
+                    reason="model_workflow_not_succeeded",
+                    message="mini-swe model workflow did not report SUCCEEDED",
+                    detail=run_transcript[-4000:],
+                )
             dump_path = dump_run(str(self.fabro_bin), fabro_run_id, run_dir, env=env)
             if dump_path is None:
-                raise RuntimeError("mini-swe model workflow dump failed")
+                raise _MiniSweProcessBlock(
+                    reason="model_workflow_dump_failed",
+                    message="mini-swe model workflow dump failed",
+                    detail=run_transcript[-4000:],
+                )
             events_path = write_events_jsonl(
                 str(self.fabro_bin),
                 fabro_run_id,
@@ -809,9 +928,171 @@ class ModelWorkflowRunner:
                 "workflow_path": workflow_path.as_posix(),
                 "model": self.model,
                 "provider": self.provider,
+                "credential_bridge": credential_bridge_report,
+                "credential_preflight": preflight_report,
                 "case_artifacts_supplied": False,
             },
         )
+
+
+class _MiniSweProcessBlock(Exception):
+    """A model attempt could not reach artifact grading."""
+
+    def __init__(self, *, reason: str, message: str, detail: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.message = message
+        self.detail = detail
+
+    def to_failure(self, *, task_id: str, attempt: str) -> dict[str, str]:
+        failure = {
+            "kind": "process_block",
+            "task_id": task_id,
+            "attempt": attempt,
+            "reason": self.reason,
+            "message": self.message,
+        }
+        if self.detail:
+            failure["detail"] = self.detail
+        return failure
+
+
+def _bridge_model_credentials(
+    *,
+    bridge: str,
+    source_storage_dir: Path | None,
+    target_storage_dir: Path,
+) -> dict[str, Any]:
+    report: dict[str, Any] = {
+        "bridge": bridge,
+        "status": "disabled" if bridge == "off" else "not_run",
+        "copied_secret_names": [],
+        "missing_secret_names": [],
+        "inherited_openai_api_key_present": "OPENAI_API_KEY" in os.environ,
+    }
+    if "OPENAI_API_KEY" in os.environ:
+        report["warning"] = (
+            "inherited OPENAI_API_KEY is present and may take precedence over vault:OPENAI_CODEX"
+        )
+    if bridge == "off":
+        return report
+    if bridge != "openai-codex":
+        report["status"] = "unsupported"
+        return report
+    if source_storage_dir is None:
+        report["status"] = "missing_source_storage_dir"
+        report["missing_secret_names"] = ["OPENAI_CODEX"]
+        return report
+
+    source_vault_path = _storage_vault_path(source_storage_dir)
+    target_vault_path = _storage_vault_path(target_storage_dir)
+    try:
+        source_vault = _read_json_object(source_vault_path)
+    except (OSError, json.JSONDecodeError) as exc:
+        _ = exc
+        report["status"] = "source_unreadable"
+        report["missing_secret_names"] = ["OPENAI_CODEX"]
+        return report
+
+    if "OPENAI_CODEX" not in source_vault:
+        report["status"] = "missing"
+        report["missing_secret_names"] = ["OPENAI_CODEX"]
+        return report
+
+    source_entry = source_vault["OPENAI_CODEX"]
+    source_secret_type = _secret_type_name(source_entry)
+    report["source_secret_type"] = source_secret_type
+    if source_secret_type != "oauth":
+        report["status"] = "source_secret_type_mismatch"
+        report["missing_secret_names"] = ["OPENAI_CODEX"]
+        return report
+
+    try:
+        target_vault = _read_json_object(target_vault_path)
+    except FileNotFoundError:
+        target_vault = {}
+    except json.JSONDecodeError as exc:
+        _ = exc
+        report["status"] = "target_unreadable"
+        return report
+
+    target_vault["OPENAI_CODEX"] = source_entry
+    _write_json_object_secure(target_vault_path, target_vault)
+    report["status"] = "copied"
+    report["copied_secret_names"] = ["OPENAI_CODEX"]
+    return report
+
+
+def _credential_preflight_report(
+    *,
+    fabro_bin: Path,
+    env: dict[str, str],
+    enabled: bool,
+    provider: str | None,
+    model: str | None,
+) -> dict[str, Any]:
+    report: dict[str, Any] = {
+        "enabled": enabled,
+        "status": "skipped",
+        "provider": provider,
+        "model": model,
+        "inherited_openai_api_key_present": "OPENAI_API_KEY" in env,
+    }
+    if "OPENAI_API_KEY" in env:
+        report["warning"] = (
+            "inherited OPENAI_API_KEY is present and may take precedence over vault:OPENAI_CODEX"
+        )
+    if not enabled:
+        return report
+
+    args = ["--no-upgrade-check", "model", "test"]
+    if provider:
+        args.extend(["--provider", provider])
+    if model:
+        args.extend(["--model", model])
+    proc = run_fabro_command(fabro_bin, args, env=env, timeout=120)
+    report.update(
+        {
+            "status": "passed" if proc.returncode == 0 else "failed",
+            "returncode": proc.returncode,
+        }
+    )
+    return report
+
+
+def _storage_vault_path(storage_dir: Path) -> Path:
+    return storage_dir / "vaults" / "default" / "secrets.json"
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, dict):
+        raise json.JSONDecodeError("expected JSON object", "", 0)
+    return payload
+
+
+def _write_json_object_secure(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(json.dumps(payload, indent=2) + "\n")
+        os.replace(tmp_path, path)
+        os.chmod(path, 0o600)
+    finally:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _secret_type_name(entry: Any) -> str | None:
+    if isinstance(entry, dict):
+        secret_type = entry.get("type")
+        if isinstance(secret_type, str):
+            return secret_type
+    return None
 
 
 def _apply_case_patch(case: MiniSweCase, repo_dir: Path) -> None:
@@ -837,6 +1118,8 @@ def _model_setup_script(repo_dir: Path) -> str:
         "from pathlib import Path\n"
         f"src = Path({json.dumps(str(repo_dir))})\n"
         "dst = Path.cwd()\n"
+        "if any(dst.iterdir()):\n"
+        "    raise SystemExit(f'mini-swe model setup refuses non-empty cwd: {dst}')\n"
         "for child in src.iterdir():\n"
         "    target = dst / child.name\n"
         "    if child.is_dir():\n"
@@ -846,6 +1129,15 @@ def _model_setup_script(repo_dir: Path) -> str:
         "print('mini-swe model setup: copied generated repo')\n"
         "PY"
     )
+
+
+def _append_working_dir_config(config_path: Path, working_dir: Path) -> None:
+    with config_path.open("a") as handle:
+        handle.write(
+            "\n"
+            "[run]\n"
+            f"working_dir = {json.dumps(str(working_dir.resolve()))}\n"
+        )
 
 
 def _apply_patch_to_repo(repo_dir: Path, patch: str) -> None:
@@ -1474,8 +1766,14 @@ def _mini_swe_instance(case: MiniSweCase) -> dict[str, Any]:
 
 def _mini_swe_summary(results: list[dict[str, Any]], failures: list[dict[str, Any]]) -> dict[str, Any]:
     evals = [result.get("eval", {}) for result in results if isinstance(result.get("eval"), dict)]
+    process_blocks = [
+        failure
+        for failure in failures
+        if isinstance(failure, dict) and failure.get("kind") == "process_block"
+    ]
     return {
-        "total": len(results),
+        "total": len(results) + len(process_blocks),
+        "completed": len(results),
         "failed": len(failures),
         "calibration_total": sum(
             1 for item in evals if item.get("evaluation_role") == "calibration_provenance"
@@ -1488,6 +1786,23 @@ def _mini_swe_summary(results: list[dict[str, Any]], failures: list[dict[str, An
         "export_pass": sum(1 for item in evals if item.get("export_grade") == "pass"),
         "false_exports": sum(1 for item in evals if item.get("false_export")),
         "false_blanks": sum(1 for item in evals if item.get("false_blank")),
+        "expected_traps_caught": _expected_traps_caught(evals),
+        "artifact_honesty_failures": _artifact_honesty_failure_count(evals),
+        "artifact_honesty_failures_by_reason": _failure_reason_counts(
+            evals,
+            "honesty_failures",
+        ),
+        "expected_b2_ineligible": sum(
+            1
+            for item in evals
+            if item.get("evaluation_role") == "calibration_provenance"
+            and not item.get("b2_eligible")
+        ),
+        "process_blocked": len(process_blocks),
+        "provider_not_configured": sum(
+            1 for item in process_blocks if item.get("reason") == "provider_not_configured"
+        ),
+        "process_blocks_by_reason": _process_block_counts(process_blocks),
         "cases_by_attempt_origin": _counts(evals, "attempt_origin"),
         "cases_by_artifact_origin": _counts(evals, "artifact_origin"),
         "cases_by_substrate": _counts(evals, "substrate"),
@@ -1514,6 +1829,45 @@ def _ineligible_counts(items: list[dict[str, Any]]) -> dict[str, int]:
         for failure in failures:
             if isinstance(failure, str):
                 counts[failure] = counts.get(failure, 0) + 1
+    return counts
+
+
+def _expected_traps_caught(items: list[dict[str, Any]]) -> int:
+    return sum(
+        1
+        for item in items
+        if item.get("export_grade") == "pass"
+        and item.get("decision_outcome") in {"fixup", "true_blank"}
+    )
+
+
+def _artifact_honesty_failure_count(items: list[dict[str, Any]]) -> int:
+    return sum(
+        1
+        for item in items
+        if isinstance(item.get("honesty_failures"), list)
+        and bool(item["honesty_failures"])
+    )
+
+
+def _failure_reason_counts(items: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        failures = item.get(key)
+        if not isinstance(failures, list):
+            continue
+        for failure in failures:
+            if isinstance(failure, str):
+                counts[failure] = counts.get(failure, 0) + 1
+    return counts
+
+
+def _process_block_counts(items: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        reason = item.get("reason")
+        if isinstance(reason, str):
+            counts[reason] = counts.get(reason, 0) + 1
     return counts
 
 

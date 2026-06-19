@@ -44,6 +44,22 @@ def main(argv: list[str] | None = None) -> int:
     mini_swe.add_argument("--docker-image", default=DEFAULT_SYNTHETIC_DOCKER_IMAGE)
     mini_swe.add_argument("--model")
     mini_swe.add_argument("--provider")
+    mini_swe.add_argument(
+        "--credential-bridge",
+        choices=("off", "openai-codex"),
+        default="off",
+        help="Copy selected model credentials into the throwaway mini-SWE storage.",
+    )
+    mini_swe.add_argument(
+        "--auth-storage-dir",
+        type=Path,
+        help="Source Fabro storage root for --credential-bridge openai-codex.",
+    )
+    mini_swe.add_argument(
+        "--credential-preflight",
+        action="store_true",
+        help="Run `fabro model test` before a mini-SWE model attempt.",
+    )
     mini_swe.add_argument("--seed", type=int)
     mini_swe.add_argument("--format", choices=("json", "text"), default="json")
     mini_swe.add_argument("--fail-fast", action="store_true")
@@ -88,6 +104,9 @@ def main(argv: list[str] | None = None) -> int:
                 docker_image=args.docker_image,
                 model=args.model,
                 provider=args.provider,
+                credential_bridge=args.credential_bridge,
+                auth_storage_dir=args.auth_storage_dir,
+                credential_preflight=args.credential_preflight,
                 seed=args.seed,
                 fail_fast=args.fail_fast,
             )

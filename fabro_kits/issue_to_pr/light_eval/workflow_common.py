@@ -43,6 +43,8 @@ def workflow_smoke_env(*, config_path: Path, storage_dir: Path) -> dict[str, str
             "FABRO_STORAGE_DIR": str(storage_dir),
             "FABRO_SERVER": str(storage_dir / "fabro.sock"),
             "FABRO_NO_UPGRADE_CHECK": "true",
+            "FABRO_DEV_TOKEN": workflow_smoke_dev_token(),
+            "SESSION_SECRET": workflow_smoke_session_secret(),
         }
     )
     return env
@@ -66,6 +68,7 @@ def run_fabro_command(
     *,
     env: dict[str, str],
     timeout: int = 60,
+    cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(fabro_bin), *args],
@@ -75,4 +78,5 @@ def run_fabro_command(
         check=False,
         env=env,
         timeout=timeout,
+        cwd=cwd,
     )

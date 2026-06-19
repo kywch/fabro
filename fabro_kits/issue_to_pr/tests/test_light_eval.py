@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -17,8 +19,12 @@ from fabro_kits.issue_to_pr.light_eval import (
     run_workflow_smoke,
 )
 from fabro_kits.issue_to_pr.light_eval.mini_swe import (
+    _bridge_model_credentials,
     _commands_run_from_artifacts,
+    _credential_preflight_report,
     _materialize_model_artifacts,
+    _model_setup_script,
+    _storage_vault_path,
 )
 from fabro_kits.issue_to_pr.light_eval.task_schema import AttemptResult
 
@@ -82,6 +88,10 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(summary["patch_pass"], 1)
             self.assertEqual(summary["artifact_pass"], 1)
             self.assertEqual(summary["export_pass"], 1)
+            self.assertEqual(summary["expected_traps_caught"], 0)
+            self.assertEqual(summary["artifact_honesty_failures"], 0)
+            self.assertEqual(summary["expected_b2_ineligible"], 1)
+            self.assertEqual(summary["process_blocked"], 0)
             self.assertEqual(summary["ineligible_by_reason"], {"artifact_origin_fixture": 1})
 
             run_dir = output_dir / "runs" / "good-source-plus-test--001"
@@ -147,9 +157,11 @@ class LightEvalReplayTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             fake_fabro = root / "fake-fabro"
+            model_pwd = root / "model-pwd"
             fake_fabro.write_text(
                 "#!/usr/bin/env bash\n"
                 "if [[ \"$*\" == *\"server stop\"* ]]; then exit 0; fi\n"
+                f"pwd > {model_pwd.as_posix()}\n"
                 "cat >&2 <<'EOF'\n"
                 "Status:    FAILED\n"
                 "Failure:   Precondition failed: No LLM providers configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or pass --dry-run to simulate.\n"
@@ -158,15 +170,353 @@ class LightEvalReplayTest(unittest.TestCase):
             )
             fake_fabro.chmod(0o755)
 
+            summary = run_mini_swe(
+                "good-test-only",
+                output_dir=root / "out",
+                attempt="model",
+                fabro_bin=fake_fabro,
+            )
+
+            self.assertEqual(summary["total"], 1)
+            self.assertEqual(summary["completed"], 0)
+            self.assertEqual(summary["failed"], 1)
+            self.assertEqual(summary["process_blocked"], 1)
+            self.assertEqual(summary["provider_not_configured"], 1)
+            self.assertEqual(summary["process_blocks_by_reason"], {"provider_not_configured": 1})
+            self.assertEqual(summary["failures"][0]["kind"], "process_block")
+            self.assertEqual(summary["failures"][0]["reason"], "provider_not_configured")
+            self.assertIn("needs a configured LLM provider", summary["failures"][0]["message"])
+            self.assertNotEqual(Path(model_pwd.read_text().strip()).resolve(), Path.cwd().resolve())
+            self.assertTrue(model_pwd.read_text().strip().endswith("/command-cwd"))
+            model_run_dir = next((root / "out" / "_mini_swe_model").glob("good-test-only-*"))
+            settings = (model_run_dir / "settings.toml").read_text()
+            self.assertIn("[run]", settings)
+            self.assertIn("working_dir", settings)
+            self.assertIn("/workspace", settings)
+
+    def test_mini_swe_model_setup_refuses_non_empty_cwd(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / ".git").mkdir()
+            (repo / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+            (repo / "src").mkdir()
+            (repo / "src" / "__init__.py").write_text("")
+            dst = root / "dst"
+            dst.mkdir()
+            (dst / ".git").mkdir()
+            original_head = dst / ".git" / "HEAD"
+            original_head.write_text("ref: refs/heads/custom-fab\n")
+
+            proc = subprocess.run(
+                _model_setup_script(repo),
+                shell=True,
+                cwd=dst,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("refuses non-empty cwd", proc.stderr)
+            self.assertEqual(original_head.read_text(), "ref: refs/heads/custom-fab\n")
+            self.assertFalse((dst / "src").exists())
+
+    def test_mini_swe_codex_bridge_copies_only_openai_codex_and_preserves_oauth_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            target = root / "target"
+            source_vault = _storage_vault_path(source)
+            source_vault.parent.mkdir(parents=True)
+            codex_entry = {
+                "value": "{\"refresh_token\":\"secret-refresh\"}",
+                "type": "oauth",
+                "description": "Codex OAuth",
+                "created_at": "2026-06-19T00:00:00Z",
+                "updated_at": "2026-06-19T00:00:01Z",
+            }
+            source_vault.write_text(
+                json.dumps(
+                    {
+                        "OPENAI_CODEX": codex_entry,
+                        "OPENAI_API_KEY": {
+                            "value": "api-key",
+                            "type": "token",
+                            "created_at": "2026-06-19T00:00:00Z",
+                            "updated_at": "2026-06-19T00:00:01Z",
+                        },
+                        "ANTHROPIC_API_KEY": {
+                            "value": "anthropic-key",
+                            "type": "token",
+                            "created_at": "2026-06-19T00:00:00Z",
+                            "updated_at": "2026-06-19T00:00:01Z",
+                        },
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
+
+            report = _bridge_model_credentials(
+                bridge="openai-codex",
+                source_storage_dir=source,
+                target_storage_dir=target,
+            )
+
+            copied = json.loads(_storage_vault_path(target).read_text())
+            self.assertEqual(report["status"], "copied")
+            self.assertEqual(report["copied_secret_names"], ["OPENAI_CODEX"])
+            self.assertEqual(report["source_secret_type"], "oauth")
+            self.assertEqual(copied, {"OPENAI_CODEX": codex_entry})
+            self.assertEqual(stat.S_IMODE(_storage_vault_path(target).stat().st_mode), 0o600)
+            self.assertNotIn("api-key", json.dumps(report))
+            self.assertNotIn("secret-refresh", json.dumps(report))
+
+    def test_mini_swe_codex_bridge_does_not_copy_unrelated_source_secrets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            target = root / "target"
+            source_vault = _storage_vault_path(source)
+            target_vault = _storage_vault_path(target)
+            source_vault.parent.mkdir(parents=True)
+            target_vault.parent.mkdir(parents=True)
+            source_vault.write_text(
+                json.dumps(
+                    {
+                        "OPENAI_CODEX": {
+                            "value": "codex-oauth-json",
+                            "type": "oauth",
+                            "created_at": "2026-06-19T00:00:00Z",
+                            "updated_at": "2026-06-19T00:00:01Z",
+                        },
+                        "SHOULD_NOT_COPY": {
+                            "value": "nope",
+                            "type": "token",
+                            "created_at": "2026-06-19T00:00:00Z",
+                            "updated_at": "2026-06-19T00:00:01Z",
+                        },
+                    }
+                )
+            )
+            target_vault.write_text(
+                json.dumps(
+                    {
+                        "TARGET_ONLY": {
+                            "value": "keep",
+                            "type": "token",
+                            "created_at": "2026-06-19T00:00:00Z",
+                            "updated_at": "2026-06-19T00:00:01Z",
+                        }
+                    }
+                )
+            )
+
+            _bridge_model_credentials(
+                bridge="openai-codex",
+                source_storage_dir=source,
+                target_storage_dir=target,
+            )
+
+            copied = json.loads(target_vault.read_text())
+            self.assertEqual(sorted(copied), ["OPENAI_CODEX", "TARGET_ONLY"])
+            self.assertNotIn("SHOULD_NOT_COPY", copied)
+
+    def test_mini_swe_codex_bridge_rejects_non_oauth_openai_codex(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            target = root / "target"
+            source_vault = _storage_vault_path(source)
+            source_vault.parent.mkdir(parents=True)
+            source_vault.write_text(
+                json.dumps(
+                    {
+                        "OPENAI_CODEX": {
+                            "value": "api-key-shaped-secret",
+                            "type": "token",
+                            "created_at": "2026-06-19T00:00:00Z",
+                            "updated_at": "2026-06-19T00:00:01Z",
+                        }
+                    }
+                )
+            )
+
+            report = _bridge_model_credentials(
+                bridge="openai-codex",
+                source_storage_dir=source,
+                target_storage_dir=target,
+            )
+
+            self.assertEqual(report["status"], "source_secret_type_mismatch")
+            self.assertEqual(report["source_secret_type"], "token")
+            self.assertEqual(report["copied_secret_names"], [])
+            self.assertEqual(report["missing_secret_names"], ["OPENAI_CODEX"])
+            self.assertFalse(_storage_vault_path(target).exists())
+            self.assertNotIn("api-key-shaped-secret", json.dumps(report))
+
+    def test_mini_swe_codex_bridge_reports_inherited_openai_api_key_precedence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_vault = _storage_vault_path(root / "source")
+            source_vault.parent.mkdir(parents=True)
+            source_vault.write_text(
+                json.dumps(
+                    {
+                        "OPENAI_CODEX": {
+                            "value": "codex-oauth-json",
+                            "type": "oauth",
+                            "created_at": "2026-06-19T00:00:00Z",
+                            "updated_at": "2026-06-19T00:00:01Z",
+                        }
+                    }
+                )
+            )
+            old = os.environ.get("OPENAI_API_KEY")
+            os.environ["OPENAI_API_KEY"] = "inherited-api-key"
+            try:
+                report = _bridge_model_credentials(
+                    bridge="openai-codex",
+                    source_storage_dir=root / "source",
+                    target_storage_dir=root / "target",
+                )
+            finally:
+                if old is None:
+                    os.environ.pop("OPENAI_API_KEY", None)
+                else:
+                    os.environ["OPENAI_API_KEY"] = old
+
+            self.assertTrue(report["inherited_openai_api_key_present"])
+            self.assertIn("may take precedence", report["warning"])
+            self.assertNotIn("inherited-api-key", json.dumps(report))
+
+    def test_mini_swe_codex_bridge_failure_blocks_before_fabro_invocation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_fabro = root / "fake-fabro"
+            called = root / "called"
+            fake_fabro.write_text(
+                "#!/usr/bin/env bash\n"
+                f"touch {called.as_posix()}\n"
+                "exit 0\n"
+            )
+            fake_fabro.chmod(0o755)
+
+            summary = run_mini_swe(
+                "good-test-only",
+                output_dir=root / "out",
+                attempt="model",
+                fabro_bin=fake_fabro,
+                credential_bridge="openai-codex",
+                auth_storage_dir=root / "missing-source",
+            )
+
+            self.assertFalse(called.exists())
+            self.assertEqual(summary["completed"], 0)
+            self.assertEqual(summary["process_blocked"], 1)
+            self.assertEqual(summary["process_blocks_by_reason"], {"credential_bridge_failed": 1})
+            self.assertEqual(summary["failures"][0]["reason"], "credential_bridge_failed")
+
+    def test_mini_swe_credential_bridge_is_model_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(SystemExit) as exc:
                 run_mini_swe(
+                    "good-source-plus-test",
+                    output_dir=Path(tmp) / "out",
+                    attempt="scripted",
+                    credential_bridge="openai-codex",
+                    auth_storage_dir=Path(tmp) / "source",
+                )
+
+            self.assertIn("only supported with --attempt model", str(exc.exception))
+
+    def test_mini_swe_codex_bridge_scrubs_inherited_openai_api_key_for_preflight(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_vault = _storage_vault_path(root / "source")
+            source_vault.parent.mkdir(parents=True)
+            source_vault.write_text(
+                json.dumps(
+                    {
+                        "OPENAI_CODEX": {
+                            "value": "codex-oauth-json",
+                            "type": "oauth",
+                            "created_at": "2026-06-19T00:00:00Z",
+                            "updated_at": "2026-06-19T00:00:01Z",
+                        }
+                    }
+                )
+            )
+            fake_fabro = root / "fake-fabro"
+            captured = root / "captured-openai-api-key"
+            fake_fabro.write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ \"$*\" == *\"model test\"* ]]; then\n"
+                f"  printf '%s' \"${{OPENAI_API_KEY-}}\" > {captured.as_posix()}\n"
+                "  exit 1\n"
+                "fi\n"
+                "exit 0\n"
+            )
+            fake_fabro.chmod(0o755)
+            old = os.environ.get("OPENAI_API_KEY")
+            os.environ["OPENAI_API_KEY"] = "must-not-leak-to-preflight"
+            try:
+                summary = run_mini_swe(
                     "good-test-only",
                     output_dir=root / "out",
                     attempt="model",
                     fabro_bin=fake_fabro,
+                    credential_bridge="openai-codex",
+                    auth_storage_dir=root / "source",
+                    credential_preflight=True,
                 )
+            finally:
+                if old is None:
+                    os.environ.pop("OPENAI_API_KEY", None)
+                else:
+                    os.environ["OPENAI_API_KEY"] = old
 
-            self.assertIn("needs a configured LLM provider", str(exc.exception))
+            self.assertEqual(captured.read_text(), "")
+            self.assertEqual(summary["completed"], 0)
+            self.assertEqual(summary["process_blocks_by_reason"], {"credential_preflight_failed": 1})
+            model_run_dir = next((root / "out" / "_mini_swe_model").glob("good-test-only-*"))
+            bridge_report = json.loads(
+                (model_run_dir / "credential_bridge.json").read_text()
+            )
+            self.assertEqual(bridge_report["scrubbed_env_secret_names"], ["OPENAI_API_KEY"])
+            self.assertNotIn("must-not-leak-to-preflight", json.dumps(bridge_report))
+
+    def test_mini_swe_credential_preflight_reports_model_test_result_without_secret_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_fabro = root / "fake-fabro"
+            fake_fabro.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf 'provider=openai\\n'\n"
+                "printf 'failed auth with token secret-value\\n' >&2\n"
+                "exit 1\n"
+            )
+            fake_fabro.chmod(0o755)
+
+            report = _credential_preflight_report(
+                fabro_bin=fake_fabro,
+                env={"OPENAI_API_KEY": "secret-api-key"},
+                enabled=True,
+                provider="openai",
+                model="gpt-test",
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["returncode"], 1)
+            self.assertEqual(report["provider"], "openai")
+            self.assertEqual(report["model"], "gpt-test")
+            self.assertTrue(report["inherited_openai_api_key_present"])
+            self.assertIn("may take precedence", report["warning"])
+            self.assertNotIn("secret-api-key", json.dumps(report))
+            self.assertNotIn("secret-value", json.dumps(report))
 
     def test_mini_swe_model_attempt_rejects_docker_substrate(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -309,6 +659,9 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(summary["failures"], [])
             self.assertEqual(summary["total"], 5)
             self.assertEqual(summary["seed"], 123)
+            self.assertEqual(summary["expected_traps_caught"], 1)
+            self.assertEqual(summary["artifact_honesty_failures"], 1)
+            self.assertEqual(summary["expected_b2_ineligible"], 5)
 
             with self.assertRaises(SystemExit) as exc:
                 run_mini_swe(
@@ -409,6 +762,13 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(summary["export_pass"], 1)
             self.assertEqual(summary["false_blanks"], 0)
             self.assertEqual(summary["false_exports"], 0)
+            self.assertEqual(summary["expected_traps_caught"], 1)
+            self.assertEqual(summary["artifact_honesty_failures"], 1)
+            self.assertEqual(
+                summary["artifact_honesty_failures_by_reason"],
+                {"runtime_proof_missing_command_id": 1},
+            )
+            self.assertEqual(summary["expected_b2_ineligible"], 1)
 
             run_dir = output_dir / "runs" / "runtime-proof-honesty--001"
             prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
