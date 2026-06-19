@@ -306,6 +306,8 @@ def run_mini_swe_case(
         case=case,
         patch=patch,
         changed_files=changed_files,
+        test_files_changed=test_files_changed,
+        audit=audit,
         validation_contract=validation_contract,
         hidden_oracle_passed=hidden_oracle["passed"],
         test_gate=test_gate,
