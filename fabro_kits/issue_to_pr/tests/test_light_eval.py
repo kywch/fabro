@@ -139,6 +139,31 @@ class LightEvalReplayTest(unittest.TestCase):
         self.assertIn("usage: python -m fabro_kits.issue_to_pr.light_eval mini-swe", result.stderr)
         self.assertIn("fabro binary missing", result.stderr)
 
+    def test_mini_swe_model_attempt_reports_missing_provider_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_fabro = root / "fake-fabro"
+            fake_fabro.write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ \"$*\" == *\"server stop\"* ]]; then exit 0; fi\n"
+                "cat >&2 <<'EOF'\n"
+                "Status:    FAILED\n"
+                "Failure:   Precondition failed: No LLM providers configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or pass --dry-run to simulate.\n"
+                "EOF\n"
+                "exit 1\n"
+            )
+            fake_fabro.chmod(0o755)
+
+            with self.assertRaises(SystemExit) as exc:
+                run_mini_swe(
+                    "good-test-only",
+                    output_dir=root / "out",
+                    attempt="model",
+                    fabro_bin=fake_fabro,
+                )
+
+            self.assertIn("needs a configured LLM provider", str(exc.exception))
+
     def test_mini_swe_model_attempt_rejects_docker_substrate(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(SystemExit) as exc:

@@ -693,6 +693,13 @@ class ModelWorkflowRunner:
         fabro_run_id = extract_workflow_smoke_run_id(run_transcript)
         try:
             if run_proc.returncode != 0:
+                if "No LLM providers configured" in run_proc.stderr:
+                    raise SystemExit(
+                        "mini-swe model attempt needs a configured LLM provider. "
+                        "Set ANTHROPIC_API_KEY or OPENAI_API_KEY, pass --provider/--model "
+                        "for an already configured provider, or use --attempt workflow-slice "
+                        "for deterministic local coverage."
+                    )
                 raise RuntimeError(f"mini-swe model workflow failed: {run_proc.stderr[-4000:]}")
             if not fabro_run_id:
                 raise RuntimeError("mini-swe model workflow did not report a run id")
