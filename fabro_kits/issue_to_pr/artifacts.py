@@ -135,6 +135,11 @@ def write_run_bundle(
     goal_path = input_dir / "goal.md"
     goal_path.write_text(goal_src.read_text() if goal_src.exists() else "")
 
+    for name in ("issue.md", "oracle.json"):
+        src = config_dir / name
+        if src.exists():
+            shutil.copy2(src, input_dir / name)
+
     for name in ("workflow.fabro", "workflow.toml"):
         src = config_dir / name
         if src.exists():
@@ -165,6 +170,10 @@ def write_run_bundle(
     _copy_optional(result.get("trajectory_path"), trajectory_export_path)
 
     task_record = build_task_record(instance, Path("input/goal.md"), sandbox_provider)
+    if (input_dir / "issue.md").exists():
+        task_record["issue"] = {"text_path": "input/issue.md"}
+    if (input_dir / "oracle.json").exists():
+        task_record["oracle"] = {"path": "input/oracle.json"}
     _write_json_atomic(run_dir / "task.json", task_record)
     _write_json_atomic(input_dir / "envelope.json", task_record)
 

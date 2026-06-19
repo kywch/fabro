@@ -868,6 +868,10 @@ def _prepare_mini_swe_config_dir(
 ) -> Path:
     config_dir = prepare_config_dir(output_dir, case.case_id)
     (config_dir / "goal.txt").write_text(case.issue_text + "\n")
+    (config_dir / "issue.md").write_text(case.issue_text + "\n")
+    (config_dir / "oracle.json").write_text(
+        json.dumps(_oracle_for_case(case), indent=2, sort_keys=True) + "\n"
+    )
     (config_dir / "validation_contract.json").write_text(
         json.dumps(validation_contract, indent=2, sort_keys=True) + "\n"
     )
@@ -876,6 +880,21 @@ def _prepare_mini_swe_config_dir(
         dump_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(attempt_result.transcript_path, dump_dir / "run.transcript")
     return config_dir
+
+
+def _oracle_for_case(case: MiniSweCase) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "case_id": case.case_id,
+        "family": case.family,
+        "suite": case.suite,
+        "expected_files": list(case.expected_files),
+        "allowed_extra_files": list(case.allowed_extra_files),
+        "allowed_test_files": list(case.allowed_test_files),
+        "forbidden_files": list(case.forbidden_files),
+        "requires_test_change": case.requires_test_change,
+        "expected_decision_hint": case.expected_decision_hint,
+    }
 
 
 def _mini_swe_instance(case: MiniSweCase) -> dict[str, Any]:
