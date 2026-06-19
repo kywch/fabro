@@ -107,6 +107,9 @@ code.
 | Term | Meaning |
 | --- | --- |
 | Tier 1 artifact replay | Lightweight replay that runs deterministic gates over saved artifacts to catch workflow regressions against known failure patterns. |
+| Tier 2A synthetic local repo | Lightweight synthetic eval that applies a scripted patch to a tiny local git repository, regenerates diff/audit/test-evidence facts from the repository, then runs the same gate and export bundle path. It validates repo-to-artifact derivation, not sandbox execution or live model behavior. |
+| Tier 2B sandboxed synthetic workflow | Synthetic eval that runs a tiny issue-to-PR workflow through a real sandbox boundary, with scripted model/stage outputs where possible. It validates workflow and sandbox artifact plumbing without full SWE-bench or live-model variance. |
 | replay fixture | A saved input/expected-output case under `fabro_kits/issue_to_pr/fixtures/tier1_artifact_replay`. |
+| synthetic task | A local or sandboxed scripted eval case that starts from repository files instead of saved artifact JSON. |
 | false export | Eval failure where a known bad or unaccounted patch would produce a nonempty root prediction. |
 | canary fixture | Small fixture intended to fail quickly when a specific known regression returns. |
