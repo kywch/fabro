@@ -292,11 +292,6 @@ def run_mini_swe_case(
         hidden_oracle = _run_hidden_oracle(case, repo_dir)
 
     artifact_paths = attempt_result.artifact_paths
-    commands_run = _commands_run_for_case(case, attempt_result=attempt_result)
-    if attempt_result.commands_run_path and attempt_result.commands_run_path.exists():
-        commands_from_artifact = json.loads(attempt_result.commands_run_path.read_text())
-        if isinstance(commands_from_artifact, list):
-            commands_run = commands_from_artifact
     audit = _read_artifact_or_default(
         artifact_paths.get("audit"),
         {
@@ -310,9 +305,23 @@ def run_mini_swe_case(
     )
     validation_contract = _read_artifact_or_default(
         artifact_paths.get("validation_contract"),
-        _validation_contract_for_case(case, attempt=attempt, commands_run=commands_run),
+        _validation_contract_for_case(case, attempt=attempt, commands_run=[]),
     )
-    validation_contract["commands_run"] = commands_run
+    commands_run = _commands_run_from_artifacts(
+        case,
+        attempt_result=attempt_result,
+        validation_contract=validation_contract,
+    )
+    if (
+        attempt_result.attempt_origin == "scripted"
+        or _commands_run_artifact_exists(attempt_result)
+        or not _has_commands_run_list(validation_contract.get("commands_run"))
+    ):
+        validation_contract["commands_run"] = commands_run
+    eval_metadata = _eval_metadata_with_runtime_proof(
+        attempt_result,
+        commands_run=commands_run,
+    )
     test_gate = evaluate_evidence_gate(audit=audit, contract=validation_contract)
     if _has_observed_test_command_id(commands_run):
         test_gate.setdefault("observed", {})["tests_passed_count"] = 1
@@ -346,10 +355,7 @@ def run_mini_swe_case(
         test_gate=test_gate,
         accountability_gate=gate,
     )
-    eval_metadata = {
-        **attempt_result.eval_metadata(),
-        **grade.to_metadata(),
-    }
+    eval_metadata = {**eval_metadata, **grade.to_metadata()}
     fabro_run_id = attempt_result.provenance.get("fabro_run_id")
     if not isinstance(fabro_run_id, str):
         fabro_run_id = None
@@ -471,6 +477,12 @@ class ScriptedCalibrationRunner:
             b2_model_eligible=False,
             b2_eligible=False,
             eligibility_failures=("artifact_origin_fixture",),
+            evaluation_role="calibration_provenance",
+            eligibility_proof={
+                "repo_facts_recomputed": True,
+                "artifact_claims_compared": True,
+                "commands_run_source": "scripted_case_fallback",
+            },
             patch_path=patch_path,
             artifact_paths={},
             commands_run_path=None,
@@ -593,10 +605,21 @@ class WorkflowSliceRunner:
             artifact_origin="workflow_stage",
             substrate="local",
             source=mini_swe_source(case),
-            b2_slice_eligible=bool(run_id),
+            b2_slice_eligible=False,
             b2_model_eligible=False,
-            b2_eligible=bool(run_id),
-            eligibility_failures=() if run_id else ("workflow_run_id_missing",),
+            b2_eligible=False,
+            eligibility_failures=tuple(
+                ["workflow_slice_custom_deterministic_workflow"]
+                + ["workflow_slice_case_specific_artifacts"]
+                + ["workflow_slice_calibration_provenance_only"]
+                + ["workflow_run_id_missing"] * (not run_id)
+            ),
+            evaluation_role="calibration_provenance",
+            eligibility_proof={
+                "repo_facts_recomputed": True,
+                "artifact_claims_compared": True,
+                "commands_run_source": "workflow_stage_artifact",
+            },
             patch_path=patch_path,
             artifact_paths={
                 "audit": (artifacts_dir / "audit.json").as_posix(),
@@ -738,9 +761,13 @@ class ModelWorkflowRunner:
                 "review_materialization",
             }
             missing = sorted(required - set(artifact_paths))
+            validation_commands = _commands_run_from_validation_contract_path(
+                artifact_paths.get("validation_contract")
+            )
             eligibility_failures = tuple(
                 ["model_workflow_missing_patch"] * (not patch.strip())
                 + [f"model_workflow_missing_{name}" for name in missing]
+                + ["model_workflow_missing_commands_run"] * (not validation_commands)
                 + ["model_workflow_missing_trajectory"] * (trajectory_path is None)
             )
         finally:
@@ -762,6 +789,14 @@ class ModelWorkflowRunner:
             b2_model_eligible=b2_eligible,
             b2_eligible=b2_eligible,
             eligibility_failures=eligibility_failures,
+            evaluation_role="b2_candidate",
+            eligibility_proof={
+                "repo_facts_recomputed": True,
+                "artifact_claims_compared": True,
+                "commands_run_source": "validation_contract_artifact"
+                if b2_eligible
+                else "missing_or_incomplete",
+            },
             patch_path=patch_path,
             artifact_paths=artifact_paths,
             commands_run_path=None,
@@ -1248,6 +1283,84 @@ def _commands_run_for_case(
     return [command]
 
 
+def _commands_run_from_artifacts(
+    case: MiniSweCase,
+    *,
+    attempt_result: AttemptResult,
+    validation_contract: dict[str, Any],
+) -> list[Any]:
+    if attempt_result.attempt_origin == "scripted":
+        return _commands_run_for_case(case, attempt_result=attempt_result)
+
+    if attempt_result.commands_run_path and attempt_result.commands_run_path.exists():
+        try:
+            payload = json.loads(attempt_result.commands_run_path.read_text())
+        except json.JSONDecodeError:
+            return []
+        if isinstance(payload, list):
+            return payload
+
+    commands = validation_contract.get("commands_run")
+    if isinstance(commands, list):
+        return commands
+
+    return []
+
+
+def _commands_run_from_validation_contract_path(path: str | None) -> list[dict[str, Any]]:
+    if not path:
+        return []
+    artifact_path = Path(path)
+    if not artifact_path.exists():
+        return []
+    try:
+        payload = json.loads(artifact_path.read_text())
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    commands = payload.get("commands_run")
+    if not isinstance(commands, list):
+        return []
+    return [item for item in commands if isinstance(item, dict)]
+
+
+def _has_commands_run_list(value: Any) -> bool:
+    return isinstance(value, list) and any(isinstance(item, dict) for item in value)
+
+
+def _commands_run_artifact_exists(attempt_result: AttemptResult) -> bool:
+    return bool(
+        attempt_result.commands_run_path and attempt_result.commands_run_path.exists()
+    )
+
+
+def _eval_metadata_with_runtime_proof(
+    attempt_result: AttemptResult,
+    *,
+    commands_run: list[dict[str, Any]],
+) -> dict[str, Any]:
+    metadata = attempt_result.eval_metadata()
+    proof = dict(metadata.get("eligibility_proof") or {})
+    proof["runtime_commands_present"] = bool(commands_run)
+    proof["repo_facts_recomputed"] = True
+    proof["artifact_claims_compared"] = True
+    metadata["eligibility_proof"] = proof
+    if attempt_result.attempt_origin != "scripted" and not commands_run:
+        failures = list(metadata.get("eligibility_failures") or [])
+        if attempt_result.attempt_origin == "model":
+            failure = "model_workflow_missing_commands_run"
+        else:
+            failure = f"{attempt_result.attempt_origin.replace('-', '_')}_missing_commands_run"
+        if failure not in failures:
+            failures.append(failure)
+        metadata["eligibility_failures"] = failures
+        metadata["b2_slice_eligible"] = False
+        metadata["b2_model_eligible"] = False
+        metadata["b2_eligible"] = False
+    return metadata
+
+
 def _slice_case_dir_name(case: MiniSweCase) -> str:
     digest = hashlib.sha1(case.case_id.encode("utf-8")).hexdigest()[:10]
     slug = "".join(char if char.isalnum() or char in "-_" else "-" for char in case.case_id)
@@ -1364,7 +1477,9 @@ def _mini_swe_summary(results: list[dict[str, Any]], failures: list[dict[str, An
     return {
         "total": len(results),
         "failed": len(failures),
-        "calibration_total": sum(1 for item in evals if item.get("attempt_origin") == "scripted"),
+        "calibration_total": sum(
+            1 for item in evals if item.get("evaluation_role") == "calibration_provenance"
+        ),
         "b2_eligible": sum(1 for item in evals if item.get("b2_eligible")),
         "b2_slice_eligible": sum(1 for item in evals if item.get("b2_slice_eligible")),
         "b2_model_eligible": sum(1 for item in evals if item.get("b2_model_eligible")),

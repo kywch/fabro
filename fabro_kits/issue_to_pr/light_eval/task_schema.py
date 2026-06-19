@@ -10,6 +10,7 @@ from typing import Any, Literal, Protocol
 AttemptOrigin = Literal["scripted", "workflow-slice", "model"]
 ArtifactOrigin = Literal["fixture", "workflow_stage", "model_workflow"]
 Substrate = Literal["local", "docker"]
+EvaluationRole = Literal["b2_candidate", "calibration_provenance"]
 
 MINI_SWE_DATASET = "fabro-kits/issue-to-pr-mini-swe"
 
@@ -42,6 +43,8 @@ class AttemptResult:
     b2_model_eligible: bool
     b2_eligible: bool
     eligibility_failures: tuple[str, ...]
+    evaluation_role: EvaluationRole = "b2_candidate"
+    eligibility_proof: dict[str, Any] = field(default_factory=dict)
     patch_path: Path | None = None
     artifact_paths: dict[str, str] = field(default_factory=dict)
     commands_run_path: Path | None = None
@@ -60,6 +63,8 @@ class AttemptResult:
             "b2_model_eligible": self.b2_model_eligible,
             "b2_eligible": self.b2_eligible,
             "eligibility_failures": list(self.eligibility_failures),
+            "evaluation_role": self.evaluation_role,
+            "eligibility_proof": self.eligibility_proof,
             "artifact_paths": self.artifact_paths,
             "commands_run_path": self.commands_run_path.as_posix()
             if self.commands_run_path

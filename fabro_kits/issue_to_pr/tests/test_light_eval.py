@@ -16,7 +16,11 @@ from fabro_kits.issue_to_pr.light_eval import (
     run_synthetic,
     run_workflow_smoke,
 )
-from fabro_kits.issue_to_pr.light_eval.mini_swe import _materialize_model_artifacts
+from fabro_kits.issue_to_pr.light_eval.mini_swe import (
+    _commands_run_from_artifacts,
+    _materialize_model_artifacts,
+)
+from fabro_kits.issue_to_pr.light_eval.task_schema import AttemptResult
 
 
 class LightEvalReplayTest(unittest.TestCase):
@@ -211,6 +215,85 @@ class LightEvalReplayTest(unittest.TestCase):
                 json.loads(Path(artifacts["validation_contract"]).read_text())["commands_run"][0]["id"],
                 "cmd-001",
             )
+
+    def test_mini_swe_non_scripted_command_evidence_is_not_synthesized(self):
+        case = MiniSweCase(
+            case_id="good-source-plus-test",
+            family="positive",
+            suite="dev",
+            issue_text="Fix greeting",
+            expected_files=("src/greeting.py",),
+            allowed_test_files=("tests/test_greeting.py",),
+        )
+        attempt_result = AttemptResult(
+            attempt_origin="model",
+            artifact_origin="model_workflow",
+            substrate="local",
+            source={},
+            b2_slice_eligible=False,
+            b2_model_eligible=False,
+            b2_eligible=False,
+            eligibility_failures=(),
+        )
+
+        commands = _commands_run_from_artifacts(
+            case,
+            attempt_result=attempt_result,
+            validation_contract={},
+        )
+        grade = grade_mini_swe_attempt(
+            case=case,
+            patch="diff --git a/src/greeting.py b/src/greeting.py\n",
+            changed_files=["src/greeting.py", "tests/test_greeting.py"],
+            validation_contract={"commands_run": commands},
+            test_gate={"status": "passed"},
+            accountability_gate={"status": "passed", "route_decision": "export"},
+        )
+
+        self.assertEqual(commands, [])
+        self.assertFalse(grade.artifact_pass)
+        self.assertEqual(grade.honesty_failures, ("runtime_proof_missing_commands_run",))
+
+    def test_mini_swe_preserves_produced_commands_run_verbatim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            commands_path = root / "commands_run.json"
+            produced = [
+                {
+                    "id": "observed-777",
+                    "command": "python -m pytest",
+                    "status": "passed",
+                    "exit_code": 0,
+                    "is_test_command": True,
+                    "extra": {"kept": True},
+                }
+            ]
+            commands_path.write_text(json.dumps(produced))
+            case = MiniSweCase(
+                case_id="good-source-plus-test",
+                family="positive",
+                suite="dev",
+                issue_text="Fix greeting",
+            )
+            attempt_result = AttemptResult(
+                attempt_origin="workflow-slice",
+                artifact_origin="workflow_stage",
+                substrate="local",
+                source={},
+                b2_slice_eligible=False,
+                b2_model_eligible=False,
+                b2_eligible=False,
+                eligibility_failures=("workflow_slice_calibration_provenance_only",),
+                commands_run_path=commands_path,
+            )
+
+            commands = _commands_run_from_artifacts(
+                case,
+                attempt_result=attempt_result,
+                validation_contract={},
+            )
+
+            self.assertEqual(commands, produced)
 
     def test_mini_swe_suite_filter_and_seed_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -428,7 +511,7 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(run["eval"]["moderation_outcome"], "correct")
 
     @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
-    def test_mini_swe_workflow_slice_exports_and_is_b2_eligible(self):
+    def test_mini_swe_workflow_slice_exports_and_is_calibration_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
             summary = run_mini_swe(
@@ -439,9 +522,9 @@ class LightEvalReplayTest(unittest.TestCase):
 
             self.assertEqual(summary["failures"], [])
             self.assertEqual(summary["total"], 1)
-            self.assertEqual(summary["calibration_total"], 0)
-            self.assertEqual(summary["b2_eligible"], 1)
-            self.assertEqual(summary["b2_slice_eligible"], 1)
+            self.assertEqual(summary["calibration_total"], 1)
+            self.assertEqual(summary["b2_eligible"], 0)
+            self.assertEqual(summary["b2_slice_eligible"], 0)
             self.assertEqual(summary["patch_pass"], 1)
             self.assertEqual(summary["artifact_pass"], 1)
             self.assertEqual(summary["export_pass"], 1)
@@ -456,10 +539,21 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(commands[0]["id"], "cmd-001")
             self.assertEqual(run["eval"]["attempt_origin"], "workflow-slice")
             self.assertEqual(run["eval"]["artifact_origin"], "workflow_stage")
-            self.assertTrue(run["eval"]["b2_eligible"])
-            self.assertTrue(run["eval"]["b2_slice_eligible"])
+            self.assertFalse(run["eval"]["b2_eligible"])
+            self.assertFalse(run["eval"]["b2_slice_eligible"])
             self.assertFalse(run["eval"]["b2_model_eligible"])
-            self.assertEqual(run["eval"]["eligibility_failures"], [])
+            self.assertEqual(run["eval"]["evaluation_role"], "calibration_provenance")
+            self.assertEqual(
+                run["eval"]["eligibility_failures"],
+                [
+                    "workflow_slice_custom_deterministic_workflow",
+                    "workflow_slice_case_specific_artifacts",
+                    "workflow_slice_calibration_provenance_only",
+                ],
+            )
+            self.assertTrue(run["eval"]["eligibility_proof"]["repo_facts_recomputed"])
+            self.assertTrue(run["eval"]["eligibility_proof"]["artifact_claims_compared"])
+            self.assertTrue(run["eval"]["eligibility_proof"]["runtime_commands_present"])
             self.assertTrue(run["eval"]["transcript_path"])
             self.assertTrue(run["eval"]["trajectory_path"])
             self.assertTrue(run["fabro"]["run_id"])
@@ -481,7 +575,7 @@ class LightEvalReplayTest(unittest.TestCase):
             )
 
             self.assertEqual(summary["failures"], [])
-            self.assertEqual(summary["b2_eligible"], 1)
+            self.assertEqual(summary["b2_eligible"], 0)
             self.assertEqual(summary["patch_pass"], 1)
             run_dir = output_dir / "runs" / "good-source-existing-test--001"
             patch = (run_dir / "output" / "patch.diff").read_text()
@@ -491,7 +585,7 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertIn("diff --git a/src/greeting.py b/src/greeting.py", patch)
             self.assertNotIn("diff --git a/tests/test_greeting.py", patch)
             self.assertEqual(audit["changed_files"], ["src/greeting.py"])
-            self.assertTrue(run["eval"]["b2_eligible"])
+            self.assertFalse(run["eval"]["b2_eligible"])
 
     @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
     def test_mini_swe_workflow_slice_test_only_case_exports(self):
@@ -504,7 +598,7 @@ class LightEvalReplayTest(unittest.TestCase):
             )
 
             self.assertEqual(summary["failures"], [])
-            self.assertEqual(summary["b2_eligible"], 1)
+            self.assertEqual(summary["b2_eligible"], 0)
             self.assertEqual(summary["patch_pass"], 1)
             self.assertEqual(summary["artifact_pass"], 1)
             self.assertEqual(summary["export_pass"], 1)
@@ -516,7 +610,7 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertNotIn("diff --git a/src/greeting.py", patch)
             self.assertIn("diff --git a/tests/test_greeting.py", patch)
             self.assertEqual(audit["changed_files"], ["tests/test_greeting.py"])
-            self.assertTrue(run["eval"]["b2_eligible"])
+            self.assertFalse(run["eval"]["b2_eligible"])
 
     @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
     def test_mini_swe_workflow_slice_runtime_proof_honesty_fails_closed(self):
@@ -529,7 +623,7 @@ class LightEvalReplayTest(unittest.TestCase):
             )
 
             self.assertEqual(summary["failures"], [])
-            self.assertEqual(summary["b2_eligible"], 1)
+            self.assertEqual(summary["b2_eligible"], 0)
             self.assertEqual(summary["artifact_pass"], 0)
             self.assertEqual(summary["export_pass"], 1)
             run_dir = output_dir / "runs" / "runtime-proof-honesty--001"
@@ -539,7 +633,7 @@ class LightEvalReplayTest(unittest.TestCase):
 
             self.assertNotIn("id", commands[0])
             self.assertEqual(prediction["model_patch"], "")
-            self.assertTrue(run["eval"]["b2_eligible"])
+            self.assertFalse(run["eval"]["b2_eligible"])
             self.assertEqual(run["eval"]["artifact_origin"], "workflow_stage")
             self.assertEqual(
                 run["eval"]["honesty_failures"],
@@ -557,7 +651,7 @@ class LightEvalReplayTest(unittest.TestCase):
             )
 
             self.assertEqual(summary["failures"], [])
-            self.assertEqual(summary["b2_eligible"], 1)
+            self.assertEqual(summary["b2_eligible"], 0)
             self.assertEqual(summary["patch_pass"], 1)
             self.assertEqual(summary["artifact_pass"], 1)
             self.assertEqual(summary["export_pass"], 1)
@@ -570,7 +664,7 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertTrue(prediction["model_patch"])
             self.assertEqual(gate["route_decision"], "export")
             self.assertEqual(gate["downgraded_rows"][0]["id"], "minor-001")
-            self.assertTrue(run["eval"]["b2_eligible"])
+            self.assertFalse(run["eval"]["b2_eligible"])
             self.assertEqual(run["eval"]["review_precision"], "pass")
             self.assertEqual(run["eval"]["moderation_outcome"], "correct")
 
@@ -587,6 +681,11 @@ class LightEvalReplayTest(unittest.TestCase):
             case=case,
             patch="diff --git a/src/greeting.py b/src/greeting.py\n",
             changed_files=["src/greeting.py", "tests/test_greeting.py"],
+            validation_contract={
+                "commands_run": [
+                    {"id": "cmd-001", "command": "python3 -m unittest", "status": "passed"}
+                ]
+            },
             test_gate={"status": "passed"},
             accountability_gate={"status": "passed", "route_decision": "export"},
         )
@@ -639,6 +738,11 @@ class LightEvalReplayTest(unittest.TestCase):
             patch="diff --git a/src/greeting.py b/src/greeting.py\n",
             changed_files=["src/greeting.py", "tests/test_greeting.py"],
             hidden_oracle_passed=False,
+            validation_contract={
+                "commands_run": [
+                    {"id": "cmd-001", "command": "python3 -m unittest", "status": "passed"}
+                ]
+            },
             test_gate={"status": "passed"},
             accountability_gate={"status": "passed", "route_decision": "export"},
         )
@@ -665,6 +769,11 @@ class LightEvalReplayTest(unittest.TestCase):
             audit={
                 "changed_files": ["src/greeting.py"],
                 "test_files_changed": [],
+            },
+            validation_contract={
+                "commands_run": [
+                    {"id": "cmd-001", "command": "python3 -m unittest", "status": "passed"}
+                ]
             },
             test_gate={"status": "passed"},
             accountability_gate={"status": "passed", "route_decision": "export"},
