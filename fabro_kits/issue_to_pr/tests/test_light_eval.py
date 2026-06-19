@@ -87,6 +87,7 @@ class LightEvalReplayTest(unittest.TestCase):
             run = json.loads((run_dir / "run.json").read_text())
             task = json.loads((run_dir / "task.json").read_text())
             oracle = json.loads((run_dir / "input" / "oracle.json").read_text())
+            verify = json.loads((run_dir / "output" / "verify.json").read_text())
 
             self.assertIn("diff --git a/src/greeting.py b/src/greeting.py", patch)
             self.assertIn("diff --git a/tests/test_greeting.py b/tests/test_greeting.py", patch)
@@ -109,6 +110,8 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertFalse(run["eval"]["b2_eligible"])
             self.assertFalse(run["eval"]["b2_slice_eligible"])
             self.assertFalse(run["eval"]["b2_model_eligible"])
+            self.assertTrue(run["eval"]["hidden_oracle_passed"])
+            self.assertTrue(verify["hidden_oracle"]["passed"])
             self.assertEqual(run["eval"]["eligibility_failures"], ["artifact_origin_fixture"])
             self.assertEqual(run["eval"]["decision_outcome"], "true_export")
 
@@ -496,6 +499,29 @@ class LightEvalReplayTest(unittest.TestCase):
         self.assertTrue(grade.export_pass)
         self.assertEqual(grade.decision_outcome, "fixup")
         self.assertEqual(grade.honesty_failures, ("runtime_proof_missing_command_id",))
+
+    def test_mini_swe_grader_fails_patch_when_hidden_oracle_fails(self):
+        case = MiniSweCase(
+            case_id="good-source-plus-test",
+            family="positive",
+            suite="dev",
+            issue_text="Fix greeting",
+            expected_files=("src/greeting.py",),
+            allowed_test_files=("tests/test_greeting.py",),
+        )
+        grade = grade_mini_swe_attempt(
+            case=case,
+            patch="diff --git a/src/greeting.py b/src/greeting.py\n",
+            changed_files=["src/greeting.py", "tests/test_greeting.py"],
+            hidden_oracle_passed=False,
+            test_gate={"status": "passed"},
+            accountability_gate={"status": "passed", "route_decision": "export"},
+        )
+
+        self.assertFalse(grade.patch_pass)
+        self.assertEqual(grade.patch_outcome, "incorrect")
+        self.assertEqual(grade.quality_failures, ("hidden_oracle_failed",))
+        self.assertFalse(grade.to_metadata()["hidden_oracle_passed"])
 
     @unittest.skipUnless(
         docker_image_available(DEFAULT_SYNTHETIC_DOCKER_IMAGE),

@@ -244,6 +244,7 @@ def run_mini_swe_case(
         patch = attempt_result.patch_path.read_text() if attempt_result.patch_path else ""
         changed_files = git_capture(repo_dir, "diff", "--name-only").splitlines()
         test_files_changed = [path for path in changed_files if is_test_path(path)]
+        hidden_oracle = _run_hidden_oracle(case, repo_dir)
 
     artifact_paths = attempt_result.artifact_paths
     commands_run = _commands_run_for_case(case, attempt_result=attempt_result)
@@ -294,6 +295,7 @@ def run_mini_swe_case(
         patch=patch,
         changed_files=changed_files,
         validation_contract=validation_contract,
+        hidden_oracle_passed=hidden_oracle["passed"],
         test_gate=test_gate,
         accountability_gate=gate,
     )
@@ -325,6 +327,7 @@ def run_mini_swe_case(
             "mode": f"mini-swe-{attempt}",
             "patch_nonempty": bool(patch.strip()),
             "sandbox_provider": substrate,
+            "hidden_oracle": hidden_oracle,
         },
         "commands_run": commands_run,
         "test_evidence_gate": test_gate,
@@ -588,6 +591,33 @@ def _run_public_tests(repo_dir: Path) -> None:
     )
     if proc.returncode != 0:
         raise RuntimeError(f"scripted mini-swe test command failed: {proc.stderr}")
+
+
+def _run_hidden_oracle(case: MiniSweCase, repo_dir: Path) -> dict[str, Any]:
+    expected = "hello Grace" if case.case_id == "good-test-only" else "hello, Grace"
+    name = "Grace"
+    code = (
+        "from src.greeting import greeting\n"
+        f"assert greeting({name!r}) == {expected!r}, greeting({name!r})\n"
+    )
+    proc = subprocess.run(
+        ["python3", "-c", code],
+        cwd=repo_dir,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    return {
+        "schema_version": 1,
+        "command": "python3 -c <mini-swe-hidden-oracle>",
+        "case_id": case.case_id,
+        "passed": proc.returncode == 0,
+        "exit_code": proc.returncode,
+        "stdout_tail": proc.stdout[-2000:],
+        "stderr_tail": proc.stderr[-2000:],
+    }
 
 
 def _workflow_slice_solve_script(case: MiniSweCase, repo_dir: Path, artifacts_dir: Path) -> str:
