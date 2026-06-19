@@ -155,6 +155,7 @@ def write_run_bundle(
     for key in (
         "verify",
         "audit",
+        "commands_run",
         "test_evidence_gate",
         *REVIEW_ARTIFACT_NAMES,
     ):
@@ -186,6 +187,7 @@ def write_run_bundle(
     for key in (
         "verify",
         "audit",
+        "commands_run",
         "test_evidence_gate",
         *REVIEW_ARTIFACT_NAMES,
         "trajectory",
@@ -220,6 +222,11 @@ def build_run_record(
         },
         "verify": _verify_phase(result, output_dir / "verify.json", run_dir),
         "audit": _audit_phase(result, output_dir / "audit.json", run_dir),
+        "commands_run": _commands_run_phase(
+            result,
+            output_dir / "commands_run.json",
+            run_dir,
+        ),
         "test_evidence_gate": _test_evidence_gate_phase(
             result,
             output_dir / "test_evidence_gate.json",
@@ -253,7 +260,7 @@ def build_run_record(
         "grade": {"status": "not_run"},
     }
 
-    return {
+    record = {
         "schema_version": SCHEMA_VERSION,
         "layout": RUNS_LAYOUT,
         "run_id": run_id,
@@ -286,6 +293,10 @@ def build_run_record(
         },
         "error": result.get("error"),
     }
+    eval_metadata = result.get("eval")
+    if isinstance(eval_metadata, dict):
+        record["eval"] = eval_metadata
+    return record
 
 
 def build_candidate_record(
@@ -459,6 +470,22 @@ def _audit_phase(result: dict[str, Any], path: Path, base: Path) -> dict[str, An
     return _with_artifact(phase, path, base)
 
 
+def _commands_run_phase(result: dict[str, Any], path: Path, base: Path) -> dict[str, Any]:
+    commands = result.get("commands_run")
+    if not isinstance(commands, list):
+        return {"status": "not_run"}
+    phase = {
+        "status": "completed",
+        "command_count": len(commands),
+        "test_command_count": sum(
+            1
+            for command in commands
+            if isinstance(command, dict) and command.get("is_test_command")
+        ),
+    }
+    return _with_artifact(phase, path, base)
+
+
 def _test_evidence_gate_phase(
     result: dict[str, Any],
     path: Path,
@@ -564,7 +591,7 @@ def _with_artifact(phase: dict[str, Any], path: Path, base: Path) -> dict[str, A
 
 def _write_named_json_artifact(path: Path, result: dict[str, Any], key: str) -> None:
     artifact = result.get(key)
-    if isinstance(artifact, dict):
+    if isinstance(artifact, (dict, list)):
         _write_json_atomic(path, artifact)
     else:
         path.unlink(missing_ok=True)
@@ -604,7 +631,7 @@ def _relative_to(path: Path, base: Path) -> str:
         return path.as_posix()
 
 
-def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
+def _write_json_atomic(path: Path, data: Any) -> None:
     tmp_path = path.with_name(f"{path.name}.tmp")
     tmp_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
     tmp_path.replace(path)

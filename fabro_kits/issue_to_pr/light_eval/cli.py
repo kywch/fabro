@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from .issue_workflow_smoke import run_issue_workflow_smoke
+from .mini_swe import run_mini_swe
 from .paths import DEFAULT_SYNTHETIC_DOCKER_IMAGE
 from .replay import run_replay
 from .synthetic import run_synthetic
@@ -28,6 +29,17 @@ def main(argv: list[str] | None = None) -> int:
     synthetic.add_argument("--output-dir", type=Path)
     synthetic.add_argument("--sandbox", choices=("local", "docker"), default="local")
     synthetic.add_argument("--docker-image", default=DEFAULT_SYNTHETIC_DOCKER_IMAGE)
+
+    mini_swe = subparsers.add_parser("mini-swe")
+    mini_swe.add_argument("--case", default="all")
+    mini_swe.add_argument("--output-dir", type=Path)
+    mini_swe.add_argument(
+        "--attempt",
+        choices=("scripted", "workflow-slice", "model"),
+        default="scripted",
+    )
+    mini_swe.add_argument("--substrate", choices=("local", "docker"), default="local")
+    mini_swe.add_argument("--fabro-bin", type=Path, default=Path("target/debug/fabro"))
 
     workflow_smoke = subparsers.add_parser("workflow-smoke")
     workflow_smoke.add_argument("--output-dir", type=Path)
@@ -55,6 +67,19 @@ def main(argv: list[str] | None = None) -> int:
             )
         except SystemExit as exc:
             synthetic.error(str(exc))
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if not report["failures"] else 1
+    if args.command == "mini-swe":
+        try:
+            report = run_mini_swe(
+                args.case,
+                output_dir=args.output_dir,
+                attempt=args.attempt,
+                substrate=args.substrate,
+                fabro_bin=args.fabro_bin,
+            )
+        except SystemExit as exc:
+            mini_swe.error(str(exc))
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["failures"] else 1
     if args.command == "workflow-smoke":

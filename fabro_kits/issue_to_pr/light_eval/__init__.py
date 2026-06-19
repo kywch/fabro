@@ -19,6 +19,7 @@ from .expectations import (
     issue_workflow_smoke_expected,
     synthetic_expected_for_task,
 )
+from .grader import MiniSweGrade, grade_mini_swe_attempt
 from .issue_workflow_smoke import (
     build_issue_workflow_smoke_case,
     issue_workflow_diff_script,
@@ -28,6 +29,7 @@ from .issue_workflow_smoke import (
     write_issue_workflow_smoke_summary,
 )
 from .local_repo import run_claimed_test_mismatch_local_repo
+from .mini_swe import list_mini_swe_cases, run_mini_swe, run_mini_swe_case
 from .paths import DEFAULT_SYNTHETIC_DOCKER_IMAGE, FIXTURE_ROOT, list_fixtures
 from .process import (
     as_str_list,
@@ -42,6 +44,7 @@ from .replay import run_replay, run_replay_fixture
 from .repo_cases import apply_claimed_test_mismatch_patch, create_claimed_test_mismatch_repo
 from .sandboxed_repo import run_claimed_test_mismatch_docker_repo
 from .synthetic import list_synthetic_tasks, run_synthetic, run_synthetic_task
+from .task_schema import AttemptResult, AttemptRunner, MiniSweCase, mini_swe_source
 from .workflow_common import (
     extract_workflow_smoke_run_id,
     run_fabro_command,
@@ -65,6 +68,8 @@ __all__ = [
     "FIXTURE_ROOT",
     "apply_claimed_test_mismatch_patch",
     "as_str_list",
+    "AttemptResult",
+    "AttemptRunner",
     "build_issue_workflow_smoke_case",
     "check_expected",
     "check_root_expected",
@@ -78,15 +83,20 @@ __all__ = [
     "extract_workflow_smoke_run_id",
     "git_capture",
     "git_run",
+    "grade_mini_swe_attempt",
     "instance_for_task",
     "is_test_path",
     "issue_workflow_diff_script",
     "issue_workflow_review_script",
     "issue_workflow_smoke_expected",
     "list_fixtures",
+    "list_mini_swe_cases",
     "list_synthetic_tasks",
     "load_json_object",
     "main",
+    "MiniSweCase",
+    "MiniSweGrade",
+    "mini_swe_source",
     "prepare_config_dir",
     "prepare_issue_workflow_smoke_config_dir",
     "prepare_synthetic_config_dir",
@@ -96,6 +106,8 @@ __all__ = [
     "run_claimed_test_mismatch_local_repo",
     "run_fabro_command",
     "run_issue_workflow_smoke",
+    "run_mini_swe",
+    "run_mini_swe_case",
     "run_replay",
     "run_replay_fixture",
     "run_synthetic",
