@@ -63,18 +63,24 @@ def build_task_record(
     goal_path: Path,
     sandbox_provider: str,
 ) -> dict[str, Any]:
-    """Build a domain-neutral task record from one SWE-bench instance."""
+    """Build a domain-neutral task record from one eval instance."""
     owner, name = _split_repo(instance["repo"])
+    source = instance.get("source") if isinstance(instance.get("source"), dict) else None
+    repository = (
+        instance.get("repository") if isinstance(instance.get("repository"), dict) else None
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "task_id": instance["instance_id"],
-        "source": {
+        "source": source
+        or {
             "kind": "swe_bench",
             "external_id": instance["instance_id"],
             "dataset": "princeton-nlp/SWE-bench_Lite",
             "split": "test",
         },
-        "repository": {
+        "repository": repository
+        or {
             "provider": "github",
             "owner": owner,
             "name": name,
@@ -256,7 +262,9 @@ def build_run_record(
         "selected": True,
         "status": status,
         "duration_s": result.get("duration_s", 0),
-        "source": {
+        "source": result.get("source")
+        if isinstance(result.get("source"), dict)
+        else {
             "kind": "swe_bench",
             "external_id": task_id,
         },

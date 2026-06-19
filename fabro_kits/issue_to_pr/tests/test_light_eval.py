@@ -3,10 +3,52 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fabro_kits.issue_to_pr.light_eval import run_replay
+from fabro_kits.issue_to_pr.light_eval import run_replay, run_synthetic
 
 
 class LightEvalReplayTest(unittest.TestCase):
+    def test_synthetic_claimed_test_mismatch_fails_closed_from_regenerated_diff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_synthetic("claimed-test-mismatch", output_dir=output_dir)
+
+            self.assertEqual(summary["failures"], [])
+            self.assertEqual(summary["total"], 1)
+            self.assertEqual(summary["false_exports"], 0)
+
+            run_dir = output_dir / "runs" / "claimed-test-mismatch--001"
+            patch = (run_dir / "output" / "patch.diff").read_text()
+            prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
+            root_prediction = json.loads((output_dir / "predictions.jsonl").read_text())
+            audit = json.loads((run_dir / "output" / "audit.json").read_text())
+            task = json.loads((run_dir / "task.json").read_text())
+            run = json.loads((run_dir / "run.json").read_text())
+            test_gate = json.loads((run_dir / "output" / "test_evidence_gate.json").read_text())
+            accountability_gate = json.loads(
+                (run_dir / "output" / "review_accountability_gate.json").read_text()
+            )
+
+            self.assertIn("diff --git a/src/greeting.py b/src/greeting.py", patch)
+            self.assertIn('+    return f"hello, {name}"', patch)
+            self.assertEqual(prediction["model_patch"], "")
+            self.assertEqual(root_prediction["model_patch"], "")
+            self.assertEqual(audit["changed_files"], ["src/greeting.py"])
+            self.assertEqual(audit["test_files_changed"], [])
+            self.assertEqual(test_gate["observed"]["changed_files"], ["src/greeting.py"])
+            self.assertEqual(test_gate["observed"]["test_files_changed"], [])
+            self.assertEqual(task["source"]["kind"], "synthetic_local_repo")
+            self.assertEqual(task["repository"]["provider"], "local")
+            self.assertEqual(run["source"]["kind"], "synthetic_local_repo")
+            self.assertIn(
+                "validation_claims_tests_but_diff_has_no_test_files",
+                test_gate["judgment"]["hard_failures"],
+            )
+            self.assertEqual(accountability_gate["route_decision"], "fixup")
+            self.assertIn(
+                "tests_not_executed_successfully",
+                accountability_gate["process_failures"],
+            )
+
     def test_replay_canaries_blank_predictions_and_preserve_patches(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)

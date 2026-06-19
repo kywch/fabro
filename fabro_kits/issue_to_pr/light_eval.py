@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -17,6 +18,7 @@ from .artifacts import (
     write_manifest,
     write_run_bundle,
 )
+from .evidence_gate import evaluate_evidence_gate
 from .review_accountability_gate import (
     evaluate_review_accountability,
     load_json_object,
@@ -36,9 +38,17 @@ def main(argv: list[str] | None = None) -> int:
     replay.add_argument("--fixture", default="all")
     replay.add_argument("--output-dir", type=Path)
 
+    synthetic = subparsers.add_parser("synthetic")
+    synthetic.add_argument("--task", default="all")
+    synthetic.add_argument("--output-dir", type=Path)
+
     args = parser.parse_args(argv)
     if args.command == "replay":
         report = run_replay(args.fixture, output_dir=args.output_dir)
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if not report["failures"] else 1
+    if args.command == "synthetic":
+        report = run_synthetic(args.task, output_dir=args.output_dir)
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["failures"] else 1
     return 2
@@ -57,6 +67,19 @@ def run_replay(
     return _run_replay_to_dir(fixture_dirs, output_dir)
 
 
+def run_synthetic(
+    task: str = "all",
+    *,
+    output_dir: Path | None = None,
+) -> dict[str, Any]:
+    task_ids = list_synthetic_tasks(task)
+    if output_dir is None:
+        with tempfile.TemporaryDirectory() as tmp:
+            return _run_synthetic_to_dir(task_ids, Path(tmp))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return _run_synthetic_to_dir(task_ids, output_dir)
+
+
 def list_fixtures(fixture: str) -> list[Path]:
     if fixture == "all":
         return sorted(
@@ -68,6 +91,15 @@ def list_fixtures(fixture: str) -> list[Path]:
     if not path.is_dir():
         raise SystemExit(f"unknown replay fixture: {fixture}")
     return [path]
+
+
+def list_synthetic_tasks(task: str) -> list[str]:
+    known = ["claimed-test-mismatch"]
+    if task == "all":
+        return known
+    if task not in known:
+        raise SystemExit(f"unknown synthetic task: {task}")
+    return [task]
 
 
 def _run_replay_to_dir(fixture_dirs: list[Path], output_dir: Path) -> dict[str, Any]:
@@ -95,6 +127,40 @@ def _run_replay_to_dir(fixture_dirs: list[Path], output_dir: Path) -> dict[str, 
         "".join(json.dumps(build_prediction_record(result), sort_keys=True) + "\n" for result in results)
     )
     failures.extend(check_root_expected(fixture_dirs, output_dir=output_dir))
+    summary = {
+        "total": len(results),
+        "failed": len(failures),
+        "false_exports": sum(1 for failure in failures if failure["kind"] == "false_export"),
+        "failures": failures,
+    }
+    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    return summary
+
+
+def _run_synthetic_to_dir(task_ids: list[str], output_dir: Path) -> dict[str, Any]:
+    results = []
+    failures = []
+    manifest = load_or_init_manifest(output_dir)
+
+    for task_id in task_ids:
+        case_result = run_synthetic_task(task_id, output_dir=output_dir)
+        results.append(case_result["result"])
+        update_manifest_for_run(
+            manifest,
+            task_id=case_result["task_id"],
+            run_id=case_result["run_id"],
+            attempt_id="001",
+            output_dir=output_dir,
+        )
+        failures.extend(case_result["failures"])
+
+    write_manifest(output_dir, manifest)
+    (output_dir / "results.jsonl").write_text(
+        "".join(json.dumps(result, sort_keys=True) + "\n" for result in results)
+    )
+    (output_dir / "predictions.jsonl").write_text(
+        "".join(json.dumps(build_prediction_record(result), sort_keys=True) + "\n" for result in results)
+    )
     summary = {
         "total": len(results),
         "failed": len(failures),
@@ -161,6 +227,118 @@ def run_replay_fixture(fixture_dir: Path, *, output_dir: Path) -> dict[str, Any]
     run_id = run_id_for_task(task_id)
     failures = check_expected(
         expected,
+        output_dir=output_dir,
+        run_id=run_id,
+        result=result,
+        gate=gate,
+        patch=patch,
+    )
+    return {
+        "task_id": task_id,
+        "run_id": run_id,
+        "result": result,
+        "failures": failures,
+    }
+
+
+def run_synthetic_task(task_id: str, *, output_dir: Path) -> dict[str, Any]:
+    if task_id != "claimed-test-mismatch":
+        raise SystemExit(f"unknown synthetic task: {task_id}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo_dir = Path(tmp) / "repo"
+        repo_dir.mkdir()
+        create_claimed_test_mismatch_repo(repo_dir)
+        apply_claimed_test_mismatch_patch(repo_dir)
+        git_run(repo_dir, "add", "-N", ".")
+        patch = git_capture(repo_dir, "diff")
+        changed_files = git_capture(repo_dir, "diff", "--name-only").splitlines()
+
+    audit = {
+        "schema_version": 1,
+        "mode": "synthetic-local-repo",
+        "patch_nonempty": bool(patch.strip()),
+        "changed_files": changed_files,
+        "test_files_changed": [path for path in changed_files if is_test_path(path)],
+    }
+    validation_contract = {
+        "schema_version": 1,
+        "mode": "synthetic-local-repo",
+        "tests_added": [{"path": "tests/test_greeting.py", "description": "claimed coverage"}],
+        "commands_run": [
+            {
+                "command": "python3 -m unittest tests/test_greeting.py",
+                "status": "passed",
+            }
+        ],
+    }
+    test_gate = evaluate_evidence_gate(audit=audit, contract=validation_contract)
+    adversarial = {
+        "schema_version": 1,
+        "stage": "adversarial_review",
+        "status": "passed",
+        "rows": [],
+    }
+    moderator = {
+        "schema_version": 1,
+        "stage": "moderator_filter",
+        "status": "passed",
+        "dispositions": [],
+    }
+    materialization = {
+        "schema_version": 1,
+        "stage": "review_materialization",
+        "status": "passed",
+        "errors": [],
+    }
+    gate = evaluate_review_accountability(
+        adversarial=adversarial,
+        moderator=moderator,
+        test_gate=test_gate,
+        materialization=materialization,
+        patch_diff=patch,
+    )
+    result_status = "completed" if gate["route_decision"] == "export" else "failed"
+    result = {
+        "instance_id": task_id,
+        "model_name_or_path": "light-eval-synthetic",
+        "model_patch": patch,
+        "status": result_status,
+        "error": gate.get("failure_reason") if result_status != "completed" else None,
+        "duration_s": 0,
+        "fabro_run_id": None,
+        "fabro_dump_dir": None,
+        "trajectory_path": None,
+        "source": synthetic_source_for_task(task_id),
+        "audit": audit,
+        "verify": {
+            "schema_version": 1,
+            "status": "completed",
+            "mode": "synthetic-local-repo",
+            "patch_nonempty": bool(patch.strip()),
+        },
+        "test_evidence_gate": test_gate,
+        "adversarial_review": adversarial,
+        "moderator_filter": moderator,
+        "review_materialization": materialization,
+        "review_accountability_gate": gate,
+    }
+
+    config_dir = prepare_synthetic_config_dir(
+        output_dir,
+        task_id,
+        validation_contract=validation_contract,
+    )
+    write_run_bundle(
+        instance=synthetic_instance_for_task(task_id),
+        result=result,
+        output_dir=output_dir,
+        config_dir=config_dir,
+        sandbox_provider="synthetic-local-repo",
+    )
+    run_id = run_id_for_task(task_id)
+    failures = check_expected(
+        synthetic_expected_for_task(task_id),
         output_dir=output_dir,
         run_id=run_id,
         result=result,
@@ -248,6 +426,18 @@ def check_expected(
                     "field": key,
                     "expected": expected[expected_key],
                     "actual": observed.get(key),
+                }
+            )
+    audit = result.get("audit") if isinstance(result.get("audit"), dict) else {}
+    for key in ("changed_files", "test_files_changed"):
+        expected_key = f"expected_audit_{key}"
+        if expected_key in expected and audit.get(key) != expected[expected_key]:
+            failures.append(
+                {
+                    "kind": "audit_mismatch",
+                    "field": key,
+                    "expected": expected[expected_key],
+                    "actual": audit.get(key),
                 }
             )
     for expected_failure in expected.get("expected_test_gate_hard_failures") or []:
@@ -441,6 +631,23 @@ def prepare_config_dir(output_dir: Path, task_id: str) -> Path:
     return config_dir
 
 
+def prepare_synthetic_config_dir(
+    output_dir: Path,
+    task_id: str,
+    *,
+    validation_contract: dict[str, Any],
+) -> Path:
+    config_dir = prepare_config_dir(output_dir, task_id)
+    (config_dir / "goal.txt").write_text(
+        "Synthetic local-repo task: preserve source-only patch but fail closed when "
+        "validation claims tests not present in the regenerated git diff.\n"
+    )
+    (config_dir / "validation_contract.json").write_text(
+        json.dumps(validation_contract, indent=2, sort_keys=True) + "\n"
+    )
+    return config_dir
+
+
 def instance_for_task(task_id: str) -> dict[str, Any]:
     return {
         "instance_id": task_id,
@@ -448,6 +655,128 @@ def instance_for_task(task_id: str) -> dict[str, Any]:
         "version": "fixture",
         "base_commit": "fixture",
     }
+
+
+def synthetic_instance_for_task(task_id: str) -> dict[str, Any]:
+    return {
+        "instance_id": task_id,
+        "repo": "synthetic/local-repo",
+        "version": "local",
+        "base_commit": "synthetic",
+        "source": synthetic_source_for_task(task_id),
+        "repository": {
+            "provider": "local",
+            "owner": "synthetic",
+            "name": "local-repo",
+            "full_name": "synthetic/local-repo",
+            "base_ref": None,
+            "base_sha": "synthetic",
+            "version": "local",
+        },
+    }
+
+
+def synthetic_source_for_task(task_id: str) -> dict[str, Any]:
+    return {
+        "kind": "synthetic_local_repo",
+        "external_id": task_id,
+        "dataset": "fabro-kits/issue-to-pr-tier2a",
+        "split": "scripted",
+    }
+
+
+def synthetic_expected_for_task(task_id: str) -> dict[str, Any]:
+    if task_id != "claimed-test-mismatch":
+        raise SystemExit(f"unknown synthetic task: {task_id}")
+    return {
+        "task_id": task_id,
+        "expected_decision": "blank",
+        "expected_result_status": "failed",
+        "expected_route_decision": "fixup",
+        "expected_process_failures_exact": ["tests_not_executed_successfully"],
+        "expected_test_gate_status": "failed",
+        "expected_test_gate_hard_failures": [
+            "validation_claims_tests_but_diff_has_no_test_files",
+        ],
+        "expected_audit_changed_files": ["src/greeting.py"],
+        "expected_audit_test_files_changed": [],
+        "expect_prediction_blank": True,
+        "expect_patch_preserved": True,
+        "expected_candidate_state": "failed_with_patch",
+        "expected_candidate_reuse": "continuation_candidate",
+    }
+
+
+def create_claimed_test_mismatch_repo(repo_dir: Path) -> None:
+    src = repo_dir / "src"
+    src.mkdir()
+    (src / "greeting.py").write_text(
+        "def greeting(name):\n"
+        "    return f\"hello {name}\"\n"
+    )
+    git_run(repo_dir, "init")
+    git_run(repo_dir, "add", "src/greeting.py")
+
+
+def apply_claimed_test_mismatch_patch(repo_dir: Path) -> None:
+    patch = (
+        "diff --git a/src/greeting.py b/src/greeting.py\n"
+        "--- a/src/greeting.py\n"
+        "+++ b/src/greeting.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " def greeting(name):\n"
+        "-    return f\"hello {name}\"\n"
+        "+    return f\"hello, {name}\"\n"
+    )
+    proc = subprocess.run(
+        ["git", "apply", "--whitespace=nowarn", "-"],
+        cwd=repo_dir,
+        input=patch,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"git apply failed: {proc.stderr}")
+
+
+def git_run(repo_dir: Path, *args: str) -> None:
+    proc = subprocess.run(
+        ["git", *args],
+        cwd=repo_dir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed: {proc.stderr}")
+
+
+def git_capture(repo_dir: Path, *args: str) -> str:
+    proc = subprocess.run(
+        ["git", *args],
+        cwd=repo_dir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed: {proc.stderr}")
+    return proc.stdout
+
+
+def is_test_path(path: str) -> bool:
+    return (
+        path.startswith("tests/")
+        or path.startswith("testing/")
+        or "/tests/" in path
+        or Path(path).name.startswith("test_")
+        or Path(path).name.endswith("_test.py")
+        or path.endswith("/tests.py")
+    )
 
 
 def read_json(path: Path) -> dict[str, Any]:
