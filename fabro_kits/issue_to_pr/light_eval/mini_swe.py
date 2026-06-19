@@ -77,6 +77,19 @@ KNOWN_MINI_SWE_CASES = (
         expected_decision_hint="export",
     ),
     MiniSweCase(
+        case_id="good-test-only",
+        family="positive",
+        suite="dev",
+        issue_text=(
+            "Add regression coverage for the existing `greeting(name)` behavior. "
+            "The source implementation is already correct for this task."
+        ),
+        expected_files=(),
+        allowed_test_files=("tests/test_greeting.py",),
+        requires_test_change=True,
+        expected_decision_hint="export",
+    ),
+    MiniSweCase(
         case_id="overblocking-good-patch-with-minor-risk",
         family="review_moderation",
         suite="dev",
@@ -354,10 +367,11 @@ class ScriptedCalibrationRunner:
             "good-source-plus-test",
             "runtime-proof-honesty",
             "good-source-existing-test",
+            "good-test-only",
             "overblocking-good-patch-with-minor-risk",
         }:
             raise SystemExit(f"mini-swe scripted case not implemented yet: {case.case_id}")
-        _apply_greeting_fix_patch(repo_dir, change_test=bool(case.allowed_test_files))
+        _apply_case_patch(case, repo_dir)
         _run_public_tests(repo_dir)
         git_run(repo_dir, "add", "-N", ".")
         patch_path = work_dir / "patch.diff"
@@ -397,6 +411,7 @@ class WorkflowSliceRunner:
             "good-source-plus-test",
             "good-source-existing-test",
             "runtime-proof-honesty",
+            "good-test-only",
             "overblocking-good-patch-with-minor-risk",
         }:
             raise SystemExit(f"mini-swe workflow-slice case not implemented yet: {case.case_id}")
@@ -507,25 +522,37 @@ class WorkflowSliceRunner:
         )
 
 
-def _apply_greeting_fix_patch(repo_dir: Path, *, change_test: bool) -> None:
-    (repo_dir / "src" / "greeting.py").write_text(
-        "def greeting(name):\n"
-        "    return f\"hello, {name}\"\n"
-    )
-    if change_test:
+def _apply_case_patch(case: MiniSweCase, repo_dir: Path) -> None:
+    if case.case_id != "good-test-only":
+        (repo_dir / "src" / "greeting.py").write_text(
+            "def greeting(name):\n"
+            "    return f\"hello, {name}\"\n"
+        )
+    if case.case_id == "good-test-only":
+        (repo_dir / "tests" / "test_greeting.py").write_text(
+            _greeting_test_text("hello Ada", extra_name="Grace")
+        )
+    elif case.allowed_test_files:
         (repo_dir / "tests" / "test_greeting.py").write_text(
             _greeting_test_text("hello, Ada")
         )
 
 
-def _greeting_test_text(expected: str) -> str:
-    return (
+def _greeting_test_text(expected: str, *, extra_name: str | None = None) -> str:
+    text = (
         "import unittest\n\n"
         "from src.greeting import greeting\n\n\n"
         "class GreetingTest(unittest.TestCase):\n"
         "    def test_greeting_uses_comma(self):\n"
         f"        self.assertEqual(greeting(\"Ada\"), {expected!r})\n"
     )
+    if extra_name:
+        text += (
+            "\n"
+            "    def test_greeting_covers_another_name(self):\n"
+            f"        self.assertEqual(greeting({extra_name!r}), 'hello {extra_name}')\n"
+        )
+    return text
 
 
 def _run_public_tests(repo_dir: Path) -> None:
@@ -544,6 +571,16 @@ def _run_public_tests(repo_dir: Path) -> None:
 
 def _workflow_slice_solve_script(case: MiniSweCase, repo_dir: Path, artifacts_dir: Path) -> str:
     change_test = bool(case.allowed_test_files)
+    change_source = case.case_id != "good-test-only"
+    test_expected = "hello Ada" if case.case_id == "good-test-only" else "hello, Ada"
+    test_expected_literal = json.dumps(test_expected)
+    test_extra_block = (
+        "        '\\n'\n"
+        "        '    def test_greeting_covers_another_name(self):\\n'\n"
+        "        '        self.assertEqual(greeting(\"Grace\"), \"hello Grace\")\\n'\n"
+        if case.case_id == "good-test-only"
+        else ""
+    )
     include_command_id = case.case_id != "runtime-proof-honesty"
     tests_added_json = json.dumps(
         [
@@ -568,7 +605,9 @@ def _workflow_slice_solve_script(case: MiniSweCase, repo_dir: Path, artifacts_di
         f"repo = Path({json.dumps(str(repo_dir))})\n"
         f"artifact_dir = Path({json.dumps(str(artifacts_dir))})\n"
         "artifact_dir.mkdir(parents=True, exist_ok=True)\n"
-        "(repo / 'src' / 'greeting.py').write_text('def greeting(name):\\n    return f\"hello, {name}\"\\n')\n"
+        f"change_source = {change_source!r}\n"
+        "if change_source:\n"
+        "    (repo / 'src' / 'greeting.py').write_text('def greeting(name):\\n    return f\"hello, {name}\"\\n')\n"
         f"change_test = {change_test!r}\n"
         "if change_test:\n"
         "    (repo / 'tests' / 'test_greeting.py').write_text(\n"
@@ -576,7 +615,8 @@ def _workflow_slice_solve_script(case: MiniSweCase, repo_dir: Path, artifacts_di
         "        'from src.greeting import greeting\\n\\n\\n'\n"
         "        'class GreetingTest(unittest.TestCase):\\n'\n"
         "        '    def test_greeting_uses_comma(self):\\n'\n"
-        "        '        self.assertEqual(greeting(\"Ada\"), \"hello, Ada\")\\n'\n"
+        f"        '        self.assertEqual(greeting(\"Ada\"), {test_expected_literal})\\n'\n"
+        f"{test_extra_block}"
         "    )\n"
         "env = dict(os.environ)\n"
         "env['PYTHONDONTWRITEBYTECODE'] = '1'\n"

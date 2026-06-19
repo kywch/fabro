@@ -189,6 +189,31 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(test_gate["status"], "passed")
             self.assertEqual(test_gate["judgment"]["hard_failures"], [])
 
+    def test_mini_swe_test_only_case_exports_without_source_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_mini_swe(
+                "good-test-only",
+                output_dir=output_dir,
+                attempt="scripted",
+            )
+
+            self.assertEqual(summary["failures"], [])
+            self.assertEqual(summary["total"], 1)
+            self.assertEqual(summary["patch_pass"], 1)
+            self.assertEqual(summary["artifact_pass"], 1)
+            self.assertEqual(summary["export_pass"], 1)
+            run_dir = output_dir / "runs" / "good-test-only--001"
+            patch = (run_dir / "output" / "patch.diff").read_text()
+            prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
+            audit = json.loads((run_dir / "output" / "audit.json").read_text())
+
+            self.assertTrue(prediction["model_patch"])
+            self.assertNotIn("diff --git a/src/greeting.py", patch)
+            self.assertIn("diff --git a/tests/test_greeting.py", patch)
+            self.assertEqual(audit["changed_files"], ["tests/test_greeting.py"])
+            self.assertEqual(audit["test_files_changed"], ["tests/test_greeting.py"])
+
     def test_mini_swe_minor_review_risk_does_not_overblock_good_patch(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
@@ -275,6 +300,31 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertIn("diff --git a/src/greeting.py b/src/greeting.py", patch)
             self.assertNotIn("diff --git a/tests/test_greeting.py", patch)
             self.assertEqual(audit["changed_files"], ["src/greeting.py"])
+            self.assertTrue(run["eval"]["b2_eligible"])
+
+    @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
+    def test_mini_swe_workflow_slice_test_only_case_exports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_mini_swe(
+                "good-test-only",
+                output_dir=output_dir,
+                attempt="workflow-slice",
+            )
+
+            self.assertEqual(summary["failures"], [])
+            self.assertEqual(summary["b2_eligible"], 1)
+            self.assertEqual(summary["patch_pass"], 1)
+            self.assertEqual(summary["artifact_pass"], 1)
+            self.assertEqual(summary["export_pass"], 1)
+            run_dir = output_dir / "runs" / "good-test-only--001"
+            patch = (run_dir / "output" / "patch.diff").read_text()
+            audit = json.loads((run_dir / "output" / "audit.json").read_text())
+            run = json.loads((run_dir / "run.json").read_text())
+
+            self.assertNotIn("diff --git a/src/greeting.py", patch)
+            self.assertIn("diff --git a/tests/test_greeting.py", patch)
+            self.assertEqual(audit["changed_files"], ["tests/test_greeting.py"])
             self.assertTrue(run["eval"]["b2_eligible"])
 
     @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
