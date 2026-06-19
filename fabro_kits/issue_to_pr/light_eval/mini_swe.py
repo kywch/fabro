@@ -24,7 +24,9 @@ from ..review_accountability_gate import evaluate_review_accountability
 from ..workflow_generator import dot_escape
 from .bundles import prepare_config_dir
 from .grader import MiniSweGrade, grade_mini_swe_attempt
+from .paths import DEFAULT_SYNTHETIC_DOCKER_IMAGE
 from .process import git_capture, git_run, is_test_path
+from .process import docker_image_available
 from .task_schema import AttemptResult, MiniSweCase, mini_swe_source
 from .workflow_common import (
     extract_workflow_smoke_run_id,
@@ -114,6 +116,7 @@ def run_mini_swe(
     attempt: str = "scripted",
     substrate: str = "local",
     fabro_bin: Path = Path("target/debug/fabro"),
+    docker_image: str = DEFAULT_SYNTHETIC_DOCKER_IMAGE,
     seed: int | None = None,
     fail_fast: bool = False,
 ) -> dict[str, Any]:
@@ -121,8 +124,10 @@ def run_mini_swe(
     cases = list_mini_swe_cases(case, suite=suite)
     if attempt not in {"scripted", "workflow-slice"}:
         raise SystemExit(f"mini-swe attempt not implemented yet: {attempt}")
-    if substrate != "local":
+    if substrate not in {"local", "docker"}:
         raise SystemExit(f"mini-swe substrate not implemented yet: {substrate}")
+    if substrate == "docker" and attempt != "scripted":
+        raise SystemExit("mini-swe docker substrate is only implemented for scripted attempts")
     if output_dir is None:
         with tempfile.TemporaryDirectory() as tmp:
             return _run_mini_swe_to_dir(
@@ -131,6 +136,7 @@ def run_mini_swe(
                 attempt=attempt,
                 substrate=substrate,
                 fabro_bin=fabro_bin,
+                docker_image=docker_image,
                 seed=seed,
                 fail_fast=fail_fast,
             )
@@ -141,6 +147,7 @@ def run_mini_swe(
         attempt=attempt,
         substrate=substrate,
         fabro_bin=fabro_bin,
+        docker_image=docker_image,
         seed=seed,
         fail_fast=fail_fast,
     )
@@ -171,6 +178,7 @@ def _run_mini_swe_to_dir(
     attempt: str,
     substrate: str,
     fabro_bin: Path,
+    docker_image: str,
     seed: int | None,
     fail_fast: bool,
 ) -> dict[str, Any]:
@@ -185,6 +193,7 @@ def _run_mini_swe_to_dir(
             attempt=attempt,
             substrate=substrate,
             fabro_bin=fabro_bin,
+            docker_image=docker_image,
         )
         results.append(case_result["result"])
         failures.extend(case_result["failures"])
@@ -223,12 +232,15 @@ def run_mini_swe_case(
     attempt: str,
     substrate: str,
     fabro_bin: Path,
+    docker_image: str = DEFAULT_SYNTHETIC_DOCKER_IMAGE,
 ) -> dict[str, Any]:
     """Run one mini-SWE case."""
     if attempt not in {"scripted", "workflow-slice"}:
         raise SystemExit(f"mini-swe attempt not implemented yet: {attempt}")
-    if substrate != "local":
+    if substrate not in {"local", "docker"}:
         raise SystemExit(f"mini-swe substrate not implemented yet: {substrate}")
+    if substrate == "docker" and attempt != "scripted":
+        raise SystemExit("mini-swe docker substrate is only implemented for scripted attempts")
 
     with tempfile.TemporaryDirectory() as tmp:
         work_dir = Path(tmp)
@@ -236,7 +248,7 @@ def run_mini_swe_case(
         repo_dir.mkdir()
         _create_repo_for_case(case, repo_dir)
         if attempt == "scripted":
-            runner = ScriptedCalibrationRunner(substrate="local")
+            runner = ScriptedCalibrationRunner(substrate=substrate, docker_image=docker_image)
         else:
             runner = WorkflowSliceRunner(output_dir=output_dir, fabro_bin=fabro_bin)
         attempt_result = runner.run(case, repo_dir, work_dir)
@@ -385,8 +397,14 @@ class ScriptedCalibrationRunner:
 
     name = "scripted"
 
-    def __init__(self, *, substrate: str) -> None:
+    def __init__(
+        self,
+        *,
+        substrate: str,
+        docker_image: str = DEFAULT_SYNTHETIC_DOCKER_IMAGE,
+    ) -> None:
         self.substrate = substrate
+        self.docker_image = docker_image
 
     def run(self, case: MiniSweCase, repo_dir: Path, work_dir: Path) -> AttemptResult:
         if case.case_id not in {
@@ -397,15 +415,22 @@ class ScriptedCalibrationRunner:
             "overblocking-good-patch-with-minor-risk",
         }:
             raise SystemExit(f"mini-swe scripted case not implemented yet: {case.case_id}")
-        _apply_case_patch(case, repo_dir)
-        _run_public_tests(repo_dir)
+        if self.substrate == "docker":
+            _apply_case_patch_in_docker(
+                case,
+                repo_dir,
+                docker_image=self.docker_image,
+            )
+        else:
+            _apply_case_patch(case, repo_dir)
+            _run_public_tests(repo_dir)
         git_run(repo_dir, "add", "-N", ".")
         patch_path = work_dir / "patch.diff"
         patch_path.write_text(git_capture(repo_dir, "diff"))
         return AttemptResult(
             attempt_origin="scripted",
             artifact_origin="fixture",
-            substrate="local",
+            substrate=self.substrate,
             source=mini_swe_source(case),
             b2_slice_eligible=False,
             b2_model_eligible=False,
@@ -420,6 +445,7 @@ class ScriptedCalibrationRunner:
             provenance={
                 "runner": "ScriptedCalibrationRunner",
                 "case_artifacts_supplied": True,
+                "docker_image": self.docker_image if self.substrate == "docker" else None,
             },
         )
 
@@ -603,6 +629,74 @@ def _run_public_tests(repo_dir: Path) -> None:
     )
     if proc.returncode != 0:
         raise RuntimeError(f"scripted mini-swe test command failed: {proc.stderr}")
+
+
+def _apply_case_patch_in_docker(
+    case: MiniSweCase,
+    repo_dir: Path,
+    *,
+    docker_image: str,
+) -> None:
+    if not docker_image_available(docker_image):
+        raise SystemExit(
+            f"mini-swe docker image is not available locally: {docker_image}. "
+            "Build/pull it or pass --docker-image."
+        )
+    script = (
+        "set -euo pipefail\n"
+        "cd /workspace\n"
+        "python3 - <<'PY'\n"
+        "from pathlib import Path\n"
+        "repo = Path('/workspace')\n"
+        f"case_id = {json.dumps(case.case_id)}\n"
+        "if case_id != 'good-test-only':\n"
+        "    (repo / 'src' / 'greeting.py').write_text('def greeting(name):\\n    return f\"hello, {name}\"\\n')\n"
+        "if case_id == 'good-test-only':\n"
+        "    (repo / 'tests' / 'test_greeting.py').write_text(\n"
+        "        'import unittest\\n\\n'\n"
+        "        'from src.greeting import greeting\\n\\n\\n'\n"
+        "        'class GreetingTest(unittest.TestCase):\\n'\n"
+        "        '    def test_greeting_uses_comma(self):\\n'\n"
+        "        '        self.assertEqual(greeting(\"Ada\"), \"hello Ada\")\\n'\n"
+        "        '\\n'\n"
+        "        '    def test_greeting_covers_another_name(self):\\n'\n"
+        "        '        self.assertEqual(greeting(\"Grace\"), \"hello Grace\")\\n'\n"
+        "    )\n"
+        "elif "
+        f"{bool(case.allowed_test_files)!r}:\n"
+        "    (repo / 'tests' / 'test_greeting.py').write_text(\n"
+        "        'import unittest\\n\\n'\n"
+        "        'from src.greeting import greeting\\n\\n\\n'\n"
+        "        'class GreetingTest(unittest.TestCase):\\n'\n"
+        "        '    def test_greeting_uses_comma(self):\\n'\n"
+        "        '        self.assertEqual(greeting(\"Ada\"), \"hello, Ada\")\\n'\n"
+        "    )\n"
+        "PY\n"
+        "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests\n"
+    )
+    proc = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
+            "-v",
+            f"{repo_dir.resolve()}:/workspace",
+            "-w",
+            "/workspace",
+            docker_image,
+            "bash",
+            "-lc",
+            script,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"docker mini-swe scripted task failed: {proc.stderr}")
 
 
 def _run_hidden_oracle(case: MiniSweCase, repo_dir: Path) -> dict[str, Any]:

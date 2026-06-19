@@ -192,6 +192,48 @@ class LightEvalReplayTest(unittest.TestCase):
             summary = json.loads((Path(tmp) / "summary.json").read_text())
             self.assertEqual(summary["seed"], 7)
 
+    def test_mini_swe_docker_substrate_reports_missing_image(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            with self.assertRaises(SystemExit) as exc:
+                run_mini_swe(
+                    "good-test-only",
+                    output_dir=output_dir,
+                    attempt="scripted",
+                    substrate="docker",
+                    docker_image="fabro-mini-swe-definitely-missing:latest",
+                )
+
+            self.assertIn("mini-swe docker image is not available locally", str(exc.exception))
+
+    @unittest.skipUnless(
+        docker_image_available(DEFAULT_SYNTHETIC_DOCKER_IMAGE),
+        f"missing docker image {DEFAULT_SYNTHETIC_DOCKER_IMAGE}",
+    )
+    def test_mini_swe_scripted_can_run_through_docker_substrate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_mini_swe(
+                "good-test-only",
+                output_dir=output_dir,
+                attempt="scripted",
+                substrate="docker",
+            )
+
+            self.assertEqual(summary["failures"], [])
+            self.assertEqual(summary["total"], 1)
+            self.assertEqual(summary["b2_eligible"], 0)
+            self.assertEqual(summary["patch_pass"], 1)
+            run_dir = output_dir / "runs" / "good-test-only--001"
+            audit = json.loads((run_dir / "output" / "audit.json").read_text())
+            task = json.loads((run_dir / "task.json").read_text())
+            run = json.loads((run_dir / "run.json").read_text())
+
+            self.assertEqual(audit["sandbox_provider"], "docker")
+            self.assertEqual(task["environment"]["sandbox_provider"], "docker")
+            self.assertEqual(run["eval"]["substrate"], "docker")
+            self.assertFalse(run["eval"]["b2_eligible"])
+
     def test_mini_swe_runtime_proof_honesty_fails_closed_without_command_id(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)

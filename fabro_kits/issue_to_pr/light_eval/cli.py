@@ -41,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     mini_swe.add_argument("--substrate", choices=("local", "docker"), default="local")
     mini_swe.add_argument("--fabro-bin", type=Path, default=Path("target/debug/fabro"))
+    mini_swe.add_argument("--docker-image", default=DEFAULT_SYNTHETIC_DOCKER_IMAGE)
     mini_swe.add_argument("--seed", type=int)
     mini_swe.add_argument("--format", choices=("json", "text"), default="json")
     mini_swe.add_argument("--fail-fast", action="store_true")
@@ -82,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
                 attempt=args.attempt,
                 substrate=args.substrate,
                 fabro_bin=args.fabro_bin,
+                docker_image=args.docker_image,
                 seed=args.seed,
                 fail_fast=args.fail_fast,
             )
