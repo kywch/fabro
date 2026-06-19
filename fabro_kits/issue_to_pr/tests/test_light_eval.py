@@ -126,6 +126,62 @@ class LightEvalReplayTest(unittest.TestCase):
         self.assertIn("usage: python -m fabro_kits.issue_to_pr.light_eval mini-swe", result.stderr)
         self.assertIn("mini-swe attempt not implemented yet: model", result.stderr)
 
+    def test_mini_swe_suite_filter_and_seed_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_mini_swe(
+                "all",
+                suite="dev",
+                output_dir=output_dir,
+                attempt="scripted",
+                seed=123,
+            )
+
+            self.assertEqual(summary["failures"], [])
+            self.assertEqual(summary["total"], 5)
+            self.assertEqual(summary["seed"], 123)
+
+            with self.assertRaises(SystemExit) as exc:
+                run_mini_swe(
+                    "good-source-plus-test",
+                    suite="locked",
+                    output_dir=output_dir,
+                    attempt="scripted",
+                )
+            self.assertIn("unknown mini-swe case: good-source-plus-test", str(exc.exception))
+
+    def test_mini_swe_cli_text_format(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "fabro_kits.issue_to_pr.light_eval",
+                    "mini-swe",
+                    "--case",
+                    "good-test-only",
+                    "--suite",
+                    "dev",
+                    "--attempt",
+                    "scripted",
+                    "--output-dir",
+                    tmp,
+                    "--seed",
+                    "7",
+                    "--format",
+                    "text",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("mini-swe: total=1 failed=0", result.stdout)
+            self.assertIn("b2_eligible=0", result.stdout)
+            summary = json.loads((Path(tmp) / "summary.json").read_text())
+            self.assertEqual(summary["seed"], 7)
+
     def test_mini_swe_runtime_proof_honesty_fails_closed_without_command_id(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)

@@ -32,6 +32,7 @@ def main(argv: list[str] | None = None) -> int:
 
     mini_swe = subparsers.add_parser("mini-swe")
     mini_swe.add_argument("--case", default="all")
+    mini_swe.add_argument("--suite", choices=("dev", "locked", "shadow", "all"), default="all")
     mini_swe.add_argument("--output-dir", type=Path)
     mini_swe.add_argument(
         "--attempt",
@@ -40,6 +41,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     mini_swe.add_argument("--substrate", choices=("local", "docker"), default="local")
     mini_swe.add_argument("--fabro-bin", type=Path, default=Path("target/debug/fabro"))
+    mini_swe.add_argument("--seed", type=int)
+    mini_swe.add_argument("--format", choices=("json", "text"), default="json")
+    mini_swe.add_argument("--fail-fast", action="store_true")
 
     workflow_smoke = subparsers.add_parser("workflow-smoke")
     workflow_smoke.add_argument("--output-dir", type=Path)
@@ -73,14 +77,17 @@ def main(argv: list[str] | None = None) -> int:
         try:
             report = run_mini_swe(
                 args.case,
+                suite=args.suite,
                 output_dir=args.output_dir,
                 attempt=args.attempt,
                 substrate=args.substrate,
                 fabro_bin=args.fabro_bin,
+                seed=args.seed,
+                fail_fast=args.fail_fast,
             )
         except SystemExit as exc:
             mini_swe.error(str(exc))
-        print(json.dumps(report, indent=2, sort_keys=True))
+        _print_report(report, output_format=args.format)
         return 0 if not report["failures"] else 1
     if args.command == "workflow-smoke":
         report = run_workflow_smoke(output_dir=args.output_dir, fabro_bin=args.fabro_bin)
@@ -91,3 +98,21 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["failures"] else 1
     return 2
+
+
+def _print_report(report: dict, *, output_format: str = "json") -> None:
+    if output_format == "text":
+        print(
+            "mini-swe: "
+            f"total={report.get('total', 0)} "
+            f"failed={report.get('failed', 0)} "
+            f"patch_pass={report.get('patch_pass', 0)} "
+            f"artifact_pass={report.get('artifact_pass', 0)} "
+            f"export_pass={report.get('export_pass', 0)} "
+            f"b2_eligible={report.get('b2_eligible', 0)}"
+        )
+        failures = report.get("failures")
+        if failures:
+            print(json.dumps(failures, indent=2, sort_keys=True))
+        return
+    print(json.dumps(report, indent=2, sort_keys=True))

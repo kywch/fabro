@@ -109,13 +109,16 @@ KNOWN_MINI_SWE_CASES = (
 def run_mini_swe(
     case: str = "all",
     *,
+    suite: str = "all",
     output_dir: Path | None = None,
     attempt: str = "scripted",
     substrate: str = "local",
     fabro_bin: Path = Path("target/debug/fabro"),
+    seed: int | None = None,
+    fail_fast: bool = False,
 ) -> dict[str, Any]:
     """Run mini-SWE lightweight eval cases."""
-    cases = list_mini_swe_cases(case)
+    cases = list_mini_swe_cases(case, suite=suite)
     if attempt not in {"scripted", "workflow-slice"}:
         raise SystemExit(f"mini-swe attempt not implemented yet: {attempt}")
     if substrate != "local":
@@ -128,6 +131,8 @@ def run_mini_swe(
                 attempt=attempt,
                 substrate=substrate,
                 fabro_bin=fabro_bin,
+                seed=seed,
+                fail_fast=fail_fast,
             )
     output_dir.mkdir(parents=True, exist_ok=True)
     return _run_mini_swe_to_dir(
@@ -136,17 +141,27 @@ def run_mini_swe(
         attempt=attempt,
         substrate=substrate,
         fabro_bin=fabro_bin,
+        seed=seed,
+        fail_fast=fail_fast,
     )
 
 
-def list_mini_swe_cases(case: str) -> list[MiniSweCase]:
+def list_mini_swe_cases(case: str, *, suite: str = "all") -> list[MiniSweCase]:
     """Return selected mini-SWE case definitions."""
+    if suite not in {"dev", "locked", "shadow", "all"}:
+        raise SystemExit(f"unknown mini-swe suite: {suite}")
+    cases = [
+        known
+        for known in KNOWN_MINI_SWE_CASES
+        if suite == "all" or known.suite == suite
+    ]
     if case == "all":
-        return list(KNOWN_MINI_SWE_CASES)
-    for known in KNOWN_MINI_SWE_CASES:
+        return cases
+    for known in cases:
         if known.case_id == case:
             return [known]
-    raise SystemExit(f"unknown mini-swe case: {case}")
+    suite_suffix = "" if suite == "all" else f" in suite {suite}"
+    raise SystemExit(f"unknown mini-swe case: {case}{suite_suffix}")
 
 
 def _run_mini_swe_to_dir(
@@ -156,6 +171,8 @@ def _run_mini_swe_to_dir(
     attempt: str,
     substrate: str,
     fabro_bin: Path,
+    seed: int | None,
+    fail_fast: bool,
 ) -> dict[str, Any]:
     results = []
     failures = []
@@ -178,6 +195,8 @@ def _run_mini_swe_to_dir(
             attempt_id="001",
             output_dir=output_dir,
         )
+        if fail_fast and case_result["failures"]:
+            break
 
     write_manifest(output_dir, manifest)
     (output_dir / "results.jsonl").write_text(
@@ -191,6 +210,8 @@ def _run_mini_swe_to_dir(
     )
 
     summary = _mini_swe_summary(results, failures)
+    if seed is not None:
+        summary["seed"] = seed
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     return summary
 
