@@ -16,6 +16,7 @@ from fabro_kits.issue_to_pr.light_eval import (
     run_synthetic,
     run_workflow_smoke,
 )
+from fabro_kits.issue_to_pr.light_eval.mini_swe import _materialize_model_artifacts
 
 
 class LightEvalReplayTest(unittest.TestCase):
@@ -115,7 +116,7 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(run["eval"]["eligibility_failures"], ["artifact_origin_fixture"])
             self.assertEqual(run["eval"]["decision_outcome"], "true_export")
 
-    def test_mini_swe_unimplemented_attempt_uses_argparse_error(self):
+    def test_mini_swe_model_attempt_reports_missing_fabro_binary(self):
         result = subprocess.run(
             [
                 sys.executable,
@@ -126,6 +127,8 @@ class LightEvalReplayTest(unittest.TestCase):
                 "good-source-plus-test",
                 "--attempt",
                 "model",
+                "--fabro-bin",
+                "tmp/missing-fabro-for-mini-swe-model-test",
             ],
             check=False,
             capture_output=True,
@@ -134,7 +137,55 @@ class LightEvalReplayTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("usage: python -m fabro_kits.issue_to_pr.light_eval mini-swe", result.stderr)
-        self.assertIn("mini-swe attempt not implemented yet: model", result.stderr)
+        self.assertIn("fabro binary missing", result.stderr)
+
+    def test_mini_swe_model_attempt_rejects_docker_substrate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SystemExit) as exc:
+                run_mini_swe(
+                    "good-source-plus-test",
+                    output_dir=Path(tmp),
+                    attempt="model",
+                    substrate="docker",
+                )
+
+            self.assertIn("docker substrate is only implemented for scripted", str(exc.exception))
+
+    def test_mini_swe_model_artifact_materializer_reads_dump_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump_dir = root / "dump" / "workspace" / ".fabro" / "issue-to-pr"
+            dump_dir.mkdir(parents=True)
+            artifacts_dir = root / "artifacts"
+            payloads = {
+                "diff-audit.json": {"changed_files": ["src/greeting.py"]},
+                "validation.json": {"commands_run": [{"id": "cmd-001"}]},
+                "adversarial-review.json": {"rows": []},
+                "moderator-filter.json": {"dispositions": []},
+                "review-materialization.json": {"status": "passed"},
+            }
+            for name, payload in payloads.items():
+                (dump_dir / name).write_text(json.dumps(payload))
+
+            artifacts = _materialize_model_artifacts(
+                dump_path=root / "dump",
+                artifacts_dir=artifacts_dir,
+            )
+
+            self.assertEqual(
+                set(artifacts),
+                {
+                    "audit",
+                    "validation_contract",
+                    "adversarial_review",
+                    "moderator_filter",
+                    "review_materialization",
+                },
+            )
+            self.assertEqual(
+                json.loads(Path(artifacts["validation_contract"]).read_text())["commands_run"][0]["id"],
+                "cmd-001",
+            )
 
     def test_mini_swe_suite_filter_and_seed_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -21,7 +21,21 @@ from ..artifacts import (
 )
 from ..evidence_gate import evaluate_evidence_gate
 from ..review_accountability_gate import evaluate_review_accountability
-from ..workflow_generator import dot_escape
+from ..run_attempt import (
+    dump_run,
+    fetch_run_diff,
+    find_json_stage_record,
+    find_patch,
+    write_events_jsonl,
+    write_trajectory_from_events,
+)
+from ..workflow_generator import (
+    STRUCTURED_MODERATED_PROFILE,
+    VERIFY_DIFF_CHECK,
+    dot_escape,
+    generate_issue_to_pr_workflow,
+    validate_generated_workflow,
+)
 from .bundles import prepare_config_dir
 from .grader import MiniSweGrade, grade_mini_swe_attempt
 from .paths import DEFAULT_SYNTHETIC_DOCKER_IMAGE
@@ -117,12 +131,14 @@ def run_mini_swe(
     substrate: str = "local",
     fabro_bin: Path = Path("target/debug/fabro"),
     docker_image: str = DEFAULT_SYNTHETIC_DOCKER_IMAGE,
+    model: str | None = None,
+    provider: str | None = None,
     seed: int | None = None,
     fail_fast: bool = False,
 ) -> dict[str, Any]:
     """Run mini-SWE lightweight eval cases."""
     cases = list_mini_swe_cases(case, suite=suite)
-    if attempt not in {"scripted", "workflow-slice"}:
+    if attempt not in {"scripted", "workflow-slice", "model"}:
         raise SystemExit(f"mini-swe attempt not implemented yet: {attempt}")
     if substrate not in {"local", "docker"}:
         raise SystemExit(f"mini-swe substrate not implemented yet: {substrate}")
@@ -137,6 +153,8 @@ def run_mini_swe(
                 substrate=substrate,
                 fabro_bin=fabro_bin,
                 docker_image=docker_image,
+                model=model,
+                provider=provider,
                 seed=seed,
                 fail_fast=fail_fast,
             )
@@ -148,6 +166,8 @@ def run_mini_swe(
         substrate=substrate,
         fabro_bin=fabro_bin,
         docker_image=docker_image,
+        model=model,
+        provider=provider,
         seed=seed,
         fail_fast=fail_fast,
     )
@@ -179,6 +199,8 @@ def _run_mini_swe_to_dir(
     substrate: str,
     fabro_bin: Path,
     docker_image: str,
+    model: str | None,
+    provider: str | None,
     seed: int | None,
     fail_fast: bool,
 ) -> dict[str, Any]:
@@ -194,6 +216,8 @@ def _run_mini_swe_to_dir(
             substrate=substrate,
             fabro_bin=fabro_bin,
             docker_image=docker_image,
+            model=model,
+            provider=provider,
         )
         results.append(case_result["result"])
         failures.extend(case_result["failures"])
@@ -233,9 +257,11 @@ def run_mini_swe_case(
     substrate: str,
     fabro_bin: Path,
     docker_image: str = DEFAULT_SYNTHETIC_DOCKER_IMAGE,
+    model: str | None = None,
+    provider: str | None = None,
 ) -> dict[str, Any]:
     """Run one mini-SWE case."""
-    if attempt not in {"scripted", "workflow-slice"}:
+    if attempt not in {"scripted", "workflow-slice", "model"}:
         raise SystemExit(f"mini-swe attempt not implemented yet: {attempt}")
     if substrate not in {"local", "docker"}:
         raise SystemExit(f"mini-swe substrate not implemented yet: {substrate}")
@@ -249,8 +275,15 @@ def run_mini_swe_case(
         _create_repo_for_case(case, repo_dir)
         if attempt == "scripted":
             runner = ScriptedCalibrationRunner(substrate=substrate, docker_image=docker_image)
-        else:
+        elif attempt == "workflow-slice":
             runner = WorkflowSliceRunner(output_dir=output_dir, fabro_bin=fabro_bin)
+        else:
+            runner = ModelWorkflowRunner(
+                output_dir=output_dir,
+                fabro_bin=fabro_bin,
+                model=model,
+                provider=provider,
+            )
         attempt_result = runner.run(case, repo_dir, work_dir)
 
         patch = attempt_result.patch_path.read_text() if attempt_result.patch_path else ""
@@ -322,7 +355,7 @@ def run_mini_swe_case(
         fabro_run_id = None
     result = {
         "instance_id": case.case_id,
-        "model_name_or_path": "light-eval-mini-swe-scripted",
+        "model_name_or_path": f"light-eval-mini-swe-{attempt}",
         "model_patch": patch,
         "status": "completed" if gate.get("route_decision") == "export" else "failed",
         "error": gate.get("failure_reason") if gate.get("route_decision") != "export" else None,
@@ -586,6 +619,159 @@ class WorkflowSliceRunner:
         )
 
 
+class ModelWorkflowRunner:
+    """Run the generated mini-SWE repo through the real issue-to-PR workflow."""
+
+    name = "model"
+
+    def __init__(
+        self,
+        *,
+        output_dir: Path,
+        fabro_bin: Path,
+        model: str | None,
+        provider: str | None,
+    ) -> None:
+        self.output_dir = output_dir
+        self.fabro_bin = fabro_bin
+        self.model = model
+        self.provider = provider
+
+    def run(self, case: MiniSweCase, repo_dir: Path, work_dir: Path) -> AttemptResult:
+        if not self.fabro_bin.exists():
+            raise SystemExit(f"fabro binary missing: {self.fabro_bin}")
+
+        run_dir = self.output_dir / "_mini_swe_model" / _slice_case_dir_name(case)
+        if run_dir.exists():
+            shutil.rmtree(run_dir)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        artifacts_dir = run_dir / "stage-artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        storage_dir = work_dir / "fabro-model-storage"
+        config_path = run_dir / "settings.toml"
+        workflow_path = run_dir / "workflow.fabro"
+        write_workflow_smoke_config(storage_dir=storage_dir, config_path=config_path)
+        workflow = generate_issue_to_pr_workflow(
+            graph_name="MiniSweModelWorkflow",
+            setup_script=_model_setup_script(repo_dir),
+            workflow_profile=STRUCTURED_MODERATED_PROFILE,
+            verify_mode=VERIFY_DIFF_CHECK,
+            solve_prompt=case.issue_text,
+        )
+        validate_generated_workflow(
+            workflow,
+            workflow_profile=STRUCTURED_MODERATED_PROFILE,
+        )
+        workflow_path.write_text(workflow)
+
+        env = workflow_smoke_env(config_path=config_path, storage_dir=storage_dir)
+        args = [
+            "--no-upgrade-check",
+            "run",
+            "--auto-approve",
+            "--environment",
+            "local",
+            "--goal",
+            case.issue_text,
+        ]
+        if self.provider:
+            args.extend(["--provider", self.provider])
+        if self.model:
+            args.extend(["--model", self.model])
+        args.append(str(workflow_path))
+        run_proc = run_fabro_command(
+            self.fabro_bin,
+            args,
+            env=env,
+            timeout=600,
+        )
+        (run_dir / "run.stdout").write_text(run_proc.stdout)
+        (run_dir / "run.stderr").write_text(run_proc.stderr)
+        run_transcript = run_proc.stdout + run_proc.stderr
+        transcript_path = run_dir / "run.transcript"
+        transcript_path.write_text(run_transcript)
+        fabro_run_id = extract_workflow_smoke_run_id(run_transcript)
+        try:
+            if run_proc.returncode != 0:
+                raise RuntimeError(f"mini-swe model workflow failed: {run_proc.stderr[-4000:]}")
+            if not fabro_run_id:
+                raise RuntimeError("mini-swe model workflow did not report a run id")
+            if "Status:    SUCCEEDED" not in run_transcript:
+                raise RuntimeError("mini-swe model workflow did not report SUCCEEDED")
+            dump_path = dump_run(str(self.fabro_bin), fabro_run_id, run_dir, env=env)
+            if dump_path is None:
+                raise RuntimeError("mini-swe model workflow dump failed")
+            events_path = write_events_jsonl(
+                str(self.fabro_bin),
+                fabro_run_id,
+                dump_path,
+                env=env,
+            )
+            trajectory_path = (
+                write_trajectory_from_events(events_path)
+                if events_path is not None
+                else None
+            )
+            patch = fetch_run_diff(str(self.fabro_bin), fabro_run_id, env=env) or ""
+            if not patch.strip() and dump_path:
+                patch = find_patch(dump_path) or patch
+            patch_path = artifacts_dir / "patch.diff"
+            patch_path.write_text(patch)
+            if patch.strip():
+                _apply_patch_to_repo(repo_dir, patch)
+            artifact_paths = _materialize_model_artifacts(
+                dump_path=dump_path,
+                artifacts_dir=artifacts_dir,
+            )
+            required = {
+                "audit",
+                "validation_contract",
+                "adversarial_review",
+                "moderator_filter",
+                "review_materialization",
+            }
+            missing = sorted(required - set(artifact_paths))
+            eligibility_failures = tuple(
+                ["model_workflow_missing_patch"] * (not patch.strip())
+                + [f"model_workflow_missing_{name}" for name in missing]
+                + ["model_workflow_missing_trajectory"] * (trajectory_path is None)
+            )
+        finally:
+            stop_proc = run_fabro_command(
+                self.fabro_bin,
+                ["--no-upgrade-check", "server", "stop", "--storage-dir", str(storage_dir)],
+                env=env,
+            )
+            (run_dir / "stop.stdout").write_text(stop_proc.stdout)
+            (run_dir / "stop.stderr").write_text(stop_proc.stderr)
+
+        b2_eligible = not eligibility_failures
+        return AttemptResult(
+            attempt_origin="model",
+            artifact_origin="model_workflow",
+            substrate="local",
+            source=mini_swe_source(case),
+            b2_slice_eligible=False,
+            b2_model_eligible=b2_eligible,
+            b2_eligible=b2_eligible,
+            eligibility_failures=eligibility_failures,
+            patch_path=patch_path,
+            artifact_paths=artifact_paths,
+            commands_run_path=None,
+            trajectory_path=trajectory_path,
+            transcript_path=transcript_path,
+            dump_path=dump_path,
+            provenance={
+                "runner": "ModelWorkflowRunner",
+                "fabro_run_id": fabro_run_id,
+                "workflow_path": workflow_path.as_posix(),
+                "model": self.model,
+                "provider": self.provider,
+                "case_artifacts_supplied": False,
+            },
+        )
+
+
 def _apply_case_patch(case: MiniSweCase, repo_dir: Path) -> None:
     if case.case_id != "good-test-only":
         (repo_dir / "src" / "greeting.py").write_text(
@@ -600,6 +786,79 @@ def _apply_case_patch(case: MiniSweCase, repo_dir: Path) -> None:
         (repo_dir / "tests" / "test_greeting.py").write_text(
             _greeting_test_text("hello, Ada")
         )
+
+
+def _model_setup_script(repo_dir: Path) -> str:
+    return (
+        "python3 - <<'PY'\n"
+        "import shutil\n"
+        "from pathlib import Path\n"
+        f"src = Path({json.dumps(str(repo_dir))})\n"
+        "dst = Path.cwd()\n"
+        "for child in src.iterdir():\n"
+        "    target = dst / child.name\n"
+        "    if child.is_dir():\n"
+        "        shutil.copytree(child, target, dirs_exist_ok=True)\n"
+        "    else:\n"
+        "        shutil.copy2(child, target)\n"
+        "print('mini-swe model setup: copied generated repo')\n"
+        "PY"
+    )
+
+
+def _apply_patch_to_repo(repo_dir: Path, patch: str) -> None:
+    proc = subprocess.run(
+        ["git", "apply", "--whitespace=nowarn", "-"],
+        cwd=repo_dir,
+        input=patch,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"mini-swe model patch did not apply to generated repo: {proc.stderr}")
+
+
+def _materialize_model_artifacts(
+    *,
+    dump_path: Path,
+    artifacts_dir: Path,
+) -> dict[str, str]:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    artifacts: dict[str, str] = {}
+    candidates = {
+        "audit": _find_dump_json_file(dump_path, "diff-audit.json")
+        or find_json_stage_record(dump_path, "audit"),
+        "validation_contract": _find_dump_json_file(dump_path, "validation.json"),
+        "adversarial_review": _find_dump_json_file(dump_path, "adversarial-review.json")
+        or find_json_stage_record(dump_path, "adversarial_review"),
+        "moderator_filter": _find_dump_json_file(dump_path, "moderator-filter.json")
+        or find_json_stage_record(dump_path, "moderator_filter"),
+        "review_materialization": _find_dump_json_file(
+            dump_path,
+            "review-materialization.json",
+        )
+        or find_json_stage_record(dump_path, "materialize_review_artifacts"),
+    }
+    for name, payload in candidates.items():
+        if not isinstance(payload, dict):
+            continue
+        path = artifacts_dir / f"{name}.json"
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        artifacts[name] = path.as_posix()
+    return artifacts
+
+
+def _find_dump_json_file(dump_path: Path, name: str) -> dict[str, Any] | None:
+    for path in sorted(dump_path.rglob(name)):
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
 
 
 def _greeting_test_text(expected: str, *, extra_name: str | None = None) -> str:

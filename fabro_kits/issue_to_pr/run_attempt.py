@@ -33,6 +33,7 @@ def dump_run(
     run_id: str,
     config_dir: Path,
     timeout: int = 120,
+    env: dict[str, str] | None = None,
 ) -> Path | None:
     """Dump a server-backed run to local files."""
     dump_dir = config_dir / "run_dump"
@@ -43,6 +44,7 @@ def dump_run(
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=env,
     )
     value = parse_json_object(proc.stdout)
     output_dir = value.get("output_dir") if isinstance(value, dict) else None
@@ -55,6 +57,7 @@ def fetch_run_diff(
     fabro_bin: str,
     run_id: str,
     timeout: int = 120,
+    env: dict[str, str] | None = None,
 ) -> str | None:
     """Return the canonical run diff when Fabro has one stored."""
     proc = subprocess.run(
@@ -62,6 +65,7 @@ def fetch_run_diff(
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=env,
     )
     if proc.returncode != 0:
         return None
@@ -75,6 +79,7 @@ def write_events_jsonl(
     run_id: str,
     output_dir: Path,
     timeout: int = 120,
+    env: dict[str, str] | None = None,
 ) -> Path | None:
     """Fetch durable run events through the Fabro CLI JSONL surface."""
     proc = subprocess.run(
@@ -82,6 +87,7 @@ def write_events_jsonl(
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=env,
     )
     if proc.returncode != 0 or not proc.stdout.strip():
         return None

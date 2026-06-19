@@ -65,6 +65,7 @@ def run_fabro_command(
     args: list[str],
     *,
     env: dict[str, str],
+    timeout: int = 60,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(fabro_bin), *args],
@@ -73,5 +74,5 @@ def run_fabro_command(
         text=True,
         check=False,
         env=env,
-        timeout=60,
+        timeout=timeout,
     )
