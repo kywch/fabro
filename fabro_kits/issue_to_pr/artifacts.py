@@ -31,12 +31,30 @@ READY_TIERS = {
 def build_prediction_record(result: dict[str, Any]) -> dict[str, Any]:
     """Return the single-instance equivalent of predictions.jsonl."""
     model_patch = result.get("model_patch", "")
-    if result.get("status") != "completed":
+    if not is_export_eligible(result):
         model_patch = ""
     return {
         "instance_id": result["instance_id"],
         "model_name_or_path": result["model_name_or_path"],
         "model_patch": model_patch,
+    }
+
+
+def is_export_eligible(result: dict[str, Any]) -> bool:
+    """Return whether a result is eligible for root prediction export."""
+    if result.get("status") != "completed":
+        return False
+    gate = result.get("review_accountability_gate")
+    if not isinstance(gate, dict):
+        has_moderated_review_artifacts = any(
+            isinstance(result.get(key), dict)
+            for key in REVIEW_ARTIFACT_NAMES
+            if key != "review_accountability_gate"
+        )
+        return not has_moderated_review_artifacts
+    return gate.get("status") == "passed" and gate.get("route_decision") in {
+        None,
+        "export",
     }
 
 
@@ -287,7 +305,7 @@ def build_candidate_record(
     if not isinstance(context_updates, dict):
         context_updates = {}
 
-    if result.get("status") == "completed":
+    if is_export_eligible(result):
         state = "ready"
         reuse = "merge_candidate"
         warning = None

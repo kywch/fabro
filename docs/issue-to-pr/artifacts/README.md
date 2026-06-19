@@ -1,6 +1,8 @@
 # Artifacts
 
 This lane documents durable output contracts for issue-to-PR runs.
+Use [../glossary.md](../glossary.md) as the normative vocabulary for candidate,
+export, prediction, and review artifact terms.
 
 Current contract anchors:
 
@@ -31,20 +33,32 @@ When preserving a run for later study, keep these fields easy to find:
 {
   "run_id": "django__django-11099--001",
   "task_id": "django__django-11099",
-  "workflow_version_id": "structured-r10",
+  "attempt_id": "001",
+  "status": "completed|no_patch|verify_failed|failed|timeout|error",
   "candidate": {
     "state": "ready|failed_with_patch|absent",
+    "reuse": "merge_candidate|continuation_candidate|none",
     "patch_sha256": "...",
     "failure_class": "test_blocking",
     "failure_reason": "..."
   },
-  "artifacts": {
-    "run": "run.json",
-    "patch": "output/patch.diff",
-    "verify": "output/verify.json",
-    "audit": "output/audit.json",
-    "trajectory": "output/trajectory.jsonl",
-    "events": "fabro/dump/events.jsonl"
+  "phases": {
+    "verify": {
+      "status": "completed",
+      "artifact_path": "output/verify.json"
+    },
+    "test_evidence_gate": {
+      "status": "completed|failed|not_run",
+      "artifact_path": "output/test_evidence_gate.json"
+    },
+    "review_accountability_gate": {
+      "status": "completed|failed|not_run",
+      "artifact_path": "output/review_accountability_gate.json"
+    }
+  },
+  "exports": {
+    "swebench_prediction": "output/prediction.json",
+    "trajectory": "output/trajectory.jsonl"
   }
 }
 ```
@@ -93,7 +107,9 @@ issue-to-pr-artifacts-<date>-<study-id>/
       input/
       output/
       fabro/dump/
-  exports/swebench/
+  predictions.jsonl
+  results.jsonl
+  summary.json
   redaction-report.md
   checksums.sha256
 ```

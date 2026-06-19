@@ -9,7 +9,8 @@ The example demonstrates:
 
 - `manifest.json` as the root index;
 - `runs/<run_id>/` as the canonical product-facing layout;
-- `exports/swebench/` as compatibility output;
+- root `predictions.jsonl`, `results.jsonl`, and `summary.json` as
+  compatibility output;
 - `candidate.state = "failed_with_patch"` as a continuation-only patch;
 - `trajectory.jsonl` as a short projection, not a full replay transcript.
 

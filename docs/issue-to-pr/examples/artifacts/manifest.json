@@ -3,9 +3,9 @@
   "layout": "issue-to-pr-runs-v1",
   "created_by": "redacted-example",
   "exports": {
-    "swebench_predictions_export": "exports/swebench/predictions.jsonl",
-    "swebench_results_export": "exports/swebench/results.jsonl",
-    "swebench_summary_export": "exports/swebench/summary.json"
+    "swebench_predictions": "predictions.jsonl",
+    "swebench_results": "results.jsonl",
+    "swebench_summary": "summary.json"
   },
   "runs": {
     "django__django-11099--001": {
@@ -14,11 +14,7 @@
       "run_path": "runs/django__django-11099--001/run.json",
       "task_path": "runs/django__django-11099--001/task.json",
       "attempt_id": "001",
-      "selected": true,
-      "candidate_state": "failed_with_patch",
-      "exports": {
-        "swebench_prediction": "exports/swebench/predictions.jsonl"
-      }
+      "selected": true
     }
   },
   "tasks": {

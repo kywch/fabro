@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "stage": "moderator_filter",
+  "dispositions": [
+    {
+      "id": "A1",
+      "state": "closed_by_evidence",
+      "category": "code",
+      "severity": "minor",
+      "evidence": [
+        "issue-scoped change"
+      ],
+      "closure_check": "",
+      "reason": "Closed without an evidence-bound check."
+    },
+    {
+      "id": "A2",
+      "state": "closed_by_evidence",
+      "category": "tests",
+      "severity": "minor",
+      "evidence": [
+        "tests pass"
+      ],
+      "closure_check": "",
+      "reason": "Closed without an evidence-bound check."
+    }
+  ],
+  "readiness_tier": "ready_verified",
+  "do_not_repeat": [],
+  "next_agent_guidance": "Proceed."
+}

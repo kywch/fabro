@@ -19,6 +19,9 @@ underscores for importable package names.
 
 ## Start Here
 
+- Read the normative vocabulary first:
+  [glossary.md](glossary.md). When issue-to-PR docs use shared concepts, this
+  glossary is the highest-priority human-facing contract.
 - Run one Docker/Codex SWE-bench task:
   [runbooks/docker-codex-swebench.md](runbooks/docker-codex-swebench.md)
 - Avoid accidental pushes and inspect dumps:
@@ -40,6 +43,7 @@ underscores for importable package names.
 
 ```text
 docs/issue-to-pr/
+  glossary.md   # normative issue-to-PR vocabulary
   runbooks/     # executable operator procedures
   process/      # staged workflow and auto-research mechanics
   artifacts/    # output layout and candidate/trajectory contracts
@@ -47,6 +51,7 @@ docs/issue-to-pr/
   examples/     # sanitized config and workflow snippets
 ```
 
-The short version: runbooks tell you how to operate the system; process docs
-tell you how it should behave; artifacts docs tell consumers what the output
-means; experiments docs preserve what changed future behavior.
+The short version: the glossary defines shared terms; runbooks tell you how to
+operate the system; process docs tell you how it should behave; artifacts docs
+tell consumers what the output means; experiments docs preserve what changed
+future behavior.

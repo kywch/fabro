@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "Patch may expand public behavior without preserving negative coverage.",
+  "rows": [
+    {
+      "id": "A2",
+      "category": "tests",
+      "severity": "minor",
+      "failure_mode": "Existing negative coverage for inverse_transform may have been removed.",
+      "evidence": [
+        "diff removes an inverse_transform error assertion"
+      ],
+      "required_files": [
+        "sklearn/preprocessing/tests/test_label.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Show replacement negative coverage for inverse_transform.",
+      "why_it_matters": "The issue-scoped empty transform fix should not regress inverse behavior."
+    }
+  ],
+  "overall_risk": "medium"
+}

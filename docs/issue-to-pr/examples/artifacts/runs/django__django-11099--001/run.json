@@ -3,16 +3,34 @@
   "layout": "issue-to-pr-runs-v1",
   "run_id": "django__django-11099--001",
   "task_id": "django__django-11099",
+  "attempt_id": "001",
+  "selected": true,
   "status": "failed",
+  "duration_s": 0,
+  "source": {
+    "kind": "swe_bench",
+    "external_id": "django__django-11099"
+  },
   "phases": {
     "solve": {"status": "completed"},
+    "change": {
+      "status": "completed",
+      "patch_path": "output/patch.diff"
+    },
     "verify": {"status": "completed", "artifact_path": "output/verify.json"},
     "audit": {"status": "completed", "artifact_path": "output/audit.json"},
+    "test_evidence_gate": {"status": "not_run"},
+    "adversarial_review": {"status": "not_run"},
+    "moderator_filter": {"status": "not_run"},
+    "review_materialization": {"status": "not_run"},
+    "review_accountability_gate": {"status": "not_run"},
     "review": {
       "status": "failed",
       "failure_class": "test_blocking",
       "failure_reason": "Patch lacks a focused regression test."
-    }
+    },
+    "publish": {"status": "not_run"},
+    "grade": {"status": "not_run"}
   },
   "candidate": {
     "state": "failed_with_patch",
@@ -27,11 +45,15 @@
     ],
     "next_agent_guidance": "Add the regression test first, then rerun verification."
   },
-  "artifacts": {
-    "patch": "output/patch.diff",
-    "verify": "output/verify.json",
-    "audit": "output/audit.json",
-    "trajectory": "output/trajectory.jsonl",
-    "events": "fabro/dump/events.jsonl"
-  }
+  "fabro": {
+    "run_id": "redacted-example-fabro-run",
+    "dump_path": "fabro/dump",
+    "events_path": "fabro/dump/events.jsonl",
+    "trajectory_path": null
+  },
+  "exports": {
+    "swebench_prediction": "output/prediction.json",
+    "trajectory": "output/trajectory.jsonl"
+  },
+  "error": null
 }

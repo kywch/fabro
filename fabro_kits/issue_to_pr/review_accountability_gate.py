@@ -1,0 +1,429 @@
+"""Review-accountability gate for issue-to-PR workflows."""
+
+from __future__ import annotations
+
+import inspect
+import json
+from pathlib import Path
+from typing import Any
+
+
+MAJOR = {"blocker", "critical", "major"}
+STATES = {"open", "closed_by_evidence", "rejected", "downgraded"}
+
+
+def evaluate_review_accountability(
+    *,
+    adversarial: dict[str, Any] | None,
+    moderator: dict[str, Any] | None,
+    test_gate: dict[str, Any] | None,
+    materialization: dict[str, Any] | None,
+    adversarial_error: dict[str, Any] | None = None,
+    moderator_error: dict[str, Any] | None = None,
+    test_gate_error: dict[str, Any] | None = None,
+    materialization_error: dict[str, Any] | None = None,
+    settings_ref_diff: str = "",
+) -> dict[str, Any]:
+    """Evaluate whether adversarial review rows are export-accounted for."""
+    malformed = [
+        err
+        for err in (
+            adversarial_error,
+            moderator_error,
+            test_gate_error,
+            materialization_error,
+        )
+        if err
+    ]
+    if isinstance(materialization, dict) and materialization.get("status") != "passed":
+        malformed.extend(as_list(materialization.get("errors")))
+        malformed.append(
+            {
+                "artifact": "review_materialization",
+                "error": "materialization_status_not_passed",
+                "status": materialization.get("status"),
+            }
+        )
+    if not tests_executed_successfully(test_gate):
+        malformed.append(
+            {
+                "artifact": "test_evidence_gate",
+                "error": "tests_not_executed_successfully",
+                "reason": "Run the changed or claimed tests and record a passing command in validation.",
+            }
+        )
+
+    rows = as_list(adversarial.get("rows") if isinstance(adversarial, dict) else None)
+    dispositions = (
+        []
+        if adversarial_error
+        else as_list(moderator.get("dispositions") if isinstance(moderator, dict) else None)
+    )
+    changed_files = {
+        clean_path(path)
+        for path in as_list(test_gate.get("changed_files") if isinstance(test_gate, dict) else None)
+    }
+    if (
+        "``OPTIONS``" in settings_ref_diff
+        and "+Default: ``0o644``" in settings_ref_diff
+        and "Extra parameters to pass to the cache backend" in settings_ref_diff
+    ) or settings_ref_diff.count(
+        "The numeric mode (i.e. ``0o644``) to set newly uploaded files to."
+    ) > 1:
+        malformed.append(
+            {
+                "artifact": "patch",
+                "path": "docs/ref/settings.txt",
+                "error": "docs_settings_corruption",
+                "check": "cache OPTIONS default changed or FILE_UPLOAD_PERMISSIONS text duplicated",
+                "offending_diff": settings_ref_diff[:1200],
+            }
+        )
+    if isinstance(adversarial, dict) and not isinstance(adversarial.get("rows", []), list):
+        malformed.append(
+            {
+                "artifact": "adversarial_review",
+                "field": "rows",
+                "error": "expected_list",
+            }
+        )
+    if isinstance(moderator, dict) and not isinstance(moderator.get("dispositions", []), list):
+        malformed.append(
+            {
+                "artifact": "moderator_filter",
+                "field": "dispositions",
+                "error": "expected_list",
+            }
+        )
+
+    row_by_id = {}
+    duplicate_adversarial_row_ids = []
+    for row in rows:
+        rid = row_id(row)
+        if rid and rid not in row_by_id:
+            row_by_id[rid] = row
+        elif rid:
+            duplicate_adversarial_row_ids.append(rid)
+            malformed.append(
+                {
+                    "artifact": "adversarial_review",
+                    "field": "rows.id",
+                    "error": "duplicate_id",
+                    "id": rid,
+                }
+            )
+        else:
+            malformed.append(
+                {
+                    "artifact": "adversarial_review",
+                    "field": "rows.id",
+                    "error": "missing_id",
+                }
+            )
+
+    seen = set()
+    duplicate_disposition_ids = []
+    orphan_dispositions = []
+    open_rows = []
+    closed_rows = []
+    downgraded_rows = []
+    rejected_rows = []
+    invalid_dispositions = []
+    closure_check_failures = []
+
+    for disposition in dispositions:
+        if not isinstance(disposition, dict):
+            malformed.append(
+                {
+                    "artifact": "moderator_filter",
+                    "field": "dispositions",
+                    "error": "disposition_not_object",
+                }
+            )
+            continue
+        did = row_id(disposition)
+        state = str(disposition.get("state") or disposition.get("disposition") or "").lower()
+        if not did:
+            invalid_dispositions.append(disposition)
+            malformed.append(
+                {
+                    "artifact": "moderator_filter",
+                    "field": "dispositions.id",
+                    "error": "missing_id",
+                }
+            )
+            continue
+        if did in seen:
+            duplicate_disposition_ids.append(did)
+        seen.add(did)
+        if did not in row_by_id:
+            orphan_dispositions.append(disposition)
+        if state not in STATES:
+            invalid_dispositions.append(disposition)
+            continue
+        severe = (
+            str(row_by_id.get(did, {}).get("severity", disposition.get("severity", ""))).lower()
+            in MAJOR
+        )
+        closure_check = str(disposition.get("closure_check", "")).strip()
+        if state in {"closed_by_evidence", "downgraded", "rejected"} and not closure_check:
+            closure_check_failures.append(disposition)
+        if (
+            severe
+            and did in row_by_id
+            and str(disposition.get("category", "")).lower()
+            != str(row_by_id[did].get("category", "")).lower()
+        ):
+            disposition["category_mismatch"] = {
+                "row": row_by_id[did].get("category"),
+                "disposition": disposition.get("category"),
+            }
+        missing_required = [
+            path
+            for path in (
+                clean_path(path) for path in as_list(row_by_id.get(did, {}).get("required_files"))
+            )
+            if path not in changed_files
+        ]
+        if severe and state in {"closed_by_evidence", "downgraded", "rejected"} and missing_required:
+            disposition["missing_required_files"] = missing_required
+            closure_check_failures.append(disposition)
+        if (
+            severe
+            and state in {"closed_by_evidence", "downgraded", "rejected"}
+            and str(row_by_id.get(did, {}).get("closure_requires", "")).lower()
+            == "runtime_tests"
+            and not tests_executed_successfully(test_gate)
+        ):
+            disposition["missing_closure_requirement"] = "runtime_tests"
+            closure_check_failures.append(disposition)
+        if state == "open":
+            open_rows.append(disposition)
+        elif state == "closed_by_evidence":
+            if not has_evidence(disposition):
+                invalid_dispositions.append(disposition)
+            closed_rows.append(disposition)
+        elif state == "downgraded":
+            if not has_evidence(disposition):
+                invalid_dispositions.append(disposition)
+            downgraded_rows.append(disposition)
+        elif state == "rejected":
+            rejected_rows.append(disposition)
+
+    unaccounted_rows = [row for rid, row in row_by_id.items() if rid not in seen]
+    unaccounted_major_rows = [
+        row for row in unaccounted_rows if str(row.get("severity", "")).lower() in MAJOR
+    ]
+    blocking_rows = list(open_rows)
+
+    process_failures = []
+    malformed_names = {
+        str(item.get("artifact")) for item in malformed if isinstance(item, dict)
+    }
+    if malformed_names & {"adversarial_review", "moderator_filter", "review_materialization"}:
+        process_failures.append("review_artifact_missing_or_malformed")
+    if "patch" in malformed_names:
+        process_failures.append("patch_malformed_or_scope_drift")
+    if any(
+        isinstance(item, dict) and item.get("error") == "tests_not_executed_successfully"
+        for item in malformed
+    ):
+        process_failures.append("tests_not_executed_successfully")
+    if rows and not dispositions:
+        process_failures.append("adversarial_rows_without_moderator_dispositions")
+    if unaccounted_major_rows:
+        process_failures.append("unaccounted_major_adversarial_rows")
+    elif unaccounted_rows:
+        process_failures.append("unaccounted_adversarial_rows")
+    if duplicate_disposition_ids:
+        process_failures.append("duplicate_moderator_dispositions")
+    if duplicate_adversarial_row_ids:
+        process_failures.append("duplicate_adversarial_rows")
+    if orphan_dispositions:
+        process_failures.append("orphan_moderator_dispositions")
+    if invalid_dispositions:
+        process_failures.append("invalid_moderator_dispositions")
+    if closure_check_failures:
+        process_failures.append("invalid_closure_checks")
+    if blocking_rows:
+        process_failures.append("open_review_rows")
+
+    failed = bool(process_failures)
+    fixup_required_rows = (
+        blocking_rows
+        or closure_check_failures
+        or unaccounted_major_rows
+        or unaccounted_rows
+        or orphan_dispositions
+        or invalid_dispositions
+    ) + malformed
+    readiness = (
+        "process_failed"
+        if failed
+        else ("ready_verified" if tests_executed_successfully(test_gate) else "ready_unverified")
+    )
+    return {
+        "schema_version": 1,
+        "stage": "review_accountability_gate",
+        "status": "failed" if failed else "passed",
+        "process_status": "process_failed" if failed else "passed",
+        "preferred_next_label": "Fix" if failed else "Approve",
+        "route_decision": "fixup" if failed else "export",
+        "readiness_tier": readiness,
+        "failure_reason": "; ".join(process_failures),
+        "process_failures": process_failures,
+        "adversarial_row_count": len(rows),
+        "moderator_disposition_count": len(dispositions),
+        "open_rows": open_rows,
+        "closed_rows": closed_rows,
+        "downgraded_rows": downgraded_rows,
+        "rejected_rows": rejected_rows,
+        "blocking_rows": blocking_rows,
+        "fixup_required_rows": fixup_required_rows,
+        "unaccounted_adversarial_rows": unaccounted_rows,
+        "unaccounted_major_rows": unaccounted_major_rows,
+        "duplicate_disposition_ids": duplicate_disposition_ids,
+        "duplicate_adversarial_row_ids": duplicate_adversarial_row_ids,
+        "orphan_dispositions": orphan_dispositions,
+        "invalid_dispositions": invalid_dispositions,
+        "closure_check_failures": closure_check_failures,
+        "tests_executed_successfully": tests_executed_successfully(test_gate),
+        "materialization": materialization or {},
+        "malformed_artifacts": malformed,
+        "do_not_repeat": [
+            "Do not export until every review objection is closed, rejected, or downgraded with cited evidence."
+        ]
+        if failed
+        else [],
+        "next_agent_guidance": next_agent_guidance(fixup_required_rows)
+        if failed
+        else "Proceed to patch extraction.",
+    }
+
+
+def load_json_object(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    try:
+        obj = json.loads(path.read_text())
+    except Exception as exc:
+        return None, {"path": str(path), "error": str(exc)}
+    if not isinstance(obj, dict):
+        return None, {"path": str(path), "error": "expected_json_object"}
+    return obj, None
+
+
+def row_id(row: Any) -> str | None:
+    value = row.get("id") if isinstance(row, dict) else None
+    return None if value in (None, "") else str(value)
+
+
+def as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def clean_path(value: Any) -> str:
+    text = str(value).strip()
+    return text[len("/workspace/") :] if text.startswith("/workspace/") else text
+
+
+def has_evidence(row: Any) -> bool:
+    if not isinstance(row, dict):
+        return False
+    for key in ("evidence", "evidence_citations", "cited_evidence"):
+        value = row.get(key)
+        if isinstance(value, list) and value:
+            return True
+        if isinstance(value, str) and value.strip():
+            return True
+    return bool(row.get("artifact_path") or row.get("artifact_field"))
+
+
+def tests_executed_successfully(gate: Any) -> bool:
+    if not isinstance(gate, dict):
+        return False
+    if gate.get("status") != "passed":
+        return False
+    observed = gate.get("observed") if isinstance(gate.get("observed"), dict) else {}
+    for key in ("tests_passed_count",):
+        value = observed.get(key) or gate.get(key)
+        if type(value) is int and value > 0:
+            return True
+    return False
+
+
+def next_agent_guidance(fixup_required_rows: list[Any]) -> str:
+    values = []
+    for item in fixup_required_rows[:3]:
+        item = item if isinstance(item, dict) else {}
+        values.append(
+            str(
+                item.get("falsifiable_check")
+                or item.get("check")
+                or item.get("reason")
+                or item
+            )
+        )
+    return "; ".join(values)
+
+
+def build_embedded_accountability_gate_script(
+    *,
+    adversarial_path: str,
+    moderator_path: str,
+    test_gate_path: str,
+    materialization_path: str,
+    output_path: str,
+) -> str:
+    """Return a self-contained script for sandbox workflow execution."""
+    return f"""python3 - <<'PY'
+import json
+import subprocess
+from pathlib import Path
+from typing import Any
+
+MAJOR = {MAJOR!r}
+STATES = {STATES!r}
+
+{_embedded_gate_functions_source()}
+
+ADVERSARIAL = Path({adversarial_path!r})
+MODERATOR = Path({moderator_path!r})
+TEST_GATE = Path({test_gate_path!r})
+MATERIALIZATION = Path({materialization_path!r})
+OUT = Path({output_path!r})
+OUT.parent.mkdir(parents=True, exist_ok=True)
+
+adversarial, adversarial_error = load_json_object(ADVERSARIAL)
+moderator, moderator_error = load_json_object(MODERATOR)
+test_gate, test_gate_error = load_json_object(TEST_GATE)
+materialization, materialization_error = load_json_object(MATERIALIZATION)
+settings_ref_diff = subprocess.run(["git", "diff", "--", "docs/ref/settings.txt"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout
+report = evaluate_review_accountability(
+    adversarial=adversarial,
+    moderator=moderator,
+    test_gate=test_gate,
+    materialization=materialization,
+    adversarial_error=adversarial_error,
+    moderator_error=moderator_error,
+    test_gate_error=test_gate_error,
+    materialization_error=materialization_error,
+    settings_ref_diff=settings_ref_diff,
+)
+OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\\n")
+print(json.dumps(report, sort_keys=True))
+raise SystemExit(1 if report["status"] == "failed" else 0)
+PY
+"""
+
+
+def _embedded_gate_functions_source() -> str:
+    functions = (
+        evaluate_review_accountability,
+        load_json_object,
+        row_id,
+        as_list,
+        clean_path,
+        has_evidence,
+        tests_executed_successfully,
+        next_agent_guidance,
+    )
+    return "\n\n".join(inspect.getsource(function) for function in functions)

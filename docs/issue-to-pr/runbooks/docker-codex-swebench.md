@@ -243,7 +243,6 @@ cd evals/swe-bench
   --max-workers 1 \
   --workflow-profile structured \
   --verify-mode diff-check \
-  --output-layout both \
   --instance-ids django__django-11099 \
   --output-dir ../../tmp/swebench-results/docker-codex-smoke
 ```
@@ -264,8 +263,8 @@ The command above uses the structured workflow profile:
 
 ```text
 setup -> research -> implement -> verify
-verify -> snapshot_patch -> audit -> review  # pass
-verify -> fixup -> verify                    # fail/fallback
+verify -> snapshot_patch -> audit -> review   # pass
+verify -> fixup -> verify                     # fail/fallback
 review -> extract_patch                      # Approve
 review -> fixup -> verify                    # Fix
 ```
@@ -284,7 +283,9 @@ For server-backed runs, inspect:
 ```text
 <output>/
   manifest.json
-  exports/swebench/
+  predictions.jsonl
+  results.jsonl
+  summary.json
   runs/<instance_id>--001/
     run.json
     task.json
@@ -295,6 +296,11 @@ For server-backed runs, inspect:
     output/prediction.json
     output/verify.json
     output/audit.json
+    output/test_evidence_gate.json              # gated/moderated profiles
+    output/adversarial_review.json              # moderated profile
+    output/moderator_filter.json                # moderated profile
+    output/review_materialization.json          # moderated profile
+    output/review_accountability_gate.json      # moderated profile
     output/trajectory.jsonl
     fabro/dump/events.jsonl
 ```
@@ -326,7 +332,7 @@ For a local official-harness grading pass on the one-task smoke:
 ```bash
 cd evals/swe-bench
 ../../tmp/swebench-venv/bin/python evaluate.py \
-  --predictions ../../tmp/swebench-results/docker-codex-smoke/exports/swebench/predictions.jsonl \
+  --predictions ../../tmp/swebench-results/docker-codex-smoke/predictions.jsonl \
   --instance-ids django__django-11099 \
   --max-workers 1 \
   --run-id docker-codex-smoke-grade

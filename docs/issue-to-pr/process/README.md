@@ -2,6 +2,8 @@
 
 This lane documents the mechanics of the issue-to-PR workflow itself. Use it
 when changing prompts, stages, gates, fixup routing, or the auto-research loop.
+Use [../glossary.md](../glossary.md) as the normative vocabulary for stage,
+gate, candidate, and export terms.
 
 Expected topics:
 
@@ -17,4 +19,5 @@ describe how the process is supposed to work now, not every path that led here.
 
 Current docs:
 
+- [Glossary](../glossary.md)
 - [Staged Workflow](staged-workflow.md)

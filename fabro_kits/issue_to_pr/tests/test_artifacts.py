@@ -164,6 +164,76 @@ class RunBundleArtifactsTest(unittest.TestCase):
         result = _result(model_patch="diff --git a/a.py b/a.py\n", status="failed")
         self.assertEqual(build_prediction_record(result)["model_patch"], "")
 
+    def test_prediction_blanks_completed_result_when_gate_blocks_export(self):
+        result = _result(
+            model_patch="diff --git a/a.py b/a.py\n+bad\n",
+            status="completed",
+            review_accountability_gate={
+                "status": "failed",
+                "process_status": "process_failed",
+                "route_decision": "fixup",
+                "readiness_tier": "process_failed",
+                "failure_reason": "open_review_rows",
+            },
+        )
+
+        self.assertEqual(build_prediction_record(result)["model_patch"], "")
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir, config_dir = _workspace(tmp)
+            write_run_bundle(
+                instance=_instance(),
+                result=result,
+                output_dir=output_dir,
+                config_dir=config_dir,
+                sandbox_provider="docker",
+            )
+
+            run = json.loads(
+                (
+                    output_dir
+                    / "runs"
+                    / "django__django-11099--001"
+                    / "run.json"
+                ).read_text()
+            )
+            self.assertEqual(run["candidate"]["state"], "failed_with_patch")
+            self.assertEqual(run["candidate"]["reuse"], "continuation_candidate")
+
+    def test_prediction_blanks_completed_moderated_result_missing_gate(self):
+        result = _result(
+            model_patch="diff --git a/a.py b/a.py\n+bad\n",
+            status="completed",
+            adversarial_review={"stage": "adversarial_review", "rows": []},
+            moderator_filter={"stage": "moderator_filter", "dispositions": []},
+            review_materialization={"stage": "review_materialization", "status": "passed"},
+        )
+
+        self.assertEqual(build_prediction_record(result)["model_patch"], "")
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir, config_dir = _workspace(tmp)
+            write_run_bundle(
+                instance=_instance(),
+                result=result,
+                output_dir=output_dir,
+                config_dir=config_dir,
+                sandbox_provider="docker",
+            )
+
+            run = json.loads(
+                (
+                    output_dir
+                    / "runs"
+                    / "django__django-11099--001"
+                    / "run.json"
+                ).read_text()
+            )
+            self.assertEqual(run["candidate"]["state"], "failed_with_patch")
+
+    def test_completed_unmoderated_result_still_exports(self):
+        result = _result(model_patch="diff --git a/a.py b/a.py\n+ok\n", status="completed")
+
+        self.assertEqual(build_prediction_record(result)["model_patch"], result["model_patch"])
+
 
 def _workspace(tmp: str) -> tuple[Path, Path]:
     output_dir = Path(tmp)

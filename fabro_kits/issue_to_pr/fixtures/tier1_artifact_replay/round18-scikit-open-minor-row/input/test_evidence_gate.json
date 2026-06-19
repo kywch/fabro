@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "changed_files": [
+    "sklearn/preprocessing/_label.py",
+    "sklearn/preprocessing/tests/test_label.py"
+  ],
+  "observed": {
+    "changed_files": [
+      "sklearn/preprocessing/_label.py",
+      "sklearn/preprocessing/tests/test_label.py"
+    ],
+    "test_files_changed": [
+      "sklearn/preprocessing/tests/test_label.py"
+    ],
+    "tests_passed_count": 1
+  }
+}

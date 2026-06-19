@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "Patch may broaden behavior and weaken behavior-matrix coverage.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "code",
+      "severity": "minor",
+      "failure_mode": "Patch changes an inverse-transform path outside the issue scope.",
+      "evidence": [
+        "diff touches inverse_transform branch"
+      ],
+      "required_files": [
+        "sklearn/preprocessing/_label.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Show that inverse_transform behavior is unchanged or issue-required.",
+      "why_it_matters": "Scope expansion can create a bad export despite passing focused tests."
+    },
+    {
+      "id": "A2",
+      "category": "tests",
+      "severity": "minor",
+      "failure_mode": "Behavior-matrix coverage misses the old negative path.",
+      "evidence": [
+        "negative assertion not present in changed test file"
+      ],
+      "required_files": [
+        "sklearn/preprocessing/tests/test_label.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Show replacement negative coverage for the old behavior.",
+      "why_it_matters": "A happy-path empty-input test alone does not prove no regression."
+    }
+  ],
+  "overall_risk": "medium"
+}
