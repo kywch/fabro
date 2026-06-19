@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "changed_files": [
+    "src/state.py",
+    "tests/test_state.py"
+  ],
+  "observed": {
+    "changed_files": [
+      "src/state.py",
+      "tests/test_state.py"
+    ],
+    "test_files_changed": [
+      "tests/test_state.py"
+    ],
+    "tests_passed_count": 1
+  }
+}

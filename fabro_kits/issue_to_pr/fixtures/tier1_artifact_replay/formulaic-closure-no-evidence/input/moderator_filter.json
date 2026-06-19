@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "stage": "moderator_filter",
+  "dispositions": [
+    {
+      "id": "A1",
+      "state": "closed_by_evidence",
+      "category": "tests",
+      "severity": "minor",
+      "evidence": [
+        "tests pass"
+      ],
+      "closure_check": "Issue-scoped and tests pass.",
+      "reason": "Formulaic closure with no concrete artifact reference."
+    }
+  ],
+  "readiness_tier": "ready_verified",
+  "do_not_repeat": [],
+  "next_agent_guidance": "Proceed."
+}

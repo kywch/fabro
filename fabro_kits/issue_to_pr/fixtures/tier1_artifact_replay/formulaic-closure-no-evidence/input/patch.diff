@@ -1,0 +1,8 @@
+diff --git a/src/widget.py b/src/widget.py
+--- a/src/widget.py
++++ b/src/widget.py
+@@ -1,2 +1,4 @@
+ def normalize(value):
++    if value is None:
++        return ""
+     return str(value)

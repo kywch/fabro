@@ -4,11 +4,18 @@
   "source_run_bundle": "tmp/iter-workflow-v3/round-20/output-mixed-panel/runs/scikit-learn__scikit-learn-10508--001",
   "task_id": "round20-scikit-empty-closure",
   "expected_decision": "blank",
+  "expected_result_status": "failed",
   "expected_failure_reasons": [
     "invalid_closure_checks"
   ],
+  "expected_route_decision": "fixup",
   "must_not_export_reason": "known_bad_export_canary",
   "expect_prediction_blank": true,
+  "expect_root_prediction_blank": true,
   "expect_patch_preserved": true,
-  "expected_candidate_state": "failed_with_patch"
+  "expected_candidate_state": "failed_with_patch",
+  "expected_candidate_reuse": "continuation_candidate",
+  "expected_run_exports": {
+    "swebench_prediction": "output/prediction.json"
+  }
 }

@@ -59,7 +59,11 @@ def run_replay(
 
 def list_fixtures(fixture: str) -> list[Path]:
     if fixture == "all":
-        return sorted(path for path in FIXTURE_ROOT.iterdir() if path.is_dir())
+        return sorted(
+            path
+            for path in FIXTURE_ROOT.iterdir()
+            if path.is_dir() and (path / "expected.json").exists()
+        )
     path = FIXTURE_ROOT / fixture
     if not path.is_dir():
         raise SystemExit(f"unknown replay fixture: {fixture}")
@@ -90,6 +94,7 @@ def _run_replay_to_dir(fixture_dirs: list[Path], output_dir: Path) -> dict[str, 
     (output_dir / "predictions.jsonl").write_text(
         "".join(json.dumps(build_prediction_record(result), sort_keys=True) + "\n" for result in results)
     )
+    failures.extend(check_root_expected(fixture_dirs, output_dir=output_dir))
     summary = {
         "total": len(results),
         "failed": len(failures),
@@ -122,9 +127,12 @@ def run_replay_fixture(fixture_dir: Path, *, output_dir: Path) -> dict[str, Any]
         moderator_error=moderator_error,
         test_gate_error=test_gate_error,
         materialization_error=materialization_error,
+        patch_diff=patch,
         settings_ref_diff=settings_ref_diff,
     )
-    status = "completed" if gate["route_decision"] == "export" else "failed"
+    status = expected.get("result_status") or (
+        "completed" if gate["route_decision"] == "export" else "failed"
+    )
     result = {
         "instance_id": task_id,
         "model_name_or_path": "light-eval-replay",
@@ -184,8 +192,29 @@ def check_expected(
         failures.append({"kind": "missing_failure_reason", "missing": missing_reasons})
 
     expected_decision = expected.get("expected_decision")
-    if expected_decision == "blank" and result["status"] == "completed":
+    root_prediction = build_prediction_record(result)
+    if expected_decision == "blank" and root_prediction.get("model_patch"):
         failures.append({"kind": "false_export", "reason": expected.get("must_not_export_reason")})
+    elif expected_decision == "export" and not root_prediction.get("model_patch"):
+        failures.append({"kind": "unexpected_blank_prediction"})
+    expected_result_status = expected.get("expected_result_status")
+    if expected_result_status and result.get("status") != expected_result_status:
+        failures.append(
+            {
+                "kind": "result_status_mismatch",
+                "expected": expected_result_status,
+                "actual": result.get("status"),
+            }
+        )
+    expected_route_decision = expected.get("expected_route_decision")
+    if expected_route_decision and gate.get("route_decision") != expected_route_decision:
+        failures.append(
+            {
+                "kind": "route_decision_mismatch",
+                "expected": expected_route_decision,
+                "actual": gate.get("route_decision"),
+            }
+        )
 
     run_dir = output_dir / "runs" / run_id
     prediction = read_json(run_dir / "output" / "prediction.json")
@@ -206,6 +235,84 @@ def check_expected(
                 "actual": candidate_state,
             }
         )
+    expected_candidate_reuse = expected.get("expected_candidate_reuse")
+    candidate_reuse = (run_record.get("candidate") or {}).get("reuse")
+    if expected_candidate_reuse and candidate_reuse != expected_candidate_reuse:
+        failures.append(
+            {
+                "kind": "candidate_reuse_mismatch",
+                "expected": expected_candidate_reuse,
+                "actual": candidate_reuse,
+            }
+        )
+    expected_run_exports = expected.get("expected_run_exports") or {}
+    run_exports = run_record.get("exports") or {}
+    for key, expected_value in expected_run_exports.items():
+        actual_value = run_exports.get(key)
+        if actual_value != expected_value:
+            failures.append(
+                {
+                    "kind": "run_export_mismatch",
+                    "key": key,
+                    "expected": expected_value,
+                    "actual": actual_value,
+                }
+            )
+    return failures
+
+
+def check_root_expected(
+    fixture_dirs: list[Path],
+    *,
+    output_dir: Path,
+) -> list[dict[str, Any]]:
+    failures = []
+    predictions = [
+        json.loads(line)
+        for line in (output_dir / "predictions.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    prediction_by_task = {
+        str(prediction.get("instance_id")): prediction for prediction in predictions
+    }
+    manifest = read_json(output_dir / "manifest.json")
+    expected_manifest_exports = {
+        "swebench_predictions": "predictions.jsonl",
+        "swebench_results": "results.jsonl",
+        "swebench_summary": "summary.json",
+    }
+    if (manifest.get("exports") or {}) != expected_manifest_exports:
+        failures.append(
+            {
+                "kind": "manifest_exports_mismatch",
+                "expected": expected_manifest_exports,
+                "actual": manifest.get("exports"),
+            }
+        )
+
+    for fixture_dir in fixture_dirs:
+        expected = read_json(fixture_dir / "expected.json")
+        task_id = expected.get("task_id") or fixture_dir.name
+        prediction = prediction_by_task.get(task_id)
+        if prediction is None:
+            failures.append({"kind": "root_prediction_missing", "task_id": task_id})
+            continue
+        if expected.get("expect_root_prediction_blank") and prediction.get("model_patch"):
+            failures.append(
+                {
+                    "kind": "root_prediction_not_blank",
+                    "task_id": task_id,
+                    "path": "predictions.jsonl",
+                }
+            )
+        if expected.get("expect_root_prediction_nonblank") and not prediction.get("model_patch"):
+            failures.append(
+                {
+                    "kind": "root_prediction_blank",
+                    "task_id": task_id,
+                    "path": "predictions.jsonl",
+                }
+            )
     return failures
 
 

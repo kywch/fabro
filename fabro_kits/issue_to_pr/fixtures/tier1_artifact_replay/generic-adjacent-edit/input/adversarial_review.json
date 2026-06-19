@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "A nearby-file edit can look plausible while missing the required scoped file.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "code",
+      "severity": "major",
+      "failure_mode": "The patch edits auth_helpers while the issue-required behavior lives in auth.py.",
+      "evidence": [
+        "diff only changes pkg/auth_helpers.py"
+      ],
+      "required_files": [
+        "pkg/auth.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Show pkg/auth.py was changed or prove the issue is delegated to auth_helpers.",
+      "why_it_matters": "Adjacent files should not satisfy scope obligations by name similarity."
+    }
+  ],
+  "overall_risk": "high"
+}

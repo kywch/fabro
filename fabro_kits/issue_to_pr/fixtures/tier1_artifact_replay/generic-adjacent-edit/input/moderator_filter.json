@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "stage": "moderator_filter",
+  "dispositions": [
+    {
+      "id": "A1",
+      "state": "closed_by_evidence",
+      "category": "code",
+      "severity": "major",
+      "evidence": [
+        "pkg/auth_helpers.py is adjacent to auth.py"
+      ],
+      "closure_check": "The adjacent helper now covers the issue behavior.",
+      "reason": "Closed using nearby-file evidence instead of the required file."
+    }
+  ],
+  "readiness_tier": "ready_verified",
+  "do_not_repeat": [],
+  "next_agent_guidance": "Proceed."
+}

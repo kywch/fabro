@@ -14,19 +14,19 @@ class LightEvalReplayTest(unittest.TestCase):
 
             self.assertEqual(summary["failures"], [])
             self.assertEqual(summary["false_exports"], 0)
-            self.assertEqual(summary["total"], 2)
 
             predictions = [
                 json.loads(line)
                 for line in (output_dir / "predictions.jsonl").read_text().splitlines()
             ]
-            self.assertEqual([prediction["model_patch"] for prediction in predictions], ["", ""])
+            self.assertEqual(summary["total"], len(predictions))
+            prediction_by_id = {prediction["instance_id"]: prediction for prediction in predictions}
+            self.assertTrue(prediction_by_id["ready-export-with-evidence"]["model_patch"])
+            for task_id, prediction in prediction_by_id.items():
+                if task_id != "ready-export-with-evidence":
+                    self.assertEqual(prediction["model_patch"], "")
 
-            for run_id in (
-                "round18-scikit-open-minor-row--001",
-                "round20-scikit-empty-closure--001",
-            ):
-                run_dir = output_dir / "runs" / run_id
+            for run_dir in sorted((output_dir / "runs").iterdir()):
                 run = json.loads((run_dir / "run.json").read_text())
                 prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
                 patch = (run_dir / "output" / "patch.diff").read_text()
@@ -34,11 +34,17 @@ class LightEvalReplayTest(unittest.TestCase):
                     (run_dir / "output" / "review_accountability_gate.json").read_text()
                 )
 
-                self.assertEqual(run["candidate"]["state"], "failed_with_patch")
-                self.assertEqual(run["candidate"]["reuse"], "continuation_candidate")
-                self.assertEqual(prediction["model_patch"], "")
                 self.assertTrue(patch.strip())
-                self.assertEqual(gate["route_decision"], "fixup")
+                if run["task_id"] == "ready-export-with-evidence":
+                    self.assertEqual(run["candidate"]["state"], "ready")
+                    self.assertEqual(run["candidate"]["reuse"], "merge_candidate")
+                    self.assertTrue(prediction["model_patch"])
+                    self.assertEqual(gate["route_decision"], "export")
+                else:
+                    self.assertEqual(run["candidate"]["state"], "failed_with_patch")
+                    self.assertEqual(run["candidate"]["reuse"], "continuation_candidate")
+                    self.assertEqual(prediction["model_patch"], "")
+                    self.assertEqual(gate["route_decision"], "fixup")
 
             round18_gate = json.loads(
                 (
@@ -64,6 +70,31 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(
                 [row["id"] for row in round20_gate["closure_check_failures"]],
                 ["A1", "A2"],
+            )
+
+            formulaic_gate = json.loads(
+                (
+                    output_dir
+                    / "runs"
+                    / "formulaic-closure-no-evidence--001"
+                    / "output"
+                    / "review_accountability_gate.json"
+                ).read_text()
+            )
+            self.assertEqual(formulaic_gate["closure_check_failures"][0]["closure_score"], 1)
+
+            missing_artifact_gate = json.loads(
+                (
+                    output_dir
+                    / "runs"
+                    / "missing-adversarial-artifact--001"
+                    / "output"
+                    / "review_accountability_gate.json"
+                ).read_text()
+            )
+            self.assertIn(
+                "review_artifact_missing_or_malformed",
+                missing_artifact_gate["process_failures"],
             )
 
 

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "Reviewer found a test-evidence risk that needs concrete closure.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "tests",
+      "severity": "minor",
+      "failure_mode": "The closure may rely on generic test-passed prose.",
+      "evidence": [
+        "No concrete artifact field cited by the moderator."
+      ],
+      "required_files": [
+        "tests/test_widget.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Cite the changed regression test file or command evidence.",
+      "why_it_matters": "Generic closure language previously allowed bad exports."
+    }
+  ],
+  "overall_risk": "medium"
+}

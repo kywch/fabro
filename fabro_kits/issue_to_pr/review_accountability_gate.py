@@ -22,19 +22,21 @@ def evaluate_review_accountability(
     moderator_error: dict[str, Any] | None = None,
     test_gate_error: dict[str, Any] | None = None,
     materialization_error: dict[str, Any] | None = None,
+    patch_diff: str = "",
     settings_ref_diff: str = "",
 ) -> dict[str, Any]:
     """Evaluate whether adversarial review rows are export-accounted for."""
-    malformed = [
-        err
-        for err in (
-            adversarial_error,
-            moderator_error,
-            test_gate_error,
-            materialization_error,
-        )
-        if err
-    ]
+    malformed = []
+    for artifact, err in (
+        ("adversarial_review", adversarial_error),
+        ("moderator_filter", moderator_error),
+        ("test_evidence_gate", test_gate_error),
+        ("review_materialization", materialization_error),
+    ):
+        if err:
+            item = dict(err)
+            item.setdefault("artifact", artifact)
+            malformed.append(item)
     if isinstance(materialization, dict) and materialization.get("status") != "passed":
         malformed.extend(as_list(materialization.get("errors")))
         malformed.append(
@@ -131,8 +133,8 @@ def evaluate_review_accountability(
     invalid_dispositions = []
     closure_check_failures = []
 
-    for disposition in dispositions:
-        if not isinstance(disposition, dict):
+    for raw_disposition in dispositions:
+        if not isinstance(raw_disposition, dict):
             malformed.append(
                 {
                     "artifact": "moderator_filter",
@@ -141,6 +143,7 @@ def evaluate_review_accountability(
                 }
             )
             continue
+        disposition = dict(raw_disposition)
         did = row_id(disposition)
         state = str(disposition.get("state") or disposition.get("disposition") or "").lower()
         if not did:
@@ -167,7 +170,7 @@ def evaluate_review_accountability(
         )
         closure_check = str(disposition.get("closure_check", "")).strip()
         if state in {"closed_by_evidence", "downgraded", "rejected"} and not closure_check:
-            closure_check_failures.append(disposition)
+            add_unique(closure_check_failures, disposition)
         if (
             severe
             and did in row_by_id
@@ -185,9 +188,9 @@ def evaluate_review_accountability(
             )
             if path not in changed_files
         ]
-        if severe and state in {"closed_by_evidence", "downgraded", "rejected"} and missing_required:
+        if state in {"closed_by_evidence", "downgraded", "rejected"} and missing_required:
             disposition["missing_required_files"] = missing_required
-            closure_check_failures.append(disposition)
+            add_unique(closure_check_failures, disposition)
         if (
             severe
             and state in {"closed_by_evidence", "downgraded", "rejected"}
@@ -196,18 +199,45 @@ def evaluate_review_accountability(
             and not tests_executed_successfully(test_gate)
         ):
             disposition["missing_closure_requirement"] = "runtime_tests"
-            closure_check_failures.append(disposition)
+            add_unique(closure_check_failures, disposition)
         if state == "open":
             open_rows.append(disposition)
         elif state == "closed_by_evidence":
             if not has_evidence(disposition):
                 invalid_dispositions.append(disposition)
+            score_closure(
+                disposition,
+                row_by_id.get(did, {}),
+                changed_files=changed_files,
+                test_gate=test_gate,
+                patch_diff=patch_diff,
+            )
+            if closure_score_too_low(disposition, severe):
+                add_unique(closure_check_failures, disposition)
             closed_rows.append(disposition)
         elif state == "downgraded":
             if not has_evidence(disposition):
                 invalid_dispositions.append(disposition)
+            score_closure(
+                disposition,
+                row_by_id.get(did, {}),
+                changed_files=changed_files,
+                test_gate=test_gate,
+                patch_diff=patch_diff,
+            )
+            if closure_score_too_low(disposition, severe):
+                add_unique(closure_check_failures, disposition)
             downgraded_rows.append(disposition)
         elif state == "rejected":
+            score_closure(
+                disposition,
+                row_by_id.get(did, {}),
+                changed_files=changed_files,
+                test_gate=test_gate,
+                patch_diff=patch_diff,
+            )
+            if closure_score_too_low(disposition, severe):
+                add_unique(closure_check_failures, disposition)
             rejected_rows.append(disposition)
 
     unaccounted_rows = [row for rid, row in row_by_id.items() if rid not in seen]
@@ -320,6 +350,11 @@ def as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+def add_unique(values: list[Any], value: Any) -> None:
+    if value not in values:
+        values.append(value)
+
+
 def clean_path(value: Any) -> str:
     text = str(value).strip()
     return text[len("/workspace/") :] if text.startswith("/workspace/") else text
@@ -348,6 +383,97 @@ def tests_executed_successfully(gate: Any) -> bool:
         if type(value) is int and value > 0:
             return True
     return False
+
+
+def score_closure(
+    disposition: dict[str, Any],
+    row: dict[str, Any],
+    *,
+    changed_files: set[str],
+    test_gate: Any,
+    patch_diff: str,
+) -> None:
+    closure_check = str(disposition.get("closure_check", "")).strip()
+    if not closure_check:
+        disposition["closure_score"] = 0
+        disposition["closure_score_reason"] = "missing closure_check"
+        return
+
+    evidence_values = (
+        text_values(disposition.get("evidence"))
+        + text_values(disposition.get("evidence_citations"))
+        + text_values(disposition.get("cited_evidence"))
+    )
+    evidence_blob = " ".join([closure_check, *evidence_values]).strip()
+    if not concrete_evidence_present(evidence_blob, changed_files, patch_diff):
+        disposition["closure_score"] = 1
+        disposition["closure_score_reason"] = "closure has no concrete artifact evidence"
+        return
+
+    required_files = [clean_path(path) for path in as_list(row.get("required_files"))]
+    cited_required = [path for path in required_files if path and path in evidence_blob]
+    if (
+        required_files
+        and len(cited_required) == len(required_files)
+        and all(path in changed_files for path in required_files)
+    ):
+        disposition["closure_score"] = 3
+        disposition["closure_score_reason"] = "closure cites required changed file"
+        return
+
+    if (
+        str(row.get("closure_requires", "")).lower() == "runtime_tests"
+        and tests_executed_successfully(test_gate)
+        and mentions_runtime_test(evidence_blob)
+    ):
+        disposition["closure_score"] = 3
+        disposition["closure_score_reason"] = "closure cites machine-observed runtime test proof"
+        return
+
+    disposition["closure_score"] = 2
+    disposition["closure_score_reason"] = "closure cites concrete artifact evidence"
+
+
+def closure_score_too_low(disposition: dict[str, Any], severe: bool) -> bool:
+    score = disposition.get("closure_score")
+    if type(score) is not int:
+        return True
+    return score < (3 if severe else 2)
+
+
+def text_values(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    return []
+
+
+def concrete_evidence_present(
+    text: str,
+    changed_files: set[str],
+    patch_diff: str,
+) -> bool:
+    if any(path and path in text for path in changed_files):
+        return True
+    if mentions_runtime_test(text):
+        return True
+    return bool(patch_diff and any(token.startswith(("+", "-")) for token in text.split()))
+
+
+def mentions_runtime_test(text: str) -> bool:
+    lowered = text.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "pytest",
+            "python -m",
+            "tests_passed_count",
+            "machine-observed",
+            "runtime test",
+            "test command",
+        )
+    )
 
 
 def next_agent_guidance(fixup_required_rows: list[Any]) -> str:
@@ -397,6 +523,7 @@ moderator, moderator_error = load_json_object(MODERATOR)
 test_gate, test_gate_error = load_json_object(TEST_GATE)
 materialization, materialization_error = load_json_object(MATERIALIZATION)
 settings_ref_diff = subprocess.run(["git", "diff", "--", "docs/ref/settings.txt"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout
+patch_diff = subprocess.run(["git", "diff"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout
 report = evaluate_review_accountability(
     adversarial=adversarial,
     moderator=moderator,
@@ -406,6 +533,7 @@ report = evaluate_review_accountability(
     moderator_error=moderator_error,
     test_gate_error=test_gate_error,
     materialization_error=materialization_error,
+    patch_diff=patch_diff,
     settings_ref_diff=settings_ref_diff,
 )
 OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\\n")
@@ -421,9 +549,15 @@ def _embedded_gate_functions_source() -> str:
         load_json_object,
         row_id,
         as_list,
+        add_unique,
         clean_path,
         has_evidence,
         tests_executed_successfully,
+        score_closure,
+        closure_score_too_low,
+        text_values,
+        concrete_evidence_present,
+        mentions_runtime_test,
         next_agent_guidance,
     )
     return "\n\n".join(inspect.getsource(function) for function in functions)

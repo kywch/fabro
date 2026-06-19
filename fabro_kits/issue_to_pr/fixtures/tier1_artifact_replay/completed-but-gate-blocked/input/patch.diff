@@ -1,0 +1,8 @@
+diff --git a/src/state.py b/src/state.py
+--- a/src/state.py
++++ b/src/state.py
+@@ -1,2 +1,4 @@
+ def state(value):
++    if value is None:
++        return "empty"
+     return value

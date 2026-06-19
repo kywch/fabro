@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "stage": "moderator_filter",
+  "dispositions": [
+    {
+      "id": "A1",
+      "state": "closed_by_evidence",
+      "category": "scope",
+      "severity": "minor",
+      "evidence": [
+        "docs/upload.md"
+      ],
+      "closure_check": "Verified docs/upload.md changed.",
+      "reason": "Concrete adjacent-doc evidence, but not evidence for the required issue section."
+    }
+  ],
+  "readiness_tier": "ready_verified",
+  "do_not_repeat": [],
+  "next_agent_guidance": "Proceed."
+}

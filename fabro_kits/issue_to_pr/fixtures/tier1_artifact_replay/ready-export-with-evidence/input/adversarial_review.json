@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "Reviewer raised one issue-scoped code row that is closed with concrete evidence.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "code",
+      "severity": "major",
+      "failure_mode": "The patch must change the issue-scoped parser file.",
+      "evidence": [
+        "src/parser.py is the issue-scoped implementation file"
+      ],
+      "required_files": [
+        "src/parser.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Show src/parser.py changed in the patch.",
+      "why_it_matters": "Positive export coverage keeps the replay from only testing blanking."
+    }
+  ],
+  "overall_risk": "low"
+}

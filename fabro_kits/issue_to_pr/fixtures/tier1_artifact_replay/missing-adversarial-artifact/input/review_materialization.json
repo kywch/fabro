@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "stage": "review_materialization",
+  "status": "passed",
+  "errors": [],
+  "adversarial_row_ids": [],
+  "moderator_disposition_ids": []
+}

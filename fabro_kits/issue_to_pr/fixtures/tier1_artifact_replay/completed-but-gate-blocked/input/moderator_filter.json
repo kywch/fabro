@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "stage": "moderator_filter",
+  "dispositions": [
+    {
+      "id": "A1",
+      "state": "open",
+      "category": "tests",
+      "severity": "minor",
+      "evidence": [
+        "still open"
+      ],
+      "closure_check": "",
+      "reason": "The row remains unresolved."
+    }
+  ],
+  "readiness_tier": "needs_fix_tests",
+  "do_not_repeat": [
+    "Do not export with open review rows."
+  ],
+  "next_agent_guidance": "Close the open row with evidence."
+}

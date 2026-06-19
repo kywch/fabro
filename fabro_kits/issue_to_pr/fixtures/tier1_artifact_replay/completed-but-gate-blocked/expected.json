@@ -1,15 +1,16 @@
 {
-  "fixture_kind": "minimized",
-  "source_round": "round-18",
-  "source_run_bundle": "tmp/iter-workflow-v3/round-18/output-mixed-panel/runs/scikit-learn__scikit-learn-10508--001",
-  "task_id": "round18-scikit-open-minor-row",
+  "fixture_kind": "handcrafted",
+  "source_round": "synthetic-tier1",
+  "source_run_bundle": null,
+  "task_id": "completed-but-gate-blocked",
+  "result_status": "completed",
+  "expected_result_status": "completed",
   "expected_decision": "blank",
-  "expected_result_status": "failed",
   "expected_failure_reasons": [
     "open_review_rows"
   ],
   "expected_route_decision": "fixup",
-  "must_not_export_reason": "known_bad_export_canary",
+  "must_not_export_reason": "completed_result_with_blocking_gate",
   "expect_prediction_blank": true,
   "expect_root_prediction_blank": true,
   "expect_patch_preserved": true,

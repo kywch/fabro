@@ -1,0 +1,17 @@
+{
+  "fixture_kind": "handcrafted",
+  "source_round": "synthetic-tier1",
+  "source_run_bundle": null,
+  "task_id": "ready-export-with-evidence",
+  "expected_decision": "export",
+  "expected_result_status": "completed",
+  "expected_failure_reasons": [],
+  "expected_route_decision": "export",
+  "expect_root_prediction_nonblank": true,
+  "expect_patch_preserved": true,
+  "expected_candidate_state": "ready",
+  "expected_candidate_reuse": "merge_candidate",
+  "expected_run_exports": {
+    "swebench_prediction": "output/prediction.json"
+  }
+}

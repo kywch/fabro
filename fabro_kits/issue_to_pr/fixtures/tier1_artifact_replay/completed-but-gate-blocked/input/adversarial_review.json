@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "A completed result must still honor a blocking gate.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "tests",
+      "severity": "minor",
+      "failure_mode": "Open row remains unresolved.",
+      "evidence": [
+        "moderator left the row open"
+      ],
+      "required_files": [
+        "tests/test_state.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Close the row with evidence or keep prediction blank.",
+      "why_it_matters": "Root predictions must blank even if result.status is completed."
+    }
+  ],
+  "overall_risk": "medium"
+}

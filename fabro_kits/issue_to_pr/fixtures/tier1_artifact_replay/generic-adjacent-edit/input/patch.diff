@@ -1,0 +1,8 @@
+diff --git a/pkg/auth_helpers.py b/pkg/auth_helpers.py
+--- a/pkg/auth_helpers.py
++++ b/pkg/auth_helpers.py
+@@ -1,3 +1,5 @@
+ def is_allowed(user):
++    if user.is_staff:
++        return True
+     return user.has_scope("write")

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "Patch edits an adjacent documentation section instead of the issue section.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "scope",
+      "severity": "minor",
+      "failure_mode": "The patch edits the upload section while the issue asks for cache section evidence.",
+      "evidence": [
+        "docs/upload.md changed"
+      ],
+      "required_files": [
+        "docs/cache.md"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Show that docs/cache.md changed or reject the row with concrete evidence.",
+      "why_it_matters": "Adjacent docs edits are a generic scope-drift pattern."
+    }
+  ],
+  "overall_risk": "medium"
+}

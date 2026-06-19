@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "stage": "moderator_filter",
+  "dispositions": [
+    {
+      "id": "A1",
+      "state": "closed_by_evidence",
+      "category": "code",
+      "severity": "major",
+      "evidence": [
+        "src/parser.py"
+      ],
+      "closure_check": "Verified src/parser.py changed in the diff and tests passed.",
+      "reason": "Required implementation file is changed and cited."
+    }
+  ],
+  "readiness_tier": "ready_verified",
+  "do_not_repeat": [],
+  "next_agent_guidance": "Proceed."
+}

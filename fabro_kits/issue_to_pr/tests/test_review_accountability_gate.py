@@ -83,6 +83,169 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
             ["A1", "A2"],
         )
 
+    def test_formulaic_closure_without_artifact_evidence_fails(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(
+                rows=[
+                    {
+                        "id": "A1",
+                        "category": "tests",
+                        "severity": "minor",
+                        "required_files": ["tests/test_widget.py"],
+                    }
+                ]
+            ),
+            moderator=_moderator(
+                dispositions=[
+                    {
+                        "id": "A1",
+                        "state": "closed_by_evidence",
+                        "category": "tests",
+                        "severity": "minor",
+                        "evidence": ["tests pass"],
+                        "closure_check": "Issue-scoped and tests pass.",
+                    }
+                ]
+            ),
+            test_gate=_test_gate(changed_files=["src/widget.py", "tests/test_widget.py"]),
+            materialization=_materialization(["A1"], ["A1"]),
+        )
+
+        self.assertIn("invalid_closure_checks", report["process_failures"])
+        self.assertEqual(report["closure_check_failures"][0]["closure_score"], 1)
+        self.assertEqual(
+            report["closure_check_failures"][0]["closure_score_reason"],
+            "closure has no concrete artifact evidence",
+        )
+
+    def test_bare_diff_word_does_not_make_formulaic_minor_closure_safe(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(
+                rows=[
+                    {
+                        "id": "A1",
+                        "category": "tests",
+                        "severity": "minor",
+                        "required_files": ["tests/test_widget.py"],
+                    }
+                ]
+            ),
+            moderator=_moderator(
+                dispositions=[
+                    {
+                        "id": "A1",
+                        "state": "closed_by_evidence",
+                        "category": "tests",
+                        "severity": "minor",
+                        "evidence": ["tests pass"],
+                        "closure_check": "Verified the diff.",
+                    }
+                ]
+            ),
+            test_gate=_test_gate(changed_files=["src/widget.py", "tests/test_widget.py"]),
+            materialization=_materialization(["A1"], ["A1"]),
+            patch_diff="diff --git a/src/widget.py b/src/widget.py\n+ok\n",
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("invalid_closure_checks", report["process_failures"])
+        self.assertEqual(report["closure_check_failures"][0]["closure_score"], 1)
+
+    def test_major_closure_must_cite_all_required_files_for_score_three(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(
+                rows=[
+                    {
+                        "id": "A1",
+                        "category": "code",
+                        "severity": "major",
+                        "required_files": ["src/a.py", "src/b.py"],
+                    }
+                ]
+            ),
+            moderator=_moderator(
+                dispositions=[
+                    {
+                        "id": "A1",
+                        "state": "closed_by_evidence",
+                        "category": "code",
+                        "severity": "major",
+                        "evidence": ["src/a.py"],
+                        "closure_check": "Verified src/a.py changed.",
+                    }
+                ]
+            ),
+            test_gate=_test_gate(changed_files=["src/a.py", "src/b.py", "tests/test_fix.py"]),
+            materialization=_materialization(["A1"], ["A1"]),
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("invalid_closure_checks", report["process_failures"])
+        self.assertEqual(report["closure_check_failures"][0]["closure_score"], 2)
+
+    def test_cited_evidence_counts_for_closure_scoring(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(
+                rows=[
+                    {
+                        "id": "A1",
+                        "category": "code",
+                        "severity": "major",
+                        "required_files": ["src/fix.py"],
+                    }
+                ]
+            ),
+            moderator=_moderator(
+                dispositions=[
+                    {
+                        "id": "A1",
+                        "state": "closed_by_evidence",
+                        "category": "code",
+                        "severity": "major",
+                        "cited_evidence": ["src/fix.py"],
+                        "closure_check": "Verified required implementation file.",
+                    }
+                ]
+            ),
+            test_gate=_test_gate(changed_files=["src/fix.py", "tests/test_fix.py"]),
+            materialization=_materialization(["A1"], ["A1"]),
+        )
+
+        self.assertEqual(report["route_decision"], "export")
+        self.assertEqual(report["closed_rows"][0]["closure_score"], 3)
+
+    def test_gate_does_not_mutate_moderator_artifact(self):
+        moderator = _moderator(
+            dispositions=[
+                {
+                    "id": "A1",
+                    "state": "closed_by_evidence",
+                    "category": "tests",
+                    "severity": "minor",
+                    "evidence": ["tests pass"],
+                    "closure_check": "Verified the diff.",
+                }
+            ]
+        )
+        evaluate_review_accountability(
+            adversarial=_adversarial(
+                rows=[
+                    {
+                        "id": "A1",
+                        "category": "tests",
+                        "severity": "minor",
+                        "required_files": ["tests/test_widget.py"],
+                    }
+                ]
+            ),
+            moderator=moderator,
+            test_gate=_test_gate(changed_files=["src/widget.py", "tests/test_widget.py"]),
+            materialization=_materialization(["A1"], ["A1"]),
+        )
+
+        self.assertNotIn("closure_score", moderator["dispositions"][0])
+        self.assertNotIn("missing_required_files", moderator["dispositions"][0])
+
     def test_missing_required_file_fails_severe_closure(self):
         report = evaluate_review_accountability(
             adversarial=_adversarial(
@@ -294,7 +457,14 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
 
     def test_embedded_script_matches_pure_pass_report(self):
         adversarial = _adversarial(
-            rows=[{"id": "A1", "category": "code", "severity": "major"}]
+            rows=[
+                {
+                    "id": "A1",
+                    "category": "code",
+                    "severity": "major",
+                    "required_files": ["src/fix.py"],
+                }
+            ]
         )
         moderator = _moderator(
             dispositions=[
@@ -304,7 +474,7 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
                     "category": "code",
                     "severity": "major",
                     "evidence": ["src/fix.py"],
-                    "closure_check": "Verified src/fix.py.",
+                    "closure_check": "Verified src/fix.py changed the scoped fix.",
                 }
             ]
         )

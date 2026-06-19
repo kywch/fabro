@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "Reviewer found that the claimed closure cites the wrong file.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "code",
+      "severity": "minor",
+      "failure_mode": "The changed file is adjacent to, but not the required issue file.",
+      "evidence": [
+        "Issue requires src/target.py evidence."
+      ],
+      "required_files": [
+        "src/target.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Show that src/target.py changed or that the row is irrelevant.",
+      "why_it_matters": "Wrong-neighbor evidence can mask scope drift."
+    }
+  ],
+  "overall_risk": "medium"
+}

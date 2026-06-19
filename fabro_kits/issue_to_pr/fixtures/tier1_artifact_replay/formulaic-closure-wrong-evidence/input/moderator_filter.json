@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "stage": "moderator_filter",
+  "dispositions": [
+    {
+      "id": "A1",
+      "state": "closed_by_evidence",
+      "category": "code",
+      "severity": "minor",
+      "evidence": [
+        "src/neighbor.py"
+      ],
+      "closure_check": "Verified src/neighbor.py in the diff.",
+      "reason": "Concrete evidence exists, but it is for the wrong file."
+    }
+  ],
+  "readiness_tier": "ready_verified",
+  "do_not_repeat": [],
+  "next_agent_guidance": "Proceed."
+}

@@ -1,0 +1,8 @@
+diff --git a/src/neighbor.py b/src/neighbor.py
+--- a/src/neighbor.py
++++ b/src/neighbor.py
+@@ -1,2 +1,4 @@
+ def configure(value):
++    if value == "legacy":
++        return "new"
+     return value
