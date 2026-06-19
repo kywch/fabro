@@ -75,8 +75,8 @@ class LightEvalReplayTest(unittest.TestCase):
 
             self.assertEqual(audit["sandbox_provider"], "docker")
             self.assertEqual(audit["changed_files"], ["src/greeting.py"])
-            self.assertEqual(task["source"]["kind"], "synthetic_sandboxed_workflow")
-            self.assertEqual(run["source"]["kind"], "synthetic_sandboxed_workflow")
+            self.assertEqual(task["source"]["kind"], "synthetic_sandboxed_repo")
+            self.assertEqual(run["source"]["kind"], "synthetic_sandboxed_repo")
 
     def test_replay_canaries_blank_predictions_and_preserve_patches(self):
         with tempfile.TemporaryDirectory() as tmp:

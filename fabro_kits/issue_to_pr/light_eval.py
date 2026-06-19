@@ -738,7 +738,7 @@ def synthetic_source_for_task(
         "external_id": task_id,
         "dataset": (
             "fabro-kits/issue-to-pr-tier2b"
-            if source_kind == "synthetic_sandboxed_workflow"
+            if source_kind == "synthetic_sandboxed_repo"
             else "fabro-kits/issue-to-pr-tier2a"
         ),
         "split": "scripted",
@@ -846,7 +846,7 @@ def run_claimed_test_mismatch_docker_repo(
     return {
         "mode": "synthetic-docker-sandbox",
         "sandbox_provider": "docker",
-        "source_kind": "synthetic_sandboxed_workflow",
+        "source_kind": "synthetic_sandboxed_repo",
         "patch": patch,
         "changed_files": changed_text.splitlines(),
     }
