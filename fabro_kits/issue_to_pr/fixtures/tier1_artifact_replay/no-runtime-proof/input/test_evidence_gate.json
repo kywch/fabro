@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "mode": "test-evidence",
+  "observed": {
+    "patch_nonempty": true,
+    "changed_files": [
+      "src/runtime.py",
+      "tests/test_runtime.py"
+    ],
+    "test_files_changed": [
+      "tests/test_runtime.py"
+    ],
+    "commands_claimed_count": 1,
+    "commands_reported_passed_count": 1,
+    "tests_passed_count": 0,
+    "verified_commands": []
+  },
+  "claims": {
+    "claimed_tests_raw": [
+      "tests/test_runtime.py"
+    ]
+  },
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "tests/test_runtime.py"
+    ]
+  },
+  "judgment": {
+    "hard_failures": [],
+    "warnings": [],
+    "route_decision": "review",
+    "fixup_guidance": null,
+    "cannot_prove": []
+  },
+  "failure_reason": null,
+  "changed_files": [
+    "src/runtime.py",
+    "tests/test_runtime.py"
+  ],
+  "test_files_changed": [
+    "tests/test_runtime.py"
+  ],
+  "claimed_tests": [
+    "tests/test_runtime.py"
+  ],
+  "contradictions": [],
+  "warnings": []
+}

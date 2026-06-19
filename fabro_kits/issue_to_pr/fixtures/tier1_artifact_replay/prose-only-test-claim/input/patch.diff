@@ -1,0 +1,8 @@
+diff --git a/src/prose.py b/src/prose.py
+--- a/src/prose.py
++++ b/src/prose.py
+@@ -1,2 +1,4 @@
+ def normalize(value):
++    if value is None:
++        return ""
+     return value

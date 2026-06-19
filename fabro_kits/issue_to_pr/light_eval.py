@@ -190,6 +190,17 @@ def check_expected(
     missing_reasons = sorted(expected_reasons - actual_reasons)
     if missing_reasons:
         failures.append({"kind": "missing_failure_reason", "missing": missing_reasons})
+    expected_exact_reasons = expected.get("expected_process_failures_exact")
+    if expected_exact_reasons is not None and list(gate.get("process_failures") or []) != list(
+        expected_exact_reasons
+    ):
+        failures.append(
+            {
+                "kind": "process_failures_mismatch",
+                "expected": expected_exact_reasons,
+                "actual": gate.get("process_failures"),
+            }
+        )
 
     expected_decision = expected.get("expected_decision")
     root_prediction = build_prediction_record(result)
@@ -215,6 +226,91 @@ def check_expected(
                 "actual": gate.get("route_decision"),
             }
         )
+    test_gate = result.get("test_evidence_gate") or {}
+    judgment = test_gate.get("judgment") if isinstance(test_gate, dict) else {}
+    judgment = judgment if isinstance(judgment, dict) else {}
+    expected_test_gate_status = expected.get("expected_test_gate_status")
+    if expected_test_gate_status and test_gate.get("status") != expected_test_gate_status:
+        failures.append(
+            {
+                "kind": "test_gate_status_mismatch",
+                "expected": expected_test_gate_status,
+                "actual": test_gate.get("status"),
+            }
+        )
+    observed = test_gate.get("observed") if isinstance(test_gate.get("observed"), dict) else {}
+    for key in ("tests_passed_count", "commands_reported_passed_count"):
+        expected_key = f"expected_test_gate_{key}"
+        if expected_key in expected and observed.get(key) != expected[expected_key]:
+            failures.append(
+                {
+                    "kind": "test_gate_observed_mismatch",
+                    "field": key,
+                    "expected": expected[expected_key],
+                    "actual": observed.get(key),
+                }
+            )
+    for expected_failure in expected.get("expected_test_gate_hard_failures") or []:
+        hard_failures = [str(item) for item in judgment.get("hard_failures") or []]
+        if not any(expected_failure in failure for failure in hard_failures):
+            failures.append(
+                {
+                    "kind": "missing_test_gate_hard_failure",
+                    "expected": expected_failure,
+                    "actual": hard_failures,
+                }
+            )
+    for expected_warning in expected.get("expected_test_gate_warnings") or []:
+        warnings = [str(item) for item in judgment.get("warnings") or []]
+        if not any(expected_warning in warning for warning in warnings):
+            failures.append(
+                {
+                    "kind": "missing_test_gate_warning",
+                    "expected": expected_warning,
+                    "actual": warnings,
+                }
+            )
+    malformed_artifacts = [
+        item for item in gate.get("malformed_artifacts") or [] if isinstance(item, dict)
+    ]
+    for expected_malformed in expected.get("expected_malformed_artifacts") or []:
+        matching = [
+            item
+            for item in malformed_artifacts
+            if item.get("artifact") == expected_malformed.get("artifact")
+            and item.get("error") == expected_malformed.get("error")
+        ]
+        if not matching:
+            failures.append(
+                {
+                    "kind": "missing_malformed_artifact",
+                    "expected": expected_malformed,
+                    "actual": malformed_artifacts,
+                }
+            )
+            continue
+        for expected_reason in expected_malformed.get("reason_contains") or []:
+            if not any(expected_reason in str(item.get("reason", "")) for item in matching):
+                failures.append(
+                    {
+                        "kind": "missing_malformed_artifact_reason",
+                        "expected": expected_reason,
+                        "actual": matching,
+                    }
+                )
+        for expected_failure in expected_malformed.get("hard_failures_contains") or []:
+            if not any(
+                expected_failure in str(failure)
+                for item in matching
+                for failure in item.get("hard_failures") or []
+            ):
+                failures.append(
+                    {
+                        "kind": "missing_malformed_artifact_hard_failure",
+                        "expected": expected_failure,
+                        "actual": matching,
+                    }
+                )
 
     run_dir = output_dir / "runs" / run_id
     prediction = read_json(run_dir / "output" / "prediction.json")

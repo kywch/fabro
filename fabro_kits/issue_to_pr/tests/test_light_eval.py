@@ -97,6 +97,70 @@ class LightEvalReplayTest(unittest.TestCase):
                 missing_artifact_gate["process_failures"],
             )
 
+            claimed_mismatch_gate = json.loads(
+                (
+                    output_dir
+                    / "runs"
+                    / "claimed-test-path-mismatch--001"
+                    / "output"
+                    / "review_accountability_gate.json"
+                ).read_text()
+            )
+            self.assertIn(
+                "tests_not_executed_successfully",
+                claimed_mismatch_gate["process_failures"],
+            )
+            claimed_test_gate_malformed = _malformed_artifact(
+                claimed_mismatch_gate,
+                artifact="test_evidence_gate",
+                error="tests_not_executed_successfully",
+            )
+            self.assertIn(
+                "validation_claims_tests_not_in_diff",
+                claimed_test_gate_malformed["reason"],
+            )
+
+            prose_only_gate = json.loads(
+                (
+                    output_dir
+                    / "runs"
+                    / "prose-only-test-claim--001"
+                    / "output"
+                    / "review_accountability_gate.json"
+                ).read_text()
+            )
+            prose_test_gate_malformed = _malformed_artifact(
+                prose_only_gate,
+                artifact="test_evidence_gate",
+                error="tests_not_executed_successfully",
+            )
+            self.assertIn(
+                "unparseable_test_claims_without_changed_test_files",
+                prose_test_gate_malformed["reason"],
+            )
+
+            no_runtime_gate = json.loads(
+                (
+                    output_dir
+                    / "runs"
+                    / "no-runtime-proof--001"
+                    / "output"
+                    / "review_accountability_gate.json"
+                ).read_text()
+            )
+            self.assertFalse(no_runtime_gate["tests_executed_successfully"])
+            self.assertIn(
+                "tests_not_executed_successfully",
+                no_runtime_gate["process_failures"],
+            )
+
+
+def _malformed_artifact(gate, *, artifact, error):
+    for item in gate["malformed_artifacts"]:
+        if item.get("artifact") == artifact and item.get("error") == error:
+            return item
+    raise AssertionError(f"missing malformed artifact {artifact}/{error}: {gate}")
+
 
 if __name__ == "__main__":
     unittest.main()

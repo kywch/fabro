@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "The claimed test path must match the changed test file before export.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "tests",
+      "severity": "major",
+      "failure_mode": "Validation names a different test path than the changed test file.",
+      "evidence": [
+        "claimed tests/test_parser.py but diff changes tests/test_math_ops.py"
+      ],
+      "required_files": [
+        "tests/test_math_ops.py"
+      ],
+      "closure_requires": "runtime_tests",
+      "falsifiable_check": "Align the validation contract with tests/test_math_ops.py and preserve runtime proof.",
+      "why_it_matters": "A passing command for one path must not launder a different claimed test."
+    }
+  ],
+  "overall_risk": "high"
+}

@@ -1,0 +1,41 @@
+{
+  "fixture_kind": "handcrafted",
+  "source_round": "synthetic-tier1",
+  "source_run_bundle": null,
+  "task_id": "prose-only-test-claim",
+  "expected_decision": "blank",
+  "expected_result_status": "failed",
+  "expected_failure_reasons": [
+    "tests_not_executed_successfully"
+  ],
+  "expected_process_failures_exact": [
+    "tests_not_executed_successfully",
+    "invalid_closure_checks"
+  ],
+  "expected_test_gate_status": "failed",
+  "expected_test_gate_hard_failures": [
+    "unparseable_test_claims_without_changed_test_files"
+  ],
+  "expected_malformed_artifacts": [
+    {
+      "artifact": "test_evidence_gate",
+      "error": "tests_not_executed_successfully",
+      "reason_contains": [
+        "unparseable_test_claims_without_changed_test_files"
+      ],
+      "hard_failures_contains": [
+        "unparseable_test_claims_without_changed_test_files"
+      ]
+    }
+  ],
+  "expected_route_decision": "fixup",
+  "must_not_export_reason": "prose_only_test_claim_without_changed_test_file",
+  "expect_prediction_blank": true,
+  "expect_root_prediction_blank": true,
+  "expect_patch_preserved": true,
+  "expected_candidate_state": "failed_with_patch",
+  "expected_candidate_reuse": "continuation_candidate",
+  "expected_run_exports": {
+    "swebench_prediction": "output/prediction.json"
+  }
+}

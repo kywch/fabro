@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "status": "failed",
+  "mode": "test-evidence",
+  "observed": {
+    "patch_nonempty": true,
+    "changed_files": [
+      "src/math_ops.py",
+      "tests/test_math_ops.py"
+    ],
+    "test_files_changed": [
+      "tests/test_math_ops.py"
+    ],
+    "commands_claimed_count": 1,
+    "commands_reported_passed_count": 1,
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "pytest tests/test_math_ops.py",
+        "exit_code": 0,
+        "output_tail": "1 passed"
+      }
+    ]
+  },
+  "claims": {
+    "claimed_tests_raw": [
+      "tests/test_parser.py::test_empty_input"
+    ]
+  },
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "tests/test_parser.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "path": "tests/test_parser.py",
+        "description": ":test_empty_input",
+        "source": "string"
+      }
+    ]
+  },
+  "judgment": {
+    "hard_failures": [
+      "validation_claims_tests_not_in_diff: tests/test_parser.py, tests/test_math_ops.py"
+    ],
+    "warnings": [],
+    "route_decision": "fixup",
+    "fixup_guidance": "Resolve evidence contradictions against machine-observed diff data. Update the patch or validation contract so claimed tests match changed test files; do not add paperwork-only claims.",
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ]
+  },
+  "failure_reason": "validation_claims_tests_not_in_diff: tests/test_parser.py, tests/test_math_ops.py",
+  "patch_nonempty": true,
+  "changed_files": [
+    "src/math_ops.py",
+    "tests/test_math_ops.py"
+  ],
+  "test_files_changed": [
+    "tests/test_math_ops.py"
+  ],
+  "claimed_tests": [
+    "tests/test_parser.py"
+  ],
+  "contradictions": [
+    "validation_claims_tests_not_in_diff: tests/test_parser.py, tests/test_math_ops.py"
+  ],
+  "warnings": []
+}

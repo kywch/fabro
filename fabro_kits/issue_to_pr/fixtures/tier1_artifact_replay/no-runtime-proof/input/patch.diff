@@ -1,0 +1,17 @@
+diff --git a/src/runtime.py b/src/runtime.py
+--- a/src/runtime.py
++++ b/src/runtime.py
+@@ -1,2 +1,4 @@
+ def parse(value):
++    if value is None:
++        return None
+     return value
+diff --git a/tests/test_runtime.py b/tests/test_runtime.py
+--- a/tests/test_runtime.py
++++ b/tests/test_runtime.py
+@@ -1,2 +1,5 @@
+ def test_existing():
+     assert True
++
++def test_none_runtime():
++    assert True

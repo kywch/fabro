@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "Runtime proof is claimed but not machine-observed.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "tests",
+      "severity": "major",
+      "failure_mode": "Moderator closes a runtime-test requirement using reported pass count only.",
+      "evidence": [
+        "commands_reported_passed_count=1",
+        "tests_passed_count=0"
+      ],
+      "required_files": [
+        "tests/test_runtime.py"
+      ],
+      "closure_requires": "runtime_tests",
+      "falsifiable_check": "Require tests_passed_count > 0 from machine-observed command execution.",
+      "why_it_matters": "Reported pass metadata is weaker than verified runtime proof."
+    }
+  ],
+  "overall_risk": "high"
+}

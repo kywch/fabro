@@ -47,13 +47,21 @@ def evaluate_review_accountability(
             }
         )
     if not tests_executed_successfully(test_gate):
-        malformed.append(
-            {
-                "artifact": "test_evidence_gate",
-                "error": "tests_not_executed_successfully",
-                "reason": "Run the changed or claimed tests and record a passing command in validation.",
-            }
-        )
+        item = {
+            "artifact": "test_evidence_gate",
+            "error": "tests_not_executed_successfully",
+            "reason": "Run the changed or claimed tests and record a passing command in validation.",
+        }
+        judgment = test_gate.get("judgment") if isinstance(test_gate, dict) else {}
+        if isinstance(judgment, dict):
+            hard_failures = as_list(judgment.get("hard_failures"))
+            warnings = as_list(judgment.get("warnings"))
+            if hard_failures:
+                item["hard_failures"] = hard_failures
+                item["reason"] = "; ".join(str(failure) for failure in hard_failures)
+            if warnings:
+                item["warnings"] = warnings
+        malformed.append(item)
 
     rows = as_list(adversarial.get("rows") if isinstance(adversarial, dict) else None)
     dispositions = (

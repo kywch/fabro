@@ -1,0 +1,17 @@
+diff --git a/src/math_ops.py b/src/math_ops.py
+--- a/src/math_ops.py
++++ b/src/math_ops.py
+@@ -1,2 +1,4 @@
+ def divide(left, right):
++    if right == 0:
++        return None
+     return left / right
+diff --git a/tests/test_math_ops.py b/tests/test_math_ops.py
+--- a/tests/test_math_ops.py
++++ b/tests/test_math_ops.py
+@@ -1,2 +1,5 @@
+ def test_divide_regular():
+     assert divide(6, 2) == 3
++
++def test_divide_zero_returns_none():
++    assert divide(6, 0) is None

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "Validation uses prose instead of parseable test evidence.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "tests",
+      "severity": "major",
+      "failure_mode": "The validation contract claims tests in prose only and the diff has no test file.",
+      "evidence": [
+        "test evidence gate reports unparseable_test_claims_without_changed_test_files"
+      ],
+      "required_files": [
+        "tests/test_prose.py"
+      ],
+      "closure_requires": "runtime_tests",
+      "falsifiable_check": "Add a parseable changed test path or provide a valid no-test justification.",
+      "why_it_matters": "Prose-only test claims can hide missing regression tests."
+    }
+  ],
+  "overall_risk": "high"
+}
