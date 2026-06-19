@@ -317,7 +317,9 @@ def run_mini_swe_case(
         "fabro_dump_dir": attempt_result.dump_path.as_posix()
         if attempt_result.dump_path
         else None,
-        "trajectory_path": None,
+        "trajectory_path": attempt_result.trajectory_path.as_posix()
+        if attempt_result.trajectory_path
+        else None,
         "source": mini_swe_source(case),
         "eval": eval_metadata,
         "audit": audit,
@@ -412,6 +414,7 @@ class ScriptedCalibrationRunner:
             patch_path=patch_path,
             artifact_paths={},
             commands_run_path=None,
+            trajectory_path=None,
             transcript_path=None,
             dump_path=None,
             provenance={
@@ -516,6 +519,14 @@ class WorkflowSliceRunner:
 
         patch_path = artifacts_dir / "patch.diff"
         commands_run_path = artifacts_dir / "commands_run.json"
+        trajectory_path = slice_dir / "trajectory.jsonl"
+        _write_workflow_slice_trajectory(
+            trajectory_path=trajectory_path,
+            case=case,
+            fabro_run_id=run_id,
+            workflow_path=workflow_path,
+            artifacts_dir=artifacts_dir,
+        )
         return AttemptResult(
             attempt_origin="workflow-slice",
             artifact_origin="workflow_stage",
@@ -534,6 +545,7 @@ class WorkflowSliceRunner:
                 "review_materialization": (artifacts_dir / "review_materialization.json").as_posix(),
             },
             commands_run_path=commands_run_path,
+            trajectory_path=trajectory_path,
             transcript_path=transcript_path,
             dump_path=slice_dir,
             provenance={
@@ -618,6 +630,43 @@ def _run_hidden_oracle(case: MiniSweCase, repo_dir: Path) -> dict[str, Any]:
         "stdout_tail": proc.stdout[-2000:],
         "stderr_tail": proc.stderr[-2000:],
     }
+
+
+def _write_workflow_slice_trajectory(
+    *,
+    trajectory_path: Path,
+    case: MiniSweCase,
+    fabro_run_id: str | None,
+    workflow_path: Path,
+    artifacts_dir: Path,
+) -> None:
+    events = [
+        {
+            "schema_version": 1,
+            "event": "mini_swe_workflow_slice",
+            "case_id": case.case_id,
+            "fabro_run_id": fabro_run_id,
+            "workflow_path": workflow_path.as_posix(),
+        },
+        {
+            "schema_version": 1,
+            "event": "stage_artifacts_materialized",
+            "case_id": case.case_id,
+            "artifacts_dir": artifacts_dir.as_posix(),
+            "artifacts": [
+                "patch.diff",
+                "audit.json",
+                "validation_contract.json",
+                "commands_run.json",
+                "adversarial_review.json",
+                "moderator_filter.json",
+                "review_materialization.json",
+            ],
+        },
+    ]
+    trajectory_path.write_text(
+        "".join(json.dumps(event, sort_keys=True) + "\n" for event in events)
+    )
 
 
 def _workflow_slice_solve_script(case: MiniSweCase, repo_dir: Path, artifacts_dir: Path) -> str:
@@ -909,6 +958,8 @@ def _prepare_mini_swe_config_dir(
         dump_dir = config_dir / "run_dump"
         dump_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(attempt_result.transcript_path, dump_dir / "run.transcript")
+        if attempt_result.trajectory_path and attempt_result.trajectory_path.exists():
+            shutil.copy2(attempt_result.trajectory_path, dump_dir / "trajectory.jsonl")
     return config_dir
 
 

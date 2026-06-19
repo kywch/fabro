@@ -332,6 +332,7 @@ class LightEvalReplayTest(unittest.TestCase):
             run = json.loads((run_dir / "run.json").read_text())
             prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
             commands = json.loads((run_dir / "output" / "commands_run.json").read_text())
+            trajectory_lines = (run_dir / "output" / "trajectory.jsonl").read_text().splitlines()
 
             self.assertTrue(prediction["model_patch"])
             self.assertEqual(commands[0]["id"], "cmd-001")
@@ -342,8 +343,14 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertFalse(run["eval"]["b2_model_eligible"])
             self.assertEqual(run["eval"]["eligibility_failures"], [])
             self.assertTrue(run["eval"]["transcript_path"])
+            self.assertTrue(run["eval"]["trajectory_path"])
             self.assertTrue(run["fabro"]["run_id"])
+            self.assertEqual(run["fabro"]["trajectory_path"], "fabro/dump/trajectory.jsonl")
+            self.assertEqual(run["exports"]["trajectory"], "output/trajectory.jsonl")
             self.assertTrue((run_dir / run["fabro"]["dump_path"] / "run.transcript").is_file())
+            self.assertTrue((run_dir / run["fabro"]["trajectory_path"]).is_file())
+            self.assertEqual(len(trajectory_lines), 2)
+            self.assertEqual(json.loads(trajectory_lines[0])["event"], "mini_swe_workflow_slice")
 
     @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
     def test_mini_swe_workflow_slice_source_only_case_exports(self):

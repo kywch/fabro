@@ -45,6 +45,7 @@ class AttemptResult:
     patch_path: Path | None = None
     artifact_paths: dict[str, str] = field(default_factory=dict)
     commands_run_path: Path | None = None
+    trajectory_path: Path | None = None
     transcript_path: Path | None = None
     dump_path: Path | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
@@ -62,6 +63,9 @@ class AttemptResult:
             "artifact_paths": self.artifact_paths,
             "commands_run_path": self.commands_run_path.as_posix()
             if self.commands_run_path
+            else None,
+            "trajectory_path": self.trajectory_path.as_posix()
+            if self.trajectory_path
             else None,
             "transcript_path": self.transcript_path.as_posix()
             if self.transcript_path
