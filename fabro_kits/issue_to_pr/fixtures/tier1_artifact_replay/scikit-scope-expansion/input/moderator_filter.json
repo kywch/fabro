@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "stage": "moderator_filter",
+  "dispositions": [
+    {
+      "id": "A1",
+      "state": "closed_by_evidence",
+      "category": "scope",
+      "severity": "major",
+      "evidence": [
+        "sklearn/preprocessing/_data.py",
+        "sklearn/preprocessing/_function_transformer.py"
+      ],
+      "closure_check": "Verified sklearn/preprocessing/_data.py changed and tests passed.",
+      "reason": "The issue-scoped file changed, but the unrelated public API edit remains."
+    }
+  ],
+  "readiness_tier": "ready_verified",
+  "do_not_repeat": [],
+  "next_agent_guidance": "Proceed."
+}

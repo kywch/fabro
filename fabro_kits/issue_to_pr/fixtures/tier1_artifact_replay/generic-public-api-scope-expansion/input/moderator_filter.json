@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "stage": "moderator_filter",
+  "dispositions": [
+    {
+      "id": "A1",
+      "state": "closed_by_evidence",
+      "category": "scope",
+      "severity": "major",
+      "evidence": [
+        "app/request.py",
+        "app/response.py"
+      ],
+      "closure_check": "Verified app/request.py changed and pytest tests/test_request.py passed.",
+      "reason": "The scoped fix landed, but the unrelated response API edit remains."
+    }
+  ],
+  "readiness_tier": "ready_verified",
+  "do_not_repeat": [],
+  "next_agent_guidance": "Proceed."
+}

@@ -154,6 +154,64 @@ class LightEvalReplayTest(unittest.TestCase):
                 no_runtime_gate["process_failures"],
             )
 
+            scikit_scope_gate = json.loads(
+                (
+                    output_dir
+                    / "runs"
+                    / "scikit-scope-expansion--001"
+                    / "output"
+                    / "review_accountability_gate.json"
+                ).read_text()
+            )
+            self.assertEqual(
+                scikit_scope_gate["closure_check_failures"][0]["forbidden_files_changed"],
+                ["sklearn/preprocessing/_function_transformer.py"],
+            )
+
+            generic_scope_gate = json.loads(
+                (
+                    output_dir
+                    / "runs"
+                    / "generic-public-api-scope-expansion--001"
+                    / "output"
+                    / "review_accountability_gate.json"
+                ).read_text()
+            )
+            self.assertEqual(
+                generic_scope_gate["closure_check_failures"][0]["forbidden_files_changed"],
+                ["app/response.py"],
+            )
+
+            removed_negative_gate = json.loads(
+                (
+                    output_dir
+                    / "runs"
+                    / "removed-negative-coverage--001"
+                    / "output"
+                    / "review_accountability_gate.json"
+                ).read_text()
+            )
+            _malformed_artifact(
+                removed_negative_gate,
+                artifact="patch",
+                error="negative_coverage_removed",
+            )
+
+            generic_negative_gate = json.loads(
+                (
+                    output_dir
+                    / "runs"
+                    / "generic-negative-coverage-removal--001"
+                    / "output"
+                    / "review_accountability_gate.json"
+                ).read_text()
+            )
+            _malformed_artifact(
+                generic_negative_gate,
+                artifact="patch",
+                error="negative_coverage_removed",
+            )
+
 
 def _malformed_artifact(gate, *, artifact, error):
     for item in gate["malformed_artifacts"]:

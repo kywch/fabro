@@ -1,0 +1,22 @@
+diff --git a/lib/config.py b/lib/config.py
+--- a/lib/config.py
++++ b/lib/config.py
+@@ -1,4 +1,6 @@
+ def read_config(path):
++    if path == "":
++        return {}
+     if path is None:
+         raise TypeError("path required")
+     return load(path)
+diff --git a/tests/test_config.py b/tests/test_config.py
+--- a/tests/test_config.py
++++ b/tests/test_config.py
+@@ -1,7 +1,6 @@
+ import unittest
+ 
+ class ConfigTests(unittest.TestCase):
+-    def test_none_path_rejected(self):
+-        with self.assertRaises(TypeError):
+-            read_config(None)
++    def test_empty_path_returns_empty_config(self):
++        self.assertEqual(read_config(""), {})

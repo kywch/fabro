@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "The patch removes an existing unittest negative case without adding equivalent coverage.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "tests",
+      "severity": "major",
+      "failure_mode": "A negative assertion is deleted and no replacement negative path is added.",
+      "evidence": [
+        "tests/test_config.py removed an assertRaises assertion"
+      ],
+      "required_files": [
+        "tests/test_config.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Preserve or replace the deleted assertRaises coverage.",
+      "why_it_matters": "Happy-path tests do not protect the deleted error behavior."
+    }
+  ],
+  "overall_risk": "high"
+}

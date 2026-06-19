@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "changed_files": [
+    "sklearn/preprocessing/_data.py",
+    "sklearn/preprocessing/_function_transformer.py",
+    "sklearn/preprocessing/tests/test_data.py"
+  ],
+  "observed": {
+    "changed_files": [
+      "sklearn/preprocessing/_data.py",
+      "sklearn/preprocessing/_function_transformer.py",
+      "sklearn/preprocessing/tests/test_data.py"
+    ],
+    "test_files_changed": [
+      "sklearn/preprocessing/tests/test_data.py"
+    ],
+    "tests_passed_count": 1
+  }
+}

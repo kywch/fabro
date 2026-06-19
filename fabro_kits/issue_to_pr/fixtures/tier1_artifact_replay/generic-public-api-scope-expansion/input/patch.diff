@@ -1,0 +1,16 @@
+diff --git a/app/request.py b/app/request.py
+--- a/app/request.py
++++ b/app/request.py
+@@ -1,3 +1,5 @@
+ def parse_limit(value):
++    if value == "":
++        return None
+     return int(value)
+diff --git a/app/response.py b/app/response.py
+--- a/app/response.py
++++ b/app/response.py
+@@ -1,3 +1,5 @@
+ def serialize_limit(value):
++    if value is None:
++        return "0"
+     return str(value)

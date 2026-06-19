@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "The patch fixes the requested transform behavior but also edits an unrelated inverse-transform path.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "scope",
+      "severity": "major",
+      "failure_mode": "The issue asks for empty transform handling, but the patch also changes inverse_transform behavior.",
+      "evidence": [
+        "diff changes sklearn/preprocessing/_function_transformer.py outside the requested transform path"
+      ],
+      "required_files": [
+        "sklearn/preprocessing/_data.py"
+      ],
+      "forbidden_files": [
+        "sklearn/preprocessing/_function_transformer.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Remove the inverse-transform edit or prove it is required by the issue.",
+      "why_it_matters": "A plausible fix can regress unrelated public behavior by expanding scope."
+    }
+  ],
+  "overall_risk": "high"
+}

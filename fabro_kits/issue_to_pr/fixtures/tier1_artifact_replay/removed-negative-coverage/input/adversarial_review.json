@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "The patch removes an existing negative pytest case while claiming the new happy-path test is enough.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "tests",
+      "severity": "major",
+      "failure_mode": "Existing negative coverage is removed without replacement.",
+      "evidence": [
+        "tests/test_parser.py removed a pytest.raises assertion"
+      ],
+      "required_files": [
+        "tests/test_parser.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Preserve or replace the negative assertion.",
+      "why_it_matters": "Removing negative coverage can hide regressions in error handling."
+    }
+  ],
+  "overall_risk": "high"
+}

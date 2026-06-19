@@ -312,6 +312,24 @@ def check_expected(
                     }
                 )
 
+    closure_check_failures = [
+        item for item in gate.get("closure_check_failures") or [] if isinstance(item, dict)
+    ]
+    for expected_closure_failure in expected.get("expected_closure_check_failures") or []:
+        matching = [
+            item
+            for item in closure_check_failures
+            if all(item.get(key) == value for key, value in expected_closure_failure.items())
+        ]
+        if not matching:
+            failures.append(
+                {
+                    "kind": "missing_closure_check_failure",
+                    "expected": expected_closure_failure,
+                    "actual": closure_check_failures,
+                }
+            )
+
     run_dir = output_dir / "runs" / run_id
     prediction = read_json(run_dir / "output" / "prediction.json")
     patch_text = (run_dir / "output" / "patch.diff").read_text()

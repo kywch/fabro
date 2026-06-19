@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "stage": "moderator_filter",
+  "dispositions": [
+    {
+      "id": "A1",
+      "state": "closed_by_evidence",
+      "category": "tests",
+      "severity": "major",
+      "evidence": [
+        "tests/test_config.py"
+      ],
+      "closure_check": "Verified tests/test_config.py changed and python -m unittest tests.test_config passed.",
+      "reason": "The test file is cited, but deleted negative coverage is not replaced."
+    }
+  ],
+  "readiness_tier": "ready_verified",
+  "do_not_repeat": [],
+  "next_agent_guidance": "Proceed."
+}

@@ -280,6 +280,176 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
             ["src/required.py"],
         )
 
+    def test_forbidden_changed_file_blocks_scope_expansion_closure(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(
+                rows=[
+                    {
+                        "id": "A1",
+                        "category": "scope",
+                        "severity": "major",
+                        "required_files": ["src/request.py"],
+                        "forbidden_files": ["src/response.py"],
+                    }
+                ]
+            ),
+            moderator=_moderator(
+                dispositions=[
+                    {
+                        "id": "A1",
+                        "state": "closed_by_evidence",
+                        "category": "scope",
+                        "severity": "major",
+                        "evidence": ["src/request.py", "src/response.py"],
+                        "closure_check": "Verified src/request.py changed.",
+                    }
+                ]
+            ),
+            test_gate=_test_gate(changed_files=["src/request.py", "src/response.py"]),
+            materialization=_materialization(["A1"], ["A1"]),
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("invalid_closure_checks", report["process_failures"])
+        self.assertEqual(
+            report["closure_check_failures"][0]["forbidden_files_changed"],
+            ["src/response.py"],
+        )
+
+    def test_removed_negative_coverage_blocks_export(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(rows=[]),
+            moderator=_moderator(dispositions=[]),
+            test_gate=_test_gate(changed_files=["tests/test_parser.py"]),
+            materialization=_materialization([], []),
+            patch_diff=(
+                "diff --git a/tests/test_parser.py b/tests/test_parser.py\n"
+                "--- a/tests/test_parser.py\n"
+                "+++ b/tests/test_parser.py\n"
+                "@@ -1,4 +1,2 @@\n"
+                "-def test_none_rejected():\n"
+                "-    with pytest.raises(ValueError):\n"
+                "-        parse(None)\n"
+                "+def test_empty_ok():\n"
+                "+    assert parse('') is None\n"
+            ),
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("patch_malformed_or_scope_drift", report["process_failures"])
+        self.assertEqual(report["malformed_artifacts"][0]["error"], "negative_coverage_removed")
+
+    def test_replaced_negative_coverage_does_not_block_export(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(rows=[]),
+            moderator=_moderator(dispositions=[]),
+            test_gate=_test_gate(changed_files=["tests/test_parser.py"]),
+            materialization=_materialization([], []),
+            patch_diff=(
+                "diff --git a/tests/test_parser.py b/tests/test_parser.py\n"
+                "--- a/tests/test_parser.py\n"
+                "+++ b/tests/test_parser.py\n"
+                "@@ -1,4 +1,4 @@\n"
+                "-def test_none_rejected():\n"
+                "-    with pytest.raises(ValueError):\n"
+                "-        parse(None)\n"
+                "+def test_none_still_rejected():\n"
+                "+    with pytest.raises(TypeError):\n"
+                "+        parse(None)\n"
+            ),
+        )
+
+        self.assertEqual(report["route_decision"], "export")
+
+    def test_unrelated_same_file_negative_replacement_does_not_excuse_removal(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(rows=[]),
+            moderator=_moderator(dispositions=[]),
+            test_gate=_test_gate(changed_files=["tests/test_parser.py"]),
+            materialization=_materialization([], []),
+            patch_diff=(
+                "diff --git a/tests/test_parser.py b/tests/test_parser.py\n"
+                "--- a/tests/test_parser.py\n"
+                "+++ b/tests/test_parser.py\n"
+                "@@ -1,6 +1,6 @@\n"
+                "-def test_none_rejected():\n"
+                "-    with pytest.raises(ValueError):\n"
+                "-        parse(None)\n"
+                "+def test_empty_rejected():\n"
+                "+    with pytest.raises(ValueError):\n"
+                "+        parse('')\n"
+            ),
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("patch_malformed_or_scope_drift", report["process_failures"])
+
+    def test_replacement_in_other_file_does_not_excuse_removed_negative_coverage(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(rows=[]),
+            moderator=_moderator(dispositions=[]),
+            test_gate=_test_gate(changed_files=["tests/test_parser.py", "tests/test_other.py"]),
+            materialization=_materialization([], []),
+            patch_diff=(
+                "diff --git a/tests/test_parser.py b/tests/test_parser.py\n"
+                "--- a/tests/test_parser.py\n"
+                "+++ b/tests/test_parser.py\n"
+                "@@ -1,3 +1,1 @@\n"
+                "-def test_none_rejected():\n"
+                "-    with pytest.raises(ValueError):\n"
+                "-        parse(None)\n"
+                "diff --git a/tests/test_other.py b/tests/test_other.py\n"
+                "--- a/tests/test_other.py\n"
+                "+++ b/tests/test_other.py\n"
+                "@@ -1,1 +1,3 @@\n"
+                "+def test_other_error():\n"
+                "+    with pytest.raises(ValueError):\n"
+                "+        other(None)\n"
+            ),
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("patch_malformed_or_scope_drift", report["process_failures"])
+
+    def test_deleted_test_file_negative_coverage_blocks_export(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(rows=[]),
+            moderator=_moderator(dispositions=[]),
+            test_gate=_test_gate(changed_files=["tests/test_parser.py"]),
+            materialization=_materialization([], []),
+            patch_diff=(
+                "diff --git a/tests/test_parser.py b/tests/test_parser.py\n"
+                "deleted file mode 100644\n"
+                "--- a/tests/test_parser.py\n"
+                "+++ /dev/null\n"
+                "@@ -1,3 +0,0 @@\n"
+                "-def test_none_rejected():\n"
+                "-    with pytest.raises(ValueError):\n"
+                "-        parse(None)\n"
+            ),
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("patch_malformed_or_scope_drift", report["process_failures"])
+
+    def test_source_raises_line_removal_is_not_negative_test_coverage(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(rows=[]),
+            moderator=_moderator(dispositions=[]),
+            test_gate=_test_gate(changed_files=["src/parser.py"]),
+            materialization=_materialization([], []),
+            patch_diff=(
+                "diff --git a/src/parser.py b/src/parser.py\n"
+                "--- a/src/parser.py\n"
+                "+++ b/src/parser.py\n"
+                "@@ -1,3 +1,2 @@\n"
+                "-    raise ValueError('bad input')\n"
+                "+    return None\n"
+            ),
+        )
+
+        self.assertEqual(report["route_decision"], "export")
+
     def test_runtime_closure_requires_machine_observed_test_execution(self):
         report = evaluate_review_accountability(
             adversarial=_adversarial(

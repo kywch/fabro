@@ -1,0 +1,29 @@
+{
+  "fixture_kind": "synthetic",
+  "source_round": "scope-negative-family",
+  "task_id": "generic-negative-coverage-removal",
+  "expected_decision": "blank",
+  "expected_result_status": "failed",
+  "expected_failure_reasons": [
+    "patch_malformed_or_scope_drift"
+  ],
+  "expected_process_failures_exact": [
+    "patch_malformed_or_scope_drift"
+  ],
+  "expected_malformed_artifacts": [
+    {
+      "artifact": "patch",
+      "error": "negative_coverage_removed"
+    }
+  ],
+  "expected_route_decision": "fixup",
+  "must_not_export_reason": "generic_negative_coverage_removed_without_replacement",
+  "expect_prediction_blank": true,
+  "expect_root_prediction_blank": true,
+  "expect_patch_preserved": true,
+  "expected_candidate_state": "failed_with_patch",
+  "expected_candidate_reuse": "continuation_candidate",
+  "expected_run_exports": {
+    "swebench_prediction": "output/prediction.json"
+  }
+}

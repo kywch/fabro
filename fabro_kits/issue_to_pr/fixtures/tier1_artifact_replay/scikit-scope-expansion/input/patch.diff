@@ -1,0 +1,16 @@
+diff --git a/sklearn/preprocessing/_data.py b/sklearn/preprocessing/_data.py
+--- a/sklearn/preprocessing/_data.py
++++ b/sklearn/preprocessing/_data.py
+@@ -10,6 +10,8 @@ def transform(values):
+ def transform(values):
++    if values.shape[0] == 0:
++        return values
+     return scale(values)
+diff --git a/sklearn/preprocessing/_function_transformer.py b/sklearn/preprocessing/_function_transformer.py
+--- a/sklearn/preprocessing/_function_transformer.py
++++ b/sklearn/preprocessing/_function_transformer.py
+@@ -20,5 +20,7 @@ def inverse_transform(values):
+ def inverse_transform(values):
++    if values.shape[0] == 0:
++        return None
+     return values

@@ -1,0 +1,22 @@
+diff --git a/src/parser.py b/src/parser.py
+--- a/src/parser.py
++++ b/src/parser.py
+@@ -1,4 +1,6 @@
+ def parse(value):
++    if value == "":
++        return None
+     if value is None:
+         raise ValueError("missing")
+     return value.strip()
+diff --git a/tests/test_parser.py b/tests/test_parser.py
+--- a/tests/test_parser.py
++++ b/tests/test_parser.py
+@@ -1,7 +1,7 @@
+ import pytest
+ 
+-def test_none_rejected():
+-    with pytest.raises(ValueError):
+-        parse(None)
+-
+ def test_empty_returns_none():
+     assert parse("") is None

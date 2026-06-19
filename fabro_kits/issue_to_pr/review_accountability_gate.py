@@ -89,6 +89,17 @@ def evaluate_review_accountability(
                 "offending_diff": settings_ref_diff[:1200],
             }
         )
+    negative_coverage_removals = detect_negative_coverage_removal(patch_diff)
+    for removal in negative_coverage_removals:
+        malformed.append(
+            {
+                "artifact": "patch",
+                "error": "negative_coverage_removed",
+                "path": removal["path"],
+                "removed_line": removal["removed_line"],
+                "check": "negative test coverage was removed without replacement",
+            }
+        )
     if isinstance(adversarial, dict) and not isinstance(adversarial.get("rows", []), list):
         malformed.append(
             {
@@ -172,6 +183,16 @@ def evaluate_review_accountability(
         if state not in STATES:
             invalid_dispositions.append(disposition)
             continue
+        forbidden_changed = [
+            path
+            for path in (
+                clean_path(path) for path in as_list(row_by_id.get(did, {}).get("forbidden_files"))
+            )
+            if path in changed_files
+        ]
+        if state in {"closed_by_evidence", "downgraded", "rejected"} and forbidden_changed:
+            disposition["forbidden_files_changed"] = forbidden_changed
+            add_unique(closure_check_failures, disposition)
         severe = (
             str(row_by_id.get(did, {}).get("severity", disposition.get("severity", ""))).lower()
             in MAJOR
@@ -484,6 +505,93 @@ def mentions_runtime_test(text: str) -> bool:
     )
 
 
+def detect_negative_coverage_removal(patch_diff: str) -> list[dict[str, str]]:
+    removals: list[dict[str, str]] = []
+    added_keys_by_path: dict[str, set[str]] = {}
+    old_path = ""
+    current_path = ""
+    lines = patch_diff.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith("--- a/"):
+            old_path = clean_path(line[len("--- a/") :])
+            continue
+        if line == "+++ /dev/null":
+            current_path = old_path
+            continue
+        if line.startswith("+++ b/"):
+            current_path = clean_path(line[len("+++ b/") :])
+            continue
+        if line.startswith("+") and not line.startswith("+++"):
+            if is_test_path(current_path) and is_negative_test_line(line[1:]):
+                added_keys_by_path.setdefault(current_path, set()).add(
+                    negative_test_key(line[1:], following_changed_line(lines, index, "+"))
+                )
+            continue
+        if (
+            line.startswith("-")
+            and not line.startswith("---")
+            and is_test_path(current_path)
+            and is_negative_test_line(line[1:])
+        ):
+            removals.append(
+                {
+                    "path": current_path,
+                    "removed_line": line[1:].strip(),
+                    "key": negative_test_key(
+                        line[1:], following_changed_line(lines, index, "-")
+                    ),
+                }
+            )
+    return [
+        removal
+        for removal in removals
+        if removal["key"] not in added_keys_by_path.get(removal["path"], set())
+    ]
+
+
+def is_test_path(path: str) -> bool:
+    name = Path(path).name.lower()
+    parts = {part.lower() for part in Path(path).parts}
+    return "tests" in parts or name.startswith("test_") or name.endswith("_test.py")
+
+
+def is_negative_test_line(line: str) -> bool:
+    lowered = line.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "pytest.raises",
+            "assert_raises",
+            "assertraises",
+            "raises(",
+            "expect_error",
+            "assert_error",
+        )
+    )
+
+
+def following_changed_line(lines: list[str], index: int, prefix: str) -> str:
+    for line in lines[index + 1 :]:
+        if line.startswith(("diff --git ", "@@ ", "+++ ", "--- ")):
+            return ""
+        if line.startswith(prefix) and not line.startswith(prefix * 3):
+            text = line[1:].strip()
+            if text:
+                return text
+    return ""
+
+
+def negative_test_key(line: str, following_line: str) -> str:
+    normalized_following = normalize_negative_test_line(following_line)
+    if normalized_following:
+        return normalized_following
+    return normalize_negative_test_line(line)
+
+
+def normalize_negative_test_line(line: str) -> str:
+    return " ".join(line.replace('"', "'").split()).lower()
+
+
 def next_agent_guidance(fixup_required_rows: list[Any]) -> str:
     values = []
     for item in fixup_required_rows[:3]:
@@ -566,6 +674,12 @@ def _embedded_gate_functions_source() -> str:
         text_values,
         concrete_evidence_present,
         mentions_runtime_test,
+        detect_negative_coverage_removal,
+        is_test_path,
+        is_negative_test_line,
+        following_changed_line,
+        negative_test_key,
+        normalize_negative_test_line,
         next_agent_guidance,
     )
     return "\n\n".join(inspect.getsource(function) for function in functions)

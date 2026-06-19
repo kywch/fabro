@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "stage": "adversarial_review",
+  "summary": "The patch includes an unrelated public API behavior change.",
+  "rows": [
+    {
+      "id": "A1",
+      "category": "scope",
+      "severity": "major",
+      "failure_mode": "The issue is scoped to request validation, but the patch changes response serialization too.",
+      "evidence": [
+        "diff changes app/response.py even though the requested bug is in app/request.py"
+      ],
+      "required_files": [
+        "app/request.py"
+      ],
+      "forbidden_files": [
+        "app/response.py"
+      ],
+      "closure_requires": "diff_evidence",
+      "falsifiable_check": "Remove app/response.py or cite issue evidence requiring the public API response change.",
+      "why_it_matters": "Public API scope expansion can create hidden compatibility regressions."
+    }
+  ],
+  "overall_risk": "high"
+}
