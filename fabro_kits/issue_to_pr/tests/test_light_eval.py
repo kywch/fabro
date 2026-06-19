@@ -6,6 +6,7 @@ from pathlib import Path
 from fabro_kits.issue_to_pr.light_eval import (
     DEFAULT_SYNTHETIC_DOCKER_IMAGE,
     docker_image_available,
+    run_issue_workflow_smoke,
     run_replay,
     run_synthetic,
     run_workflow_smoke,
@@ -103,6 +104,56 @@ class LightEvalReplayTest(unittest.TestCase):
             )
             self.assertEqual(record["status"], "passed")
             self.assertIn("Status:    SUCCEEDED", record["run_transcript"])
+
+    def test_issue_workflow_smoke_reports_missing_fabro_binary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_issue_workflow_smoke(
+                output_dir=output_dir,
+                fabro_bin=output_dir / "missing-fabro",
+            )
+
+            self.assertEqual(summary["failed"], 1)
+            self.assertEqual(summary["failures"][0]["kind"], "fabro_binary_missing")
+
+    @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
+    def test_issue_workflow_smoke_materializes_artifacts_and_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_issue_workflow_smoke(output_dir=output_dir)
+
+            self.assertEqual(summary["failures"], [])
+            self.assertEqual(summary["total"], 1)
+            self.assertEqual(summary["false_exports"], 0)
+
+            smoke_record = json.loads(
+                (output_dir / "issue-workflow-smoke" / "issue_workflow_smoke.json").read_text()
+            )
+            self.assertEqual(smoke_record["status"], "passed")
+            self.assertIn("Derive Diff Facts", smoke_record["run_transcript"])
+            self.assertIn("Materialize Review", smoke_record["run_transcript"])
+            artifacts_dir = output_dir / "issue-workflow-smoke" / "stage-artifacts"
+            self.assertTrue((artifacts_dir / "patch.diff").is_file())
+            self.assertTrue((artifacts_dir / "review_materialization.json").is_file())
+
+            run_dir = output_dir / "runs" / "issue-workflow-smoke--001"
+            prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
+            run = json.loads((run_dir / "run.json").read_text())
+            task = json.loads((run_dir / "task.json").read_text())
+            test_gate = json.loads((run_dir / "output" / "test_evidence_gate.json").read_text())
+            accountability_gate = json.loads(
+                (run_dir / "output" / "review_accountability_gate.json").read_text()
+            )
+
+            self.assertEqual(prediction["model_patch"], "")
+            self.assertEqual(task["source"]["kind"], "synthetic_workflow_artifact_smoke")
+            self.assertEqual(run["source"]["kind"], "synthetic_workflow_artifact_smoke")
+            self.assertEqual(run["candidate"]["state"], "failed_with_patch")
+            self.assertIn(
+                "validation_claims_tests_but_diff_has_no_test_files",
+                test_gate["judgment"]["hard_failures"],
+            )
+            self.assertEqual(accountability_gate["route_decision"], "fixup")
 
     def test_replay_canaries_blank_predictions_and_preserve_patches(self):
         with tempfile.TemporaryDirectory() as tmp:
