@@ -3,7 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fabro_kits.issue_to_pr.light_eval import run_replay, run_synthetic
+from fabro_kits.issue_to_pr.light_eval import (
+    DEFAULT_SYNTHETIC_DOCKER_IMAGE,
+    docker_image_available,
+    run_replay,
+    run_synthetic,
+)
 
 
 class LightEvalReplayTest(unittest.TestCase):
@@ -48,6 +53,30 @@ class LightEvalReplayTest(unittest.TestCase):
                 "tests_not_executed_successfully",
                 accountability_gate["process_failures"],
             )
+
+    @unittest.skipUnless(
+        docker_image_available(DEFAULT_SYNTHETIC_DOCKER_IMAGE),
+        f"missing docker image {DEFAULT_SYNTHETIC_DOCKER_IMAGE}",
+    )
+    def test_synthetic_claimed_test_mismatch_can_run_through_docker_sandbox(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_synthetic(
+                "claimed-test-mismatch",
+                output_dir=output_dir,
+                sandbox="docker",
+            )
+
+            self.assertEqual(summary["failures"], [])
+            run_dir = output_dir / "runs" / "claimed-test-mismatch--001"
+            audit = json.loads((run_dir / "output" / "audit.json").read_text())
+            task = json.loads((run_dir / "task.json").read_text())
+            run = json.loads((run_dir / "run.json").read_text())
+
+            self.assertEqual(audit["sandbox_provider"], "docker")
+            self.assertEqual(audit["changed_files"], ["src/greeting.py"])
+            self.assertEqual(task["source"]["kind"], "synthetic_sandboxed_workflow")
+            self.assertEqual(run["source"]["kind"], "synthetic_sandboxed_workflow")
 
     def test_replay_canaries_blank_predictions_and_preserve_patches(self):
         with tempfile.TemporaryDirectory() as tmp:

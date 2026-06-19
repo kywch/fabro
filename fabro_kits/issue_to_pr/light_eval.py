@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,7 @@ from .review_accountability_gate import (
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "tier1_artifact_replay"
+DEFAULT_SYNTHETIC_DOCKER_IMAGE = "sweb.base.x86_64:latest"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     synthetic = subparsers.add_parser("synthetic")
     synthetic.add_argument("--task", default="all")
     synthetic.add_argument("--output-dir", type=Path)
+    synthetic.add_argument("--sandbox", choices=("local", "docker"), default="local")
+    synthetic.add_argument("--docker-image", default=DEFAULT_SYNTHETIC_DOCKER_IMAGE)
 
     args = parser.parse_args(argv)
     if args.command == "replay":
@@ -48,7 +52,12 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["failures"] else 1
     if args.command == "synthetic":
-        report = run_synthetic(args.task, output_dir=args.output_dir)
+        report = run_synthetic(
+            args.task,
+            output_dir=args.output_dir,
+            sandbox=args.sandbox,
+            docker_image=args.docker_image,
+        )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["failures"] else 1
     return 2
@@ -71,13 +80,22 @@ def run_synthetic(
     task: str = "all",
     *,
     output_dir: Path | None = None,
+    sandbox: str = "local",
+    docker_image: str = DEFAULT_SYNTHETIC_DOCKER_IMAGE,
 ) -> dict[str, Any]:
+    if sandbox not in {"local", "docker"}:
+        raise SystemExit(f"unknown synthetic sandbox: {sandbox}")
     task_ids = list_synthetic_tasks(task)
     if output_dir is None:
         with tempfile.TemporaryDirectory() as tmp:
-            return _run_synthetic_to_dir(task_ids, Path(tmp))
+            return _run_synthetic_to_dir(
+                task_ids,
+                Path(tmp),
+                sandbox=sandbox,
+                docker_image=docker_image,
+            )
     output_dir.mkdir(parents=True, exist_ok=True)
-    return _run_synthetic_to_dir(task_ids, output_dir)
+    return _run_synthetic_to_dir(task_ids, output_dir, sandbox=sandbox, docker_image=docker_image)
 
 
 def list_fixtures(fixture: str) -> list[Path]:
@@ -137,13 +155,24 @@ def _run_replay_to_dir(fixture_dirs: list[Path], output_dir: Path) -> dict[str, 
     return summary
 
 
-def _run_synthetic_to_dir(task_ids: list[str], output_dir: Path) -> dict[str, Any]:
+def _run_synthetic_to_dir(
+    task_ids: list[str],
+    output_dir: Path,
+    *,
+    sandbox: str,
+    docker_image: str,
+) -> dict[str, Any]:
     results = []
     failures = []
     manifest = load_or_init_manifest(output_dir)
 
     for task_id in task_ids:
-        case_result = run_synthetic_task(task_id, output_dir=output_dir)
+        case_result = run_synthetic_task(
+            task_id,
+            output_dir=output_dir,
+            sandbox=sandbox,
+            docker_image=docker_image,
+        )
         results.append(case_result["result"])
         update_manifest_for_run(
             manifest,
@@ -241,7 +270,13 @@ def run_replay_fixture(fixture_dir: Path, *, output_dir: Path) -> dict[str, Any]
     }
 
 
-def run_synthetic_task(task_id: str, *, output_dir: Path) -> dict[str, Any]:
+def run_synthetic_task(
+    task_id: str,
+    *,
+    output_dir: Path,
+    sandbox: str = "local",
+    docker_image: str = DEFAULT_SYNTHETIC_DOCKER_IMAGE,
+) -> dict[str, Any]:
     if task_id != "claimed-test-mismatch":
         raise SystemExit(f"unknown synthetic task: {task_id}")
 
@@ -249,21 +284,33 @@ def run_synthetic_task(task_id: str, *, output_dir: Path) -> dict[str, Any]:
         repo_dir = Path(tmp) / "repo"
         repo_dir.mkdir()
         create_claimed_test_mismatch_repo(repo_dir)
-        apply_claimed_test_mismatch_patch(repo_dir)
-        git_run(repo_dir, "add", "-N", ".")
-        patch = git_capture(repo_dir, "diff")
-        changed_files = git_capture(repo_dir, "diff", "--name-only").splitlines()
+        if sandbox == "local":
+            sandbox_result = run_claimed_test_mismatch_local_repo(repo_dir)
+        elif sandbox == "docker":
+            sandbox_result = run_claimed_test_mismatch_docker_repo(
+                repo_dir,
+                docker_image=docker_image,
+            )
+        else:
+            raise SystemExit(f"unknown synthetic sandbox: {sandbox}")
+
+    patch = str(sandbox_result["patch"])
+    changed_files = as_str_list(sandbox_result.get("changed_files"))
+    sandbox_provider = str(sandbox_result["sandbox_provider"])
+    mode = str(sandbox_result["mode"])
+    source_kind = str(sandbox_result["source_kind"])
 
     audit = {
         "schema_version": 1,
-        "mode": "synthetic-local-repo",
+        "mode": mode,
         "patch_nonempty": bool(patch.strip()),
         "changed_files": changed_files,
         "test_files_changed": [path for path in changed_files if is_test_path(path)],
+        "sandbox_provider": sandbox_provider,
     }
     validation_contract = {
         "schema_version": 1,
-        "mode": "synthetic-local-repo",
+        "mode": mode,
         "tests_added": [{"path": "tests/test_greeting.py", "description": "claimed coverage"}],
         "commands_run": [
             {
@@ -309,13 +356,14 @@ def run_synthetic_task(task_id: str, *, output_dir: Path) -> dict[str, Any]:
         "fabro_run_id": None,
         "fabro_dump_dir": None,
         "trajectory_path": None,
-        "source": synthetic_source_for_task(task_id),
+        "source": synthetic_source_for_task(task_id, source_kind=source_kind),
         "audit": audit,
         "verify": {
             "schema_version": 1,
             "status": "completed",
-            "mode": "synthetic-local-repo",
+            "mode": mode,
             "patch_nonempty": bool(patch.strip()),
+            "sandbox_provider": sandbox_provider,
         },
         "test_evidence_gate": test_gate,
         "adversarial_review": adversarial,
@@ -330,11 +378,11 @@ def run_synthetic_task(task_id: str, *, output_dir: Path) -> dict[str, Any]:
         validation_contract=validation_contract,
     )
     write_run_bundle(
-        instance=synthetic_instance_for_task(task_id),
+        instance=synthetic_instance_for_task(task_id, source_kind=source_kind),
         result=result,
         output_dir=output_dir,
         config_dir=config_dir,
-        sandbox_provider="synthetic-local-repo",
+        sandbox_provider=sandbox_provider,
     )
     run_id = run_id_for_task(task_id)
     failures = check_expected(
@@ -657,13 +705,17 @@ def instance_for_task(task_id: str) -> dict[str, Any]:
     }
 
 
-def synthetic_instance_for_task(task_id: str) -> dict[str, Any]:
+def synthetic_instance_for_task(
+    task_id: str,
+    *,
+    source_kind: str = "synthetic_local_repo",
+) -> dict[str, Any]:
     return {
         "instance_id": task_id,
         "repo": "synthetic/local-repo",
         "version": "local",
         "base_commit": "synthetic",
-        "source": synthetic_source_for_task(task_id),
+        "source": synthetic_source_for_task(task_id, source_kind=source_kind),
         "repository": {
             "provider": "local",
             "owner": "synthetic",
@@ -676,11 +728,19 @@ def synthetic_instance_for_task(task_id: str) -> dict[str, Any]:
     }
 
 
-def synthetic_source_for_task(task_id: str) -> dict[str, Any]:
+def synthetic_source_for_task(
+    task_id: str,
+    *,
+    source_kind: str = "synthetic_local_repo",
+) -> dict[str, Any]:
     return {
-        "kind": "synthetic_local_repo",
+        "kind": source_kind,
         "external_id": task_id,
-        "dataset": "fabro-kits/issue-to-pr-tier2a",
+        "dataset": (
+            "fabro-kits/issue-to-pr-tier2b"
+            if source_kind == "synthetic_sandboxed_workflow"
+            else "fabro-kits/issue-to-pr-tier2a"
+        ),
         "split": "scripted",
     }
 
@@ -718,16 +778,82 @@ def create_claimed_test_mismatch_repo(repo_dir: Path) -> None:
     git_run(repo_dir, "add", "src/greeting.py")
 
 
-def apply_claimed_test_mismatch_patch(repo_dir: Path) -> None:
-    patch = (
-        "diff --git a/src/greeting.py b/src/greeting.py\n"
-        "--- a/src/greeting.py\n"
-        "+++ b/src/greeting.py\n"
-        "@@ -1,2 +1,2 @@\n"
-        " def greeting(name):\n"
-        "-    return f\"hello {name}\"\n"
-        "+    return f\"hello, {name}\"\n"
+def run_claimed_test_mismatch_local_repo(repo_dir: Path) -> dict[str, Any]:
+    apply_claimed_test_mismatch_patch(repo_dir)
+    git_run(repo_dir, "add", "-N", ".")
+    return {
+        "mode": "synthetic-local-repo",
+        "sandbox_provider": "synthetic-local-repo",
+        "source_kind": "synthetic_local_repo",
+        "patch": git_capture(repo_dir, "diff"),
+        "changed_files": git_capture(repo_dir, "diff", "--name-only").splitlines(),
+    }
+
+
+def run_claimed_test_mismatch_docker_repo(
+    repo_dir: Path,
+    *,
+    docker_image: str,
+) -> dict[str, Any]:
+    if not docker_image_available(docker_image):
+        raise SystemExit(
+            f"synthetic docker image is not available locally: {docker_image}. "
+            "Build/pull it or pass --docker-image."
+        )
+    script = "\n".join(
+        [
+            "set -euo pipefail",
+            "cd /workspace",
+            "git apply --whitespace=nowarn - <<'PATCH'",
+            claimed_test_mismatch_patch_text().rstrip(),
+            "PATCH",
+            "git add -N .",
+            "printf '__FABRO_PATCH_START__\\n'",
+            "git diff",
+            "printf '__FABRO_CHANGED_FILES_START__\\n'",
+            "git diff --name-only",
+        ]
     )
+    proc = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
+            "-v",
+            f"{repo_dir.resolve()}:/workspace",
+            "-w",
+            "/workspace",
+            docker_image,
+            "bash",
+            "-lc",
+            script,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"docker synthetic task failed: {proc.stderr}")
+    patch_marker = "__FABRO_PATCH_START__\n"
+    changed_marker = "__FABRO_CHANGED_FILES_START__\n"
+    if patch_marker not in proc.stdout or changed_marker not in proc.stdout:
+        raise RuntimeError(f"docker synthetic task returned malformed output: {proc.stdout}")
+    _, payload = proc.stdout.split(patch_marker, 1)
+    patch, changed_text = payload.split(changed_marker, 1)
+    return {
+        "mode": "synthetic-docker-sandbox",
+        "sandbox_provider": "docker",
+        "source_kind": "synthetic_sandboxed_workflow",
+        "patch": patch,
+        "changed_files": changed_text.splitlines(),
+    }
+
+
+def apply_claimed_test_mismatch_patch(repo_dir: Path) -> None:
+    patch = claimed_test_mismatch_patch_text()
     proc = subprocess.run(
         ["git", "apply", "--whitespace=nowarn", "-"],
         cwd=repo_dir,
@@ -739,6 +865,32 @@ def apply_claimed_test_mismatch_patch(repo_dir: Path) -> None:
     )
     if proc.returncode != 0:
         raise RuntimeError(f"git apply failed: {proc.stderr}")
+
+
+def claimed_test_mismatch_patch_text() -> str:
+    return (
+        "diff --git a/src/greeting.py b/src/greeting.py\n"
+        "--- a/src/greeting.py\n"
+        "+++ b/src/greeting.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " def greeting(name):\n"
+        "-    return f\"hello {name}\"\n"
+        "+    return f\"hello, {name}\"\n"
+    )
+
+
+def docker_image_available(image: str) -> bool:
+    try:
+        proc = subprocess.run(
+            ["docker", "image", "inspect", image],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    return proc.returncode == 0
 
 
 def git_run(repo_dir: Path, *args: str) -> None:
@@ -766,6 +918,10 @@ def git_capture(repo_dir: Path, *args: str) -> str:
     if proc.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed: {proc.stderr}")
     return proc.stdout
+
+
+def as_str_list(value: Any) -> list[str]:
+    return [str(item) for item in value] if isinstance(value, list) else []
 
 
 def is_test_path(path: str) -> bool:
