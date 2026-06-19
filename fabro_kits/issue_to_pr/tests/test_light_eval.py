@@ -8,6 +8,7 @@ from fabro_kits.issue_to_pr.light_eval import (
     docker_image_available,
     run_replay,
     run_synthetic,
+    run_workflow_smoke,
 )
 
 
@@ -77,6 +78,31 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(audit["changed_files"], ["src/greeting.py"])
             self.assertEqual(task["source"]["kind"], "synthetic_sandboxed_repo")
             self.assertEqual(run["source"]["kind"], "synthetic_sandboxed_repo")
+
+    def test_workflow_smoke_reports_missing_fabro_binary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_workflow_smoke(
+                output_dir=output_dir,
+                fabro_bin=output_dir / "missing-fabro",
+            )
+
+            self.assertEqual(summary["failed"], 1)
+            self.assertEqual(summary["failures"][0]["kind"], "fabro_binary_missing")
+
+    @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
+    def test_workflow_smoke_runs_tiny_fabro_workflow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            summary = run_workflow_smoke(output_dir=output_dir)
+
+            self.assertEqual(summary["failures"], [])
+            self.assertEqual(summary["total"], 1)
+            record = json.loads(
+                (output_dir / "workflow-smoke" / "workflow_smoke.json").read_text()
+            )
+            self.assertEqual(record["status"], "passed")
+            self.assertIn("Status:    SUCCEEDED", record["run_transcript"])
 
     def test_replay_canaries_blank_predictions_and_preserve_patches(self):
         with tempfile.TemporaryDirectory() as tmp:

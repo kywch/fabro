@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -46,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
     synthetic.add_argument("--sandbox", choices=("local", "docker"), default="local")
     synthetic.add_argument("--docker-image", default=DEFAULT_SYNTHETIC_DOCKER_IMAGE)
 
+    workflow_smoke = subparsers.add_parser("workflow-smoke")
+    workflow_smoke.add_argument("--output-dir", type=Path)
+    workflow_smoke.add_argument("--fabro-bin", type=Path, default=Path("target/debug/fabro"))
+
     args = parser.parse_args(argv)
     if args.command == "replay":
         report = run_replay(args.fixture, output_dir=args.output_dir)
@@ -58,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
             sandbox=args.sandbox,
             docker_image=args.docker_image,
         )
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if not report["failures"] else 1
+    if args.command == "workflow-smoke":
+        report = run_workflow_smoke(output_dir=args.output_dir, fabro_bin=args.fabro_bin)
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["failures"] else 1
     return 2
@@ -96,6 +105,18 @@ def run_synthetic(
             )
     output_dir.mkdir(parents=True, exist_ok=True)
     return _run_synthetic_to_dir(task_ids, output_dir, sandbox=sandbox, docker_image=docker_image)
+
+
+def run_workflow_smoke(
+    *,
+    output_dir: Path | None = None,
+    fabro_bin: Path = Path("target/debug/fabro"),
+) -> dict[str, Any]:
+    if output_dir is None:
+        with tempfile.TemporaryDirectory() as tmp:
+            return _run_workflow_smoke_to_dir(Path(tmp), fabro_bin=fabro_bin)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return _run_workflow_smoke_to_dir(output_dir.resolve(), fabro_bin=fabro_bin)
 
 
 def list_fixtures(fixture: str) -> list[Path]:
@@ -198,6 +219,86 @@ def _run_synthetic_to_dir(
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     return summary
+
+
+def _run_workflow_smoke_to_dir(output_dir: Path, *, fabro_bin: Path) -> dict[str, Any]:
+    smoke_dir = output_dir / "workflow-smoke"
+    if smoke_dir.exists():
+        shutil.rmtree(smoke_dir)
+    smoke_dir.mkdir(parents=True, exist_ok=True)
+    failures = []
+    if not fabro_bin.exists():
+        failures.append(
+            {
+                "kind": "fabro_binary_missing",
+                "path": str(fabro_bin),
+                "reason": "Build fabro-cli first or pass --fabro-bin.",
+            }
+        )
+        return write_workflow_smoke_summary(output_dir, smoke_dir, failures=failures)
+
+    workflow_path = smoke_dir / "workflow.fabro"
+    storage_dir = smoke_dir / "storage"
+    config_path = smoke_dir / "settings.toml"
+    write_workflow_smoke_files(
+        workflow_path=workflow_path,
+        storage_dir=storage_dir,
+        config_path=config_path,
+    )
+    env = workflow_smoke_env(config_path=config_path, storage_dir=storage_dir)
+    run_proc = run_fabro_command(
+        fabro_bin,
+        ["--no-upgrade-check", "run", "--dry-run", "--auto-approve", str(workflow_path)],
+        env=env,
+    )
+    (smoke_dir / "run.stdout").write_text(run_proc.stdout)
+    (smoke_dir / "run.stderr").write_text(run_proc.stderr)
+    run_transcript = run_proc.stdout + run_proc.stderr
+    (smoke_dir / "run.transcript").write_text(run_transcript)
+    run_id = extract_workflow_smoke_run_id(run_transcript)
+    try:
+        if run_proc.returncode != 0:
+            failures.append(
+                {
+                    "kind": "workflow_run_failed",
+                    "exit_code": run_proc.returncode,
+                    "stderr": run_proc.stderr[-2000:],
+                }
+            )
+        elif not run_id:
+            failures.append({"kind": "workflow_run_id_missing"})
+        elif "Status:    SUCCEEDED" not in run_transcript:
+            failures.append(
+                {
+                    "kind": "workflow_run_not_succeeded",
+                    "run_id": run_id,
+                    "transcript": run_transcript[-2000:],
+                }
+            )
+    finally:
+        stop_proc = run_fabro_command(
+            fabro_bin,
+            ["--no-upgrade-check", "server", "stop", "--storage-dir", str(storage_dir)],
+            env=env,
+        )
+        (smoke_dir / "stop.stdout").write_text(stop_proc.stdout)
+        (smoke_dir / "stop.stderr").write_text(stop_proc.stderr)
+
+    if run_id:
+        (smoke_dir / "run_id.txt").write_text(run_id + "\n")
+    result = {
+        "schema_version": 1,
+        "mode": "synthetic-workflow-smoke",
+        "status": "passed" if not failures else "failed",
+        "run_id": run_id or None,
+        "run_transcript": run_transcript,
+        "storage_dir": str(storage_dir),
+        "workflow_path": str(workflow_path),
+    }
+    (smoke_dir / "workflow_smoke.json").write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n"
+    )
+    return write_workflow_smoke_summary(output_dir, smoke_dir, failures=failures)
 
 
 def run_replay_fixture(fixture_dir: Path, *, output_dir: Path) -> dict[str, Any]:
@@ -696,6 +797,96 @@ def prepare_synthetic_config_dir(
     return config_dir
 
 
+def write_workflow_smoke_summary(
+    output_dir: Path,
+    smoke_dir: Path,
+    *,
+    failures: list[dict[str, Any]],
+) -> dict[str, Any]:
+    summary = {
+        "total": 1,
+        "failed": len(failures),
+        "false_exports": 0,
+        "failures": failures,
+        "workflow_smoke": str((smoke_dir / "workflow_smoke.json").relative_to(output_dir))
+        if (smoke_dir / "workflow_smoke.json").exists()
+        else "",
+    }
+    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    return summary
+
+
+def write_workflow_smoke_files(
+    *,
+    workflow_path: Path,
+    storage_dir: Path,
+    config_path: Path,
+) -> None:
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    workflow_path.write_text(
+        "digraph TinyIssueToPrSmoke {\n"
+        "  graph [goal=\"synthetic issue-to-PR workflow smoke\"]\n"
+        "  start [shape=Mdiamond, label=\"Start\"]\n"
+        "  exit [shape=Msquare, label=\"Exit\"]\n"
+        "  write [shape=parallelogram, label=\"Write Artifact\", "
+        "script=\"printf workflow-ok > workflow-output.txt && cat workflow-output.txt\"]\n"
+        "  start -> write -> exit\n"
+        "}\n"
+    )
+    config_path.write_text(
+        "_version = 1\n"
+        "\n"
+        "[server.storage]\n"
+        f"root = {json.dumps(str(storage_dir))}\n"
+        "\n"
+        "[server.auth]\n"
+        "methods = [\"dev-token\"]\n"
+        "\n"
+        "[server.sandbox.providers.local]\n"
+        "enabled = true\n"
+        "\n"
+        "[server.sandbox.providers.docker]\n"
+        "enabled = false\n"
+        "\n"
+        "[server.sandbox.providers.daytona]\n"
+        "enabled = false\n"
+    )
+    token = workflow_smoke_dev_token()
+    secret = workflow_smoke_session_secret()
+    (storage_dir / "server.dev-token").write_text(token + "\n")
+    (storage_dir / "server.env").write_text(
+        f"FABRO_DEV_TOKEN={token}\nSESSION_SECRET={secret}\n"
+    )
+
+
+def workflow_smoke_env(*, config_path: Path, storage_dir: Path) -> dict[str, str]:
+    env = dict(os.environ)
+    env.update(
+        {
+            "FABRO_CONFIG": str(config_path),
+            "FABRO_STORAGE_DIR": str(storage_dir),
+            "FABRO_NO_UPGRADE_CHECK": "true",
+        }
+    )
+    return env
+
+
+def workflow_smoke_dev_token() -> str:
+    return "fabro_dev_abababababababababababababababababababababababababababababababab"
+
+
+def workflow_smoke_session_secret() -> str:
+    return "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+
+def extract_workflow_smoke_run_id(stdout: str) -> str:
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Run:"):
+            return stripped.split("Run:", 1)[1].strip()
+    return ""
+
+
 def instance_for_task(task_id: str) -> dict[str, Any]:
     return {
         "instance_id": task_id,
@@ -918,6 +1109,23 @@ def git_capture(repo_dir: Path, *args: str) -> str:
     if proc.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed: {proc.stderr}")
     return proc.stdout
+
+
+def run_fabro_command(
+    fabro_bin: Path,
+    args: list[str],
+    *,
+    env: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(fabro_bin), *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+        env=env,
+        timeout=60,
+    )
 
 
 def as_str_list(value: Any) -> list[str]:
