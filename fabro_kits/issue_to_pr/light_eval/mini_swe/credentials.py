@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .workflow_common import run_fabro_command
+from ..workflow_common import run_fabro_command
 
 
 def bridge_model_credentials(
