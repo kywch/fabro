@@ -18,6 +18,8 @@ payloads, run logs, checkpoints, generated SWE-bench output trees, or secrets.
 Current cycles:
 
 - [2026-06 Auto-Research V1](2026-06-auto-research-v1.md)
+- [2026-06 Auto-Research V2](2026-06-auto-research-v2.md)
+- [2026-06 Auto-Research V3](2026-06-auto-research-v3.md)
 
 Templates:
 

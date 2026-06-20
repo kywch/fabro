@@ -12,3 +12,10 @@ Current archives:
 - `2026-06-auto-research-v1-iter-workflow.tar.zst` - redacted snapshot of the
   10-round `tmp/iter-workflow` workspace used by the June 2026 auto-research
   cycle.
+- `2026-06-auto-research-v2-filtered.tar.zst` - filtered V2 evidence bundle
+  containing round notes, summaries, predictions/results, run metadata, workflow
+  configs, sidecar JSONs, review artifacts, compact trajectories, and patches.
+- `2026-06-auto-research-v3-filtered.tar.zst` - filtered V3 evidence bundle
+  containing round notes, summaries, predictions/results, run metadata, workflow
+  configs, stage-artifact JSONs, review artifacts, compact trajectories, and
+  patches through Round 25.
