@@ -134,6 +134,10 @@ def _print_report(report: dict, *, output_format: str = "json") -> None:
             f"patch_pass={report.get('patch_pass', 0)} "
             f"artifact_pass={report.get('artifact_pass', 0)} "
             f"export_pass={report.get('export_pass', 0)} "
+            f"truthful_pass={report.get('truthful_pass', 0)} "
+            f"hand_wavy_pass={report.get('hand_wavy_pass', 0)} "
+            f"false_exports={report.get('false_exports', 0)} "
+            f"process_blocked={report.get('process_blocked', 0)} "
             f"b2_eligible={report.get('b2_eligible', 0)}"
         )
         failures = report.get("failures")

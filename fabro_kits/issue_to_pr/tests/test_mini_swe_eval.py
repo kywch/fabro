@@ -10,6 +10,7 @@ from fabro_kits.issue_to_pr.light_eval.grader import grade_mini_swe_attempt
 from fabro_kits.issue_to_pr.light_eval.mini_swe.evidence import (
     commands_run_from_artifacts,
 )
+from fabro_kits.issue_to_pr.light_eval.mini_swe.reporting import mini_swe_summary
 from fabro_kits.issue_to_pr.light_eval.paths import DEFAULT_SYNTHETIC_DOCKER_IMAGE
 from fabro_kits.issue_to_pr.light_eval.process import docker_image_available
 from fabro_kits.issue_to_pr.light_eval.task_schema import AttemptResult, MiniSweCase
@@ -33,6 +34,13 @@ class MiniSweEvalTest(unittest.TestCase):
             self.assertEqual(summary["patch_pass"], 1)
             self.assertEqual(summary["artifact_pass"], 1)
             self.assertEqual(summary["export_pass"], 1)
+            self.assertEqual(summary["truthful_pass"], 1)
+            self.assertEqual(summary["hand_wavy_pass"], 0)
+            self.assertEqual(summary["review_missed_required_row"], 0)
+            self.assertEqual(summary["weak_closure_accepted"], 0)
+            self.assertEqual(summary["closure_without_machine_evidence"], 0)
+            self.assertEqual(summary["false_export_due_to_review"], 0)
+            self.assertEqual(summary["false_export_due_to_evidence"], 0)
             self.assertEqual(summary["expected_traps_caught"], 0)
             self.assertEqual(summary["artifact_honesty_failures"], 0)
             self.assertEqual(summary["expected_b2_ineligible"], 1)
@@ -96,6 +104,13 @@ class MiniSweEvalTest(unittest.TestCase):
             self.assertIsInstance(summary["total_duration_s"], float)
             self.assertGreaterEqual(summary["total_duration_s"], 0.0)
             self.assertEqual(summary["expected_traps_caught"], 1)
+            self.assertEqual(summary["truthful_pass"], 4)
+            self.assertEqual(summary["hand_wavy_pass"], 0)
+            self.assertEqual(summary["review_missed_required_row"], 0)
+            self.assertEqual(summary["weak_closure_accepted"], 0)
+            self.assertEqual(summary["closure_without_machine_evidence"], 0)
+            self.assertEqual(summary["false_export_due_to_review"], 0)
+            self.assertEqual(summary["false_export_due_to_evidence"], 0)
             self.assertEqual(summary["artifact_honesty_failures"], 1)
             self.assertEqual(summary["expected_b2_ineligible"], 5)
 
@@ -136,6 +151,10 @@ class MiniSweEvalTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("mini-swe: total=1 failed=0", result.stdout)
+            self.assertIn("truthful_pass=1", result.stdout)
+            self.assertIn("hand_wavy_pass=0", result.stdout)
+            self.assertIn("false_exports=0", result.stdout)
+            self.assertIn("process_blocked=0", result.stdout)
             self.assertIn("b2_eligible=0", result.stdout)
             summary = json.loads((Path(tmp) / "summary.json").read_text())
             self.assertEqual(summary["seed"], 7)
@@ -198,6 +217,9 @@ class MiniSweEvalTest(unittest.TestCase):
             self.assertEqual(summary["export_pass"], 1)
             self.assertEqual(summary["false_blanks"], 0)
             self.assertEqual(summary["false_exports"], 0)
+            self.assertEqual(summary["truthful_pass"], 0)
+            self.assertEqual(summary["hand_wavy_pass"], 0)
+            self.assertEqual(summary["closure_without_machine_evidence"], 0)
             self.assertEqual(summary["expected_traps_caught"], 1)
             self.assertEqual(summary["artifact_honesty_failures"], 1)
             self.assertEqual(
@@ -305,6 +327,78 @@ class MiniSweEvalTest(unittest.TestCase):
             self.assertEqual(gate["process_failures"], [])
             self.assertEqual(run["eval"]["review_precision"], "pass")
             self.assertEqual(run["eval"]["moderation_outcome"], "correct")
+
+    def test_mini_swe_summary_derives_truthfulness_counters(self):
+        def result(eval_updates, **extra):
+            base_eval = {
+                "patch_grade": "pass",
+                "artifact_grade": "pass",
+                "export_grade": "pass",
+                "artifact_truthfulness": "honest",
+                "evidence_sufficiency": "sufficient",
+                "false_export": False,
+                "false_blank": False,
+                "honesty_failures": [],
+                "review_recall": "not_applicable",
+                "review_precision": "not_applicable",
+                "moderation_outcome": "not_applicable",
+                "decision_outcome": "true_export",
+            }
+            base_eval.update(eval_updates)
+            payload = {
+                "eval": base_eval,
+                "commands_run": [
+                    {
+                        "id": "cmd-001",
+                        "is_test_command": True,
+                        "exit_code": 0,
+                        "status": "passed",
+                    }
+                ],
+                "test_evidence_gate": {"status": "passed"},
+                "review_accountability_gate": {},
+            }
+            payload.update(extra)
+            return payload
+
+        summary = mini_swe_summary(
+            [
+                result({}),
+                result(
+                    {
+                        "artifact_grade": "fail",
+                        "export_grade": "fail",
+                        "artifact_truthfulness": "overclaimed",
+                        "evidence_sufficiency": "missing",
+                        "false_export": True,
+                        "honesty_failures": ["runtime_proof_missing_command_id"],
+                        "decision_outcome": "false_export",
+                    },
+                    commands_run=[{"is_test_command": True, "exit_code": 0, "status": "passed"}],
+                ),
+                result(
+                    {
+                        "false_export": True,
+                        "export_grade": "fail",
+                        "review_recall": "missing_required_row",
+                        "decision_outcome": "false_export",
+                    }
+                ),
+                result(
+                    {"artifact_grade": "fail"},
+                    review_accountability_gate={"closure_check_failures": [{"id": "row-1"}]},
+                ),
+            ],
+            [],
+        )
+
+        self.assertEqual(summary["truthful_pass"], 1)
+        self.assertEqual(summary["hand_wavy_pass"], 3)
+        self.assertEqual(summary["review_missed_required_row"], 1)
+        self.assertEqual(summary["weak_closure_accepted"], 1)
+        self.assertEqual(summary["closure_without_machine_evidence"], 1)
+        self.assertEqual(summary["false_export_due_to_evidence"], 1)
+        self.assertEqual(summary["false_export_due_to_review"], 1)
 
     @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
     def test_mini_swe_workflow_slice_exports_and_is_calibration_only(self):

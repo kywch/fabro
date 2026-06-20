@@ -50,6 +50,12 @@ still mostly positive-path and one overblocking case. V4 needs adversarial
 cases where a confident export is wrong unless review and gates catch the
 quality or evidence failure.
 
+Round 13's canary proved the restored Codex/ChatGPT bridge can reach a
+model-backed path again, but a single canary is not enough model-backed evidence
+after the no-model and process-block rounds. V4 therefore needs five
+model-backed compensation rounds after that path is restored before promotion
+decisions should rely on the observed pass/fail shape.
+
 ## Mini-SWE Sufficiency Assumption
 
 The V3 dev suite is valuable because it exercises model workflow execution,
@@ -231,12 +237,17 @@ and add a fixture only if the harness cannot classify the result. Use
 `yes_with_evidence` only when a prior round already proved the missing harness
 coverage.
 
-## 30-Round Budget
+## 33-Round Budget
 
-Six rounds is too compressed for V4. Use a 30-round budget and treat the old
+Six rounds is too compressed for V4. Use a 33-round budget and treat the old
 six-round shape as phases. The budget is primarily for issue-to-PR workflow
 refinement using mini-SWE as the lightweight harness. Mini-SWE enrichment is a
 conditional branch, not a planned budget sink.
+
+The added budget compensates for rounds that were no-model or process-blocked
+before the Codex/ChatGPT path was restored. Reallocate the optional SWE-bench
+focused-control slots and add three net new rounds so V4 gets five
+model-backed compensation rounds before the promotion/defer decision.
 
 | Rounds | Phase | Main process hypothesis | Main work-quality hypothesis |
 | --- | --- | --- | --- |
@@ -244,8 +255,8 @@ conditional branch, not a planned budget sink.
 | 04-08 | Deterministic guardrails | Existing tests, replay, and synthetic fixtures catch weak closure, missing evidence, audit contradiction, and open-row regressions deterministically. | Known bad review decisions fail closed with precise failure families. |
 | 09-22 | Workflow refinement under mini-SWE | One prompt/gate/artifact variable per round can improve review and export truthfulness without broad artifact growth. | Review recalls material risks and moderator closure answers row-specific checks under model mini-SWE. |
 | 23-27 | Repeated model mini-SWE panels | The refined workflow stays stable across repeated model mini-SWE dev/truthfulness panels. | Exports are truthful; blanks preserve useful continuation guidance; false exports stay zero. |
-| 28-29 | Optional SWE-bench focused controls | Historical V2/V3 failure shapes transfer after mini-SWE is clean. | Larger-repo controls blank known bad patches and still export named positive controls. |
-| 30 | Promotion/defer and mini-SWE sufficiency review | Evidence is sufficient to decide whether to run a mixed panel, keep using mini-SWE as-is, or enrich mini-SWE with named gaps. | Passing gates now mean candidate quality is materially better, not just better narrated. |
+| 28-32 | Model-backed compensation rounds | The restored Codex/ChatGPT path produces enough model-backed mini-SWE evidence to offset no-model and process-block rounds. | Round 13's canary is confirmed by repeated model-backed behavior, not treated as sufficient proof by itself. |
+| 33 | Promotion/defer and mini-SWE sufficiency review | Evidence is sufficient to decide whether to run a mixed panel, keep using mini-SWE as-is, run focused SWE-bench controls, or enrich mini-SWE with named gaps. | Passing gates now mean candidate quality is materially better, not just better narrated. |
 
 ## Phase Details
 
@@ -375,36 +386,51 @@ python3 -m fabro_kits.issue_to_pr.light_eval mini-swe \
   --attempt model
 ```
 
-### Rounds 28-29: Optional SWE-Bench Focused Controls
+### Rounds 28-32: Model-Backed Compensation Rounds
 
-Process hypothesis: mini-SWE truthfulness improvements transfer to historical
-SWE-bench failure shapes.
+Process hypothesis: after the Codex/ChatGPT path is restored, five additional
+model-backed mini-SWE rounds can compensate for earlier no-model or
+process-blocked rounds.
 
-Work-quality hypothesis: known larger-repo bad exports blank or route to fixup,
-while named positive controls still export with specific evidence.
+Work-quality hypothesis: Round 13's canary proves the bridge works, but
+repeated model-backed mini-SWE behavior is required before V4 can trust the
+truthfulness trend.
 
-Use one or two historical SWE-bench failures per round:
+Work:
+
+- run model-backed mini-SWE dev and truthfulness panels through the restored
+  Codex/ChatGPT path;
+- keep the changed workflow variable explicit when a compensation round also
+  contains a prompt, gate, artifact, or review adjustment;
+- prefer measurement and workflow refinement over harness growth;
+- add or modify mini-SWE cases only when hard evidence shows the existing
+  harness cannot answer the round's process or work-quality hypothesis;
+- do not spend these rounds on broad SWE-bench exploration unless mini-SWE is
+  already clean and a focused control is needed to test a named transfer risk.
+
+Success:
+
+- five compensation rounds produce model-backed evidence, not only canaries or
+  process checks;
+- dev suite has no regression from V3 Round 25;
+- available truthfulness suite has `false_exports=0`;
+- every exported case has `truthful_pass=true`;
+- false blanks preserve concrete continuation guidance;
+- any focused SWE-bench control is narrowly scoped, evidence-backed, and does
+  not displace the required model-backed mini-SWE compensation evidence.
+
+Historical SWE-bench controls remain available as promotion inputs, not planned
+budget sinks. Use one only for a named transfer concern such as:
 
 - Round 18/20 scikit closure weakness;
 - Django wrong-neighbor settings/docs corruption;
 - claimed-test-vs-changed-test drift.
 
-Success:
-
-- known bad shapes blank or route to fixup;
-- named good focused control still exports when evidence is specific;
-- no new task-specific detector is added unless paired with a generic mini-SWE
-  case.
-
-Skip this phase if the mini-SWE evidence is not strong enough to justify
-SWE-bench focused controls. In that case, use these rounds for continued
-workflow refinement or for a narrowly scoped mini-SWE addition only when the
-missing harness signal has already been demonstrated.
-
-### Round 30: Promotion, Defer, And Mini-SWE Sufficiency Review
+### Round 33: Promotion, Defer, And Mini-SWE Sufficiency Review
 
 Process hypothesis: the accumulated evidence is enough to choose promotion,
-another focused-control phase, mini-SWE enrichment, or defer.
+focused SWE-bench controls, mini-SWE enrichment, another refinement cycle, or
+defer.
 
 Work-quality hypothesis: passing gates now correlate with materially better
 candidate quality, not merely cleaner artifacts.

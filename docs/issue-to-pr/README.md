@@ -24,6 +24,8 @@ underscores for importable package names.
   glossary is the highest-priority human-facing contract.
 - Run one Docker/Codex SWE-bench task:
   [runbooks/docker-codex-swebench.md](runbooks/docker-codex-swebench.md)
+- Run mini-SWE through the Codex/ChatGPT OAuth path:
+  [runbooks/docker-codex-swebench.md#mini-swe-codexchatgpt-auth-bridge](runbooks/docker-codex-swebench.md#mini-swe-codexchatgpt-auth-bridge)
 - Avoid accidental pushes and inspect dumps:
   [runbooks/no-push-and-artifacts.md](runbooks/no-push-and-artifacts.md)
 - Understand the current staged workflow lanes:

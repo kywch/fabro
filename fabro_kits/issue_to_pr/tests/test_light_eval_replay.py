@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from fabro_kits.issue_to_pr.light_eval import (
+    list_fixtures,
     run_replay,
     run_synthetic,
 )
@@ -194,6 +195,32 @@ class LightEvalReplayTest(unittest.TestCase):
                     self.assertEqual(run["candidate"]["reuse"], "continuation_candidate")
                     self.assertEqual(prediction["model_patch"], "")
                     self.assertEqual(gate["route_decision"], "fixup")
+
+            for fixture_dir in list_fixtures("all"):
+                expected = json.loads((fixture_dir / "expected.json").read_text())
+                run_dir = output_dir / "runs" / f"{fixture_dir.name}--001"
+                run = json.loads((run_dir / "run.json").read_text())
+                prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
+                gate = json.loads(
+                    (run_dir / "output" / "review_accountability_gate.json").read_text()
+                )
+
+                self.assertEqual(gate["route_decision"], expected["expected_route_decision"])
+                self.assertEqual(run["candidate"]["state"], expected["expected_candidate_state"])
+                self.assertEqual(run["candidate"]["reuse"], expected["expected_candidate_reuse"])
+                if expected.get("expect_root_prediction_nonblank"):
+                    self.assertTrue(prediction["model_patch"], fixture_dir.name)
+                if expected.get("expect_root_prediction_blank"):
+                    self.assertEqual(prediction["model_patch"], "", fixture_dir.name)
+                if "expected_process_failures_exact" in expected:
+                    self.assertEqual(
+                        gate["process_failures"],
+                        expected["expected_process_failures_exact"],
+                        fixture_dir.name,
+                    )
+                else:
+                    for reason in expected.get("expected_failure_reasons", []):
+                        self.assertIn(reason, gate["process_failures"], fixture_dir.name)
 
             round18_gate = json.loads(
                 (

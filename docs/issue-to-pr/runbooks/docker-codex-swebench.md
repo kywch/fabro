@@ -185,6 +185,105 @@ provider/model you are testing is expected to work with an API key.
 The model probe is the auth check. If it fails, fix provider auth before running
 SWE-bench; generation will otherwise fail inside the workflow.
 
+### Mini-SWE Codex/ChatGPT Auth Bridge
+
+The mini-SWE model runner starts throwaway Fabro storage for each attempt. That
+storage does not automatically inherit the OAuth credential from the already
+authenticated Fabro server. To use the same Codex/ChatGPT path that the
+SWE-bench smoke uses, copy the server vault into an ignored scratch auth storage
+root and pass it with `--credential-bridge openai-codex`.
+
+For a Docker-backed local server, first identify the running Fabro container and
+confirm that the server has an `OPENAI_CODEX` OAuth secret:
+
+```bash
+docker ps --format '{{.Names}} {{.Status}}' | grep fabro
+"$FABRO_BIN" secret list --json
+"$FABRO_BIN" model test --provider openai --model gpt-5.4-mini
+```
+
+Do not print or commit secret values. The secret list should show the secret
+name and type only:
+
+```json
+{ "name": "OPENAI_CODEX", "type": "oauth" }
+```
+
+Create an ignored scratch auth storage root, copy only the vault file from the
+server, and restrict local permissions:
+
+```bash
+export MINI_SWE_AUTH_STORAGE=tmp/issue-to-pr-mini-swe-auth
+export FABRO_CONTAINER=fabro-smoke-fabro-1
+
+mkdir -p "$MINI_SWE_AUTH_STORAGE/vaults/default"
+docker cp \
+  "$FABRO_CONTAINER:/storage/vaults/default/secrets.json" \
+  "$MINI_SWE_AUTH_STORAGE/vaults/default/secrets.json"
+chmod 600 "$MINI_SWE_AUTH_STORAGE/vaults/default/secrets.json"
+```
+
+If the container name differs, set `FABRO_CONTAINER` to the name from
+`docker ps`. If the server is not Docker-backed, set `MINI_SWE_AUTH_STORAGE` to
+the storage root whose
+`vaults/default/secrets.json` contains `OPENAI_CODEX` as an OAuth entry. The
+root passed to mini-SWE is the directory that contains `vaults/`, not the
+`secrets.json` file itself. Keep this storage under ignored scratch space such
+as `tmp/`.
+
+Run a one-case canary before the full dev panel:
+
+```bash
+export MINI_SWE_OUTPUT_ROOT=tmp/issue-to-pr-mini-swe
+
+python3 -m fabro_kits.issue_to_pr.light_eval mini-swe \
+  --case good-test-only \
+  --suite dev \
+  --attempt model \
+  --provider openai \
+  --model gpt-5.4-mini \
+  --credential-bridge openai-codex \
+  --auth-storage-dir "$MINI_SWE_AUTH_STORAGE" \
+  --credential-preflight \
+  --output-dir "$MINI_SWE_OUTPUT_ROOT/codex-bridge-canary-good-test-only" \
+  --fabro-bin target/debug/fabro \
+  --format json
+```
+
+Expected canary signal:
+
+- `credential_bridge.status = copied`
+- `credential_preflight.status = passed`
+- `process_blocked = 0`
+- `completed = 1`
+- `false_exports = 0`
+
+Then run the dev panel with the same bridge flags and a round-specific output
+directory:
+
+```bash
+python3 -m fabro_kits.issue_to_pr.light_eval mini-swe \
+  --suite dev \
+  --attempt model \
+  --provider openai \
+  --model gpt-5.4-mini \
+  --credential-bridge openai-codex \
+  --auth-storage-dir "$MINI_SWE_AUTH_STORAGE" \
+  --credential-preflight \
+  --output-dir "$MINI_SWE_OUTPUT_ROOT/output-mini-swe-model-dev" \
+  --fabro-bin target/debug/fabro \
+  --format json
+```
+
+If the run reports `provider_not_configured`, `credential_bridge_failed`, or
+`credential_preflight_failed`, treat it as an auth/process setup failure rather
+than model quality evidence. Re-check the source auth storage root, the copied
+vault metadata, and the model probe:
+
+```bash
+"$FABRO_BIN" model test --provider openai --model gpt-5.4-mini
+```
+
 ### Fresh Local Server Smoke
 
 When testing the current checkout with a throwaway local server, authenticate

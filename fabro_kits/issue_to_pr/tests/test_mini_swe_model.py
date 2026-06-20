@@ -93,6 +93,102 @@ class MiniSweModelTest(unittest.TestCase):
             self.assertIn("working_dir", settings)
             self.assertIn("/workspace", settings)
 
+    def test_mini_swe_model_text_cli_reports_process_blocked_attempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_fabro = root / "fake-fabro"
+            fake_fabro.write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ \"$*\" == *\"server stop\"* ]]; then exit 0; fi\n"
+                "cat >&2 <<'EOF'\n"
+                "Status:    FAILED\n"
+                "Failure:   Precondition failed: No LLM providers configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or pass --dry-run to simulate.\n"
+                "EOF\n"
+                "exit 1\n"
+            )
+            fake_fabro.chmod(0o755)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "fabro_kits.issue_to_pr.light_eval",
+                    "mini-swe",
+                    "--case",
+                    "good-test-only",
+                    "--attempt",
+                    "model",
+                    "--format",
+                    "text",
+                    "--output-dir",
+                    str(root / "out"),
+                    "--fabro-bin",
+                    str(fake_fabro),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("mini-swe: total=1 failed=1", result.stdout)
+            self.assertIn("false_exports=0", result.stdout)
+            self.assertIn("process_blocked=1", result.stdout)
+            failures = json.loads(result.stdout.split("\n", 1)[1])
+            self.assertEqual(failures[0]["kind"], "process_block")
+            self.assertEqual(failures[0]["reason"], "provider_not_configured")
+            self.assertIn("needs a configured LLM provider", failures[0]["message"])
+
+    def test_mini_swe_model_text_cli_reports_credential_preflight_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_fabro = root / "fake-fabro"
+            run_called = root / "run-called"
+            fake_fabro.write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ \"$*\" == *\"server stop\"* ]]; then exit 0; fi\n"
+                "if [[ \"$*\" == *\"model test\"* ]]; then\n"
+                "  printf 'auth failed\\n' >&2\n"
+                "  exit 1\n"
+                "fi\n"
+                f"touch {run_called.as_posix()}\n"
+                "exit 0\n"
+            )
+            fake_fabro.chmod(0o755)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "fabro_kits.issue_to_pr.light_eval",
+                    "mini-swe",
+                    "--case",
+                    "good-test-only",
+                    "--attempt",
+                    "model",
+                    "--credential-preflight",
+                    "--format",
+                    "text",
+                    "--output-dir",
+                    str(root / "out"),
+                    "--fabro-bin",
+                    str(fake_fabro),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertFalse(run_called.exists())
+            self.assertIn("mini-swe: total=1 failed=1", result.stdout)
+            self.assertIn("false_exports=0", result.stdout)
+            self.assertIn("process_blocked=1", result.stdout)
+            failures = json.loads(result.stdout.split("\n", 1)[1])
+            self.assertEqual(failures[0]["kind"], "process_block")
+            self.assertEqual(failures[0]["reason"], "credential_preflight_failed")
+            self.assertIn("credential preflight failed", failures[0]["message"])
+
     def test_mini_swe_model_setup_refuses_non_empty_cwd(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -381,6 +477,12 @@ class MiniSweModelTest(unittest.TestCase):
             self.assertEqual(captured.read_text(), "")
             self.assertEqual(summary["completed"], 0)
             self.assertEqual(summary["process_blocks_by_reason"], {"credential_preflight_failed": 1})
+            self.assertEqual(summary["false_exports"], 0)
+            self.assertEqual(summary["false_blanks"], 0)
+            self.assertEqual(summary["truthful_pass"], 0)
+            self.assertEqual(summary["hand_wavy_pass"], 0)
+            self.assertEqual(summary["false_export_due_to_evidence"], 0)
+            self.assertEqual(summary["false_export_due_to_review"], 0)
             model_run_dir = next((root / "out" / "_mini_swe_model").glob("good-test-only-*"))
             bridge_report = json.loads(
                 (model_run_dir / "credential_bridge.json").read_text()
