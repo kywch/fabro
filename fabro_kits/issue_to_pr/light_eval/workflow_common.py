@@ -37,6 +37,8 @@ def write_workflow_smoke_config(*, storage_dir: Path, config_path: Path) -> None
 
 def workflow_smoke_env(*, config_path: Path, storage_dir: Path) -> dict[str, str]:
     env = dict(os.environ)
+    config_path = config_path.resolve()
+    storage_dir = storage_dir.resolve()
     env.update(
         {
             "FABRO_CONFIG": str(config_path),

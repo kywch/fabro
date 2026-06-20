@@ -65,6 +65,7 @@ def grade_mini_swe_attempt(
     hidden_oracle_passed: bool = True,
     test_gate: dict[str, Any],
     accountability_gate: dict[str, Any],
+    expected_decision_hint: str | None = None,
 ) -> MiniSweGrade:
     """Grade one mini-SWE attempt from repo facts and produced artifacts."""
     expected_changed = set(case.expected_files) | set(case.allowed_test_files)
@@ -86,7 +87,7 @@ def grade_mini_swe_attempt(
         and not audit_failures
     )
     route_decision = accountability_gate.get("route_decision")
-    expected_export = case.expected_decision_hint == "export"
+    expected_export = (expected_decision_hint or case.expected_decision_hint) == "export"
     actual_export = route_decision == "export"
     export_pass = actual_export if expected_export else not actual_export
     review_recall, review_precision, moderation_outcome = _review_outcomes(

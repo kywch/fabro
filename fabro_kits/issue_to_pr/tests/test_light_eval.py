@@ -22,6 +22,7 @@ from fabro_kits.issue_to_pr.light_eval.mini_swe import (
     _bridge_model_credentials,
     _commands_run_from_artifacts,
     _credential_preflight_report,
+    _effective_expected_decision_hint,
     _materialize_model_artifacts,
     _model_setup_script,
     _storage_vault_path,
@@ -93,6 +94,8 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(summary["expected_b2_ineligible"], 1)
             self.assertEqual(summary["process_blocked"], 0)
             self.assertEqual(summary["ineligible_by_reason"], {"artifact_origin_fixture": 1})
+            self.assertIsInstance(summary["total_duration_s"], float)
+            self.assertGreaterEqual(summary["total_duration_s"], 0.0)
 
             run_dir = output_dir / "runs" / "good-source-plus-test--001"
             patch = (run_dir / "output" / "patch.diff").read_text()
@@ -103,6 +106,8 @@ class LightEvalReplayTest(unittest.TestCase):
             task = json.loads((run_dir / "task.json").read_text())
             oracle = json.loads((run_dir / "input" / "oracle.json").read_text())
             verify = json.loads((run_dir / "output" / "verify.json").read_text())
+            self.assertIsInstance(run["duration_s"], float)
+            self.assertGreaterEqual(run["duration_s"], 0.0)
 
             self.assertIn("diff --git a/src/greeting.py b/src/greeting.py", patch)
             self.assertIn("diff --git a/tests/test_greeting.py b/tests/test_greeting.py", patch)
@@ -186,6 +191,8 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(summary["failures"][0]["kind"], "process_block")
             self.assertEqual(summary["failures"][0]["reason"], "provider_not_configured")
             self.assertIn("needs a configured LLM provider", summary["failures"][0]["message"])
+            self.assertIsInstance(summary["total_duration_s"], float)
+            self.assertGreaterEqual(summary["total_duration_s"], 0.0)
             self.assertNotEqual(Path(model_pwd.read_text().strip()).resolve(), Path.cwd().resolve())
             self.assertTrue(model_pwd.read_text().strip().endswith("/command-cwd"))
             model_run_dir = next((root / "out" / "_mini_swe_model").glob("good-test-only-*"))
@@ -539,6 +546,13 @@ class LightEvalReplayTest(unittest.TestCase):
             payloads = {
                 "diff-audit.json": {"changed_files": ["src/greeting.py"]},
                 "validation.json": {"commands_run": [{"id": "cmd-001"}]},
+                "test-evidence-gate.json": {
+                    "status": "passed",
+                    "observed": {
+                        "tests_passed_count": 1,
+                        "verified_commands": [{"command": "python3 -m unittest tests.test_greeting"}],
+                    },
+                },
                 "adversarial-review.json": {"rows": []},
                 "moderator-filter.json": {"dispositions": []},
                 "review-materialization.json": {"status": "passed"},
@@ -556,6 +570,7 @@ class LightEvalReplayTest(unittest.TestCase):
                 {
                     "audit",
                     "validation_contract",
+                    "test_evidence_gate",
                     "adversarial_review",
                     "moderator_filter",
                     "review_materialization",
@@ -565,6 +580,93 @@ class LightEvalReplayTest(unittest.TestCase):
                 json.loads(Path(artifacts["validation_contract"]).read_text())["commands_run"][0]["id"],
                 "cmd-001",
             )
+
+    def test_mini_swe_model_artifact_materializer_falls_back_to_workspace_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dump_dir = root / "dump"
+            dump_dir.mkdir()
+            workspace_dir = root / "workspace"
+            issue_dir = workspace_dir / ".fabro" / "issue-to-pr"
+            issue_dir.mkdir(parents=True)
+            artifacts_dir = root / "artifacts"
+            payloads = {
+                "diff-audit.json": {"changed_files": ["tests/test_greeting.py"]},
+                "validation.json": {
+                    "commands_run": [
+                        {
+                            "id": "cmd-workspace-001",
+                            "command": "python3 -m unittest tests.test_greeting",
+                            "status": "passed",
+                            "exit_code": 0,
+                            "is_test_command": True,
+                        }
+                    ]
+                },
+                "test-evidence-gate.json": {
+                    "status": "passed",
+                    "observed": {
+                        "tests_passed_count": 1,
+                        "verified_commands": [{"command": "python3 -m unittest tests.test_greeting"}],
+                    },
+                },
+                "adversarial-review.json": {"rows": []},
+                "moderator-filter.json": {"dispositions": []},
+                "review-materialization.json": {"status": "passed"},
+            }
+            for name, payload in payloads.items():
+                (issue_dir / name).write_text(json.dumps(payload))
+
+            artifacts = _materialize_model_artifacts(
+                dump_path=dump_dir,
+                artifacts_dir=artifacts_dir,
+                workspace_dir=workspace_dir,
+            )
+
+            self.assertEqual(
+                set(artifacts),
+                {
+                    "audit",
+                    "validation_contract",
+                    "test_evidence_gate",
+                    "adversarial_review",
+                    "moderator_filter",
+                    "review_materialization",
+                },
+            )
+            validation = json.loads(Path(artifacts["validation_contract"]).read_text())
+            self.assertEqual(validation["commands_run"][0]["id"], "cmd-workspace-001")
+
+    def test_mini_swe_model_artifact_materializer_falls_back_to_test_gate_stage_record(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stage_dir = root / "dump" / "nodes" / "04-test_evidence_gate@1"
+            stage_dir.mkdir(parents=True)
+            artifacts_dir = root / "artifacts"
+            stage_dir.joinpath("stdout.log").write_text(
+                "checking evidence\n"
+                + json.dumps(
+                    {
+                        "status": "passed",
+                        "observed": {
+                            "tests_passed_count": 1,
+                            "verified_commands": [
+                                {"command": "python3 -m unittest tests.test_greeting"}
+                            ],
+                        },
+                    }
+                )
+                + "\n"
+            )
+
+            artifacts = _materialize_model_artifacts(
+                dump_path=root / "dump",
+                artifacts_dir=artifacts_dir,
+            )
+
+            test_gate = json.loads(Path(artifacts["test_evidence_gate"]).read_text())
+            self.assertEqual(test_gate["status"], "passed")
+            self.assertEqual(test_gate["observed"]["tests_passed_count"], 1)
 
     def test_mini_swe_non_scripted_command_evidence_is_not_synthesized(self):
         case = MiniSweCase(
@@ -645,6 +747,84 @@ class LightEvalReplayTest(unittest.TestCase):
 
             self.assertEqual(commands, produced)
 
+    def test_mini_swe_runtime_proof_expectation_requires_model_verified_command(self):
+        case = MiniSweCase(
+            case_id="runtime-proof-honesty",
+            family="evidence",
+            suite="dev",
+            issue_text="Fix greeting with runtime proof",
+            expected_decision_hint="fixup",
+        )
+        model_attempt = AttemptResult(
+            attempt_origin="model",
+            artifact_origin="model_workflow",
+            substrate="local",
+            source={},
+            b2_slice_eligible=False,
+            b2_model_eligible=True,
+            b2_eligible=True,
+            eligibility_failures=(),
+        )
+        commands_run = [
+            {
+                "id": "cmd-1",
+                "command": "python3 -m unittest tests.test_greeting",
+                "status": "passed",
+                "exit_code": 0,
+                "is_test_command": True,
+            }
+        ]
+        verified_gate = {
+            "status": "passed",
+            "observed": {
+                "tests_passed_count": 1,
+                "verified_commands": [
+                    {"command": "python3 -m unittest tests.test_greeting", "exit_code": 0}
+                ],
+            },
+        }
+        weak_gate = {
+            "status": "passed",
+            "observed": {"tests_passed_count": 1, "verified_commands": []},
+        }
+
+        self.assertEqual(
+            _effective_expected_decision_hint(
+                case,
+                attempt_result=model_attempt,
+                commands_run=commands_run,
+                test_gate=verified_gate,
+            ),
+            "export",
+        )
+        self.assertEqual(
+            _effective_expected_decision_hint(
+                case,
+                attempt_result=model_attempt,
+                commands_run=commands_run,
+                test_gate=weak_gate,
+            ),
+            "fixup",
+        )
+        self.assertEqual(
+            _effective_expected_decision_hint(
+                case,
+                attempt_result=AttemptResult(
+                    attempt_origin="scripted",
+                    artifact_origin="fixture",
+                    substrate="local",
+                    source={},
+                    b2_slice_eligible=False,
+                    b2_model_eligible=False,
+                    b2_eligible=False,
+                    eligibility_failures=(),
+                ),
+                commands_run=commands_run,
+                test_gate=verified_gate,
+            ),
+            "fixup",
+        )
+
     def test_mini_swe_suite_filter_and_seed_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
@@ -659,6 +839,8 @@ class LightEvalReplayTest(unittest.TestCase):
             self.assertEqual(summary["failures"], [])
             self.assertEqual(summary["total"], 5)
             self.assertEqual(summary["seed"], 123)
+            self.assertIsInstance(summary["total_duration_s"], float)
+            self.assertGreaterEqual(summary["total_duration_s"], 0.0)
             self.assertEqual(summary["expected_traps_caught"], 1)
             self.assertEqual(summary["artifact_honesty_failures"], 1)
             self.assertEqual(summary["expected_b2_ineligible"], 5)

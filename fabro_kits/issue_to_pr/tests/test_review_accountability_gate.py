@@ -660,6 +660,46 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
         self.assertEqual(actual, expected)
         self.assertEqual(actual["route_decision"], "export")
 
+    def test_issue_artifact_required_file_does_not_require_patch_change(self):
+        adversarial = _adversarial(
+            rows=[
+                {
+                    "id": "A1",
+                    "category": "metadata",
+                    "severity": "minor",
+                    "required_files": [".fabro/issue-to-pr/validation.json"],
+                }
+            ]
+        )
+        moderator = _moderator(
+            dispositions=[
+                {
+                    "id": "A1",
+                    "state": "closed_by_evidence",
+                    "category": "metadata",
+                    "severity": "minor",
+                    "evidence": [
+                        ".fabro/issue-to-pr/validation.json cites command id cmd-1",
+                        "python3 -m unittest tests.test_greeting passed",
+                    ],
+                    "closure_check": "Validation artifact cites the observed command id.",
+                }
+            ]
+        )
+        test_gate = _test_gate(changed_files=["src/greeting.py"], tests_passed_count=1)
+        materialization = _materialization(["A1"], ["A1"])
+        report = evaluate_review_accountability(
+            adversarial=deepcopy(adversarial),
+            moderator=deepcopy(moderator),
+            test_gate=deepcopy(test_gate),
+            materialization=deepcopy(materialization),
+        )
+        embedded = _run_embedded(adversarial, moderator, test_gate, materialization)
+
+        self.assertEqual(report["route_decision"], "export")
+        self.assertEqual(report["closure_check_failures"], [])
+        self.assertEqual(embedded, report)
+
 
 def _run_embedded(adversarial, moderator, test_gate, materialization):
     with tempfile.TemporaryDirectory() as tmp:

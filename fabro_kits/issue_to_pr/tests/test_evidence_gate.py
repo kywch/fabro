@@ -33,6 +33,25 @@ class EvidenceGateTest(unittest.TestCase):
             verify_commands=True,
         )
         self.assertEqual(record["observed"]["tests_passed_count"], 1)
+    def test_completed_zero_exit_counts_as_reported_pass(self):
+        record = evaluate_evidence_gate(
+            audit={"patch_nonempty": True, "changed_files": [], "test_files_changed": []},
+            contract={
+                "commands_run": [
+                    {
+                        "command": "python3 -m unittest tests.test_example",
+                        "status": "completed",
+                        "exit_code": 0,
+                    },
+                    {
+                        "command": "python3 -m unittest tests.test_other",
+                        "status": "completed",
+                        "exit_code": 1,
+                    },
+                ]
+            },
+        )
+        self.assertEqual(record["observed"]["commands_reported_passed_count"], 1)
     def test_claimed_tests_without_changed_test_file_hard_fails(self):
         record = evaluate_evidence_gate(
             audit={"patch_nonempty": True, "changed_files": ["pkg/code.py"], "test_files_changed": []},

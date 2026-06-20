@@ -215,7 +215,7 @@ def evaluate_review_accountability(
             for path in (
                 clean_path(path) for path in as_list(row_by_id.get(did, {}).get("required_files"))
             )
-            if path not in changed_files
+            if path not in changed_files and not is_issue_artifact_path(path)
         ]
         if state in {"closed_by_evidence", "downgraded", "rejected"} and missing_required:
             disposition["missing_required_files"] = missing_required
@@ -389,6 +389,10 @@ def clean_path(value: Any) -> str:
     return text[len("/workspace/") :] if text.startswith("/workspace/") else text
 
 
+def is_issue_artifact_path(path: str) -> bool:
+    return path.startswith(".fabro/issue-to-pr/")
+
+
 def has_evidence(row: Any) -> bool:
     if not isinstance(row, dict):
         return False
@@ -485,6 +489,8 @@ def concrete_evidence_present(
 ) -> bool:
     if any(path and path in text for path in changed_files):
         return True
+    if ".fabro/issue-to-pr/" in text:
+        return True
     if mentions_runtime_test(text):
         return True
     return bool(patch_diff and any(token.startswith(("+", "-")) for token in text.split()))
@@ -497,6 +503,8 @@ def mentions_runtime_test(text: str) -> bool:
         for marker in (
             "pytest",
             "python -m",
+            "python3 -m",
+            "unittest",
             "tests_passed_count",
             "machine-observed",
             "runtime test",
@@ -667,6 +675,7 @@ def _embedded_gate_functions_source() -> str:
         as_list,
         add_unique,
         clean_path,
+        is_issue_artifact_path,
         has_evidence,
         tests_executed_successfully,
         score_closure,

@@ -212,7 +212,19 @@ def commands_missing_status(commands_run):
     return missing
 
 def commands_status_count(commands_run, statuses):
-    return sum(1 for command in commands_run if isinstance(command, dict) and str(command.get("status", "")).strip().lower() in statuses)
+    return sum(
+        1
+        for command in commands_run
+        if isinstance(command, dict) and command_reports_passed(command, statuses)
+    )
+
+def command_reports_passed(command, statuses):
+    status = str(command.get("status", "")).strip().lower()
+    if status in statuses:
+        return True
+    if status == "completed" and command.get("exit_code") == 0:
+        return True
+    return False
 
 def is_test_command(command):
     return any(token in command for token in ("tests/runtests.py", "pytest", "unittest", "cargo test", "bun test"))
@@ -224,7 +236,7 @@ def verify_reported_passes(commands_run):
         if len(verified) >= 3 or not isinstance(item, dict):
             continue
         command = str(item.get("command") or item.get("cmd") or "").strip()
-        if str(item.get("status", "")).strip().lower() not in {"passed", "pass", "success", "succeeded", "ok"} or not command or not any(token in command for token in safe_tokens):
+        if not command_reports_passed(item, {"passed", "pass", "success", "succeeded", "ok"}) or not command or not any(token in command for token in safe_tokens):
             continue
         try:
             proc = subprocess.run(command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, timeout=180)
@@ -302,6 +314,7 @@ def _embedded_gate_functions_source():
         duplicate_test_definitions,
         commands_missing_status,
         commands_status_count,
+        command_reports_passed,
         is_test_command,
         verify_reported_passes,
         fixup_guidance,
