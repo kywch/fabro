@@ -660,6 +660,40 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
         self.assertEqual(actual, expected)
         self.assertEqual(actual["route_decision"], "export")
 
+    def test_minor_rejected_metadata_row_with_no_closure_requirement_exports(self):
+        adversarial = _adversarial(
+            rows=[
+                {
+                    "id": "A1",
+                    "category": "metadata",
+                    "severity": "minor",
+                    "closure_requires": "none",
+                    "required_files": [],
+                }
+            ]
+        )
+        moderator = _moderator(
+            dispositions=[
+                {
+                    "id": "A1",
+                    "state": "rejected",
+                    "category": "metadata",
+                    "severity": "minor",
+                    "closure_check": "No changelog artifact is required by the issue contract.",
+                }
+            ]
+        )
+        report = evaluate_review_accountability(
+            adversarial=adversarial,
+            moderator=moderator,
+            test_gate=_test_gate(changed_files=["tests/test_greeting.py"], tests_passed_count=1),
+            materialization=_materialization(["A1"], ["A1"]),
+        )
+
+        self.assertEqual(report["route_decision"], "export")
+        self.assertEqual(report["closure_check_failures"], [])
+        self.assertEqual(report["rejected_rows"][0]["closure_score"], 1)
+
     def test_issue_artifact_required_file_does_not_require_patch_change(self):
         adversarial = _adversarial(
             rows=[

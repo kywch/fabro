@@ -183,6 +183,7 @@ def evaluate_review_accountability(
         if state not in STATES:
             invalid_dispositions.append(disposition)
             continue
+        disposition["row_closure_requires"] = row_by_id.get(did, {}).get("closure_requires")
         forbidden_changed = [
             path
             for path in (
@@ -471,7 +472,21 @@ def closure_score_too_low(disposition: dict[str, Any], severe: bool) -> bool:
     score = disposition.get("closure_score")
     if type(score) is not int:
         return True
+    if safe_minor_rejection_without_artifact_evidence(disposition, severe):
+        return False
     return score < (3 if severe else 2)
+
+
+def safe_minor_rejection_without_artifact_evidence(
+    disposition: dict[str, Any],
+    severe: bool,
+) -> bool:
+    return (
+        not severe
+        and disposition.get("state") == "rejected"
+        and disposition.get("closure_score") == 1
+        and str(disposition.get("row_closure_requires", "")).lower() == "none"
+    )
 
 
 def text_values(value: Any) -> list[str]:
@@ -680,6 +695,7 @@ def _embedded_gate_functions_source() -> str:
         tests_executed_successfully,
         score_closure,
         closure_score_too_low,
+        safe_minor_rejection_without_artifact_evidence,
         text_values,
         concrete_evidence_present,
         mentions_runtime_test,
