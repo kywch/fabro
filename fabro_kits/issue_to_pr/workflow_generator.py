@@ -285,7 +285,7 @@ this routing JSON:
 
 def _adversarial_review_prompt() -> str:
     return """Adversarially review the patch, read-only. Do not ask questions,
-modify files, or run mutating commands. Be critical; wrong requested release/changelog targets are major. Blocker/major rows must be bounded to the issue/current diff, not universal proof over all possible integrations.
+modify files, or run mutating commands. Be critical; wrong requested release/changelog targets are major only when issue or repo evidence requires that exact file. Validation claims contradicted by diff audit or git diff are not enough. Blocker/major rows must be bounded to the issue/current diff, not universal proof over all possible integrations.
 Do not open a row merely because a focused issue-scoped test is narrower than all conceivable project coverage; name a concrete missing behavior, required file, or contract clause.
 Use the issue, /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH},
 {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, git diff, and touched files.

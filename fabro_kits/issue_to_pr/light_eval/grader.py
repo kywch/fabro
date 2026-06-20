@@ -176,13 +176,30 @@ def _review_outcomes(
         return "not_applicable", "not_applicable", "not_applicable"
 
     row_count = accountability_gate.get("adversarial_row_count")
+    closed_ids = _row_ids(accountability_gate.get("closed_rows"))
     downgraded_ids = _row_ids(accountability_gate.get("downgraded_rows"))
-    process_failures = accountability_gate.get("process_failures")
-    process_failure_count = len(process_failures) if isinstance(process_failures, list) else 0
+    rejected_ids = _row_ids(accountability_gate.get("rejected_rows"))
+    accounted_ids = closed_ids | downgraded_ids | rejected_ids
+    blocking_fields = (
+        "process_failures",
+        "open_rows",
+        "closure_check_failures",
+        "unaccounted_adversarial_rows",
+        "unaccounted_major_rows",
+        "duplicate_adversarial_row_ids",
+        "duplicate_disposition_ids",
+        "orphan_dispositions",
+    )
+    has_blocking_review_state = any(bool(accountability_gate.get(key)) for key in blocking_fields)
 
-    if row_count == 1 and "minor-001" in downgraded_ids and process_failure_count == 0:
+    if (
+        type(row_count) is int
+        and row_count > 0
+        and len(accounted_ids) == row_count
+        and not has_blocking_review_state
+    ):
         return "pass", "pass", "correct"
-    if "minor-001" not in downgraded_ids:
+    if not accounted_ids:
         return "pass", "invented_blocker", "overblocked"
     return "pass", "pass", "row_accounting_fail"
 

@@ -140,6 +140,7 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertIn("if it is missing, empty, invalid JSON", workflow)
         self.assertIn("Do not infer rows from chat history", workflow)
         self.assertIn("required_files", workflow)
+        self.assertIn("Validation claims contradicted by diff audit or git diff are not enough", workflow)
         self.assertIn("unaccounted_adversarial_rows", workflow)
         self.assertIn("fixup_required_rows", workflow)
         self.assertIn("Open rows of any severity block export", workflow)
