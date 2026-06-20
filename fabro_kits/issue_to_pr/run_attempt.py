@@ -1,14 +1,11 @@
 """Shared Fabro run extraction helpers for issue-to-PR adapters."""
-
 from __future__ import annotations
-
 import json
 import re
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
-
 
 def parse_json_object(stdout: str) -> dict[str, Any] | None:
     """Parse the first JSON object emitted by a Fabro JSON command."""
@@ -21,12 +18,10 @@ def parse_json_object(stdout: str) -> dict[str, Any] | None:
         return _last_json_object(stdout)
     return value if isinstance(value, dict) else None
 
-
 def parse_run_id_json(stdout: str) -> str | None:
     value = parse_json_object(stdout)
     run_id = value.get("run_id") if isinstance(value, dict) else None
     return run_id if isinstance(run_id, str) and run_id else None
-
 
 def dump_run(
     fabro_bin: str,
@@ -52,7 +47,6 @@ def dump_run(
         return Path(output_dir)
     return dump_dir if proc.returncode == 0 else None
 
-
 def fetch_run_diff(
     fabro_bin: str,
     run_id: str,
@@ -72,7 +66,6 @@ def fetch_run_diff(
     value = parse_json_object(proc.stdout)
     diff = value.get("diff") if isinstance(value, dict) else None
     return diff if isinstance(diff, str) and diff.strip() else None
-
 
 def write_events_jsonl(
     fabro_bin: str,
@@ -96,13 +89,11 @@ def write_events_jsonl(
     events_path.write_text(proc.stdout)
     return events_path
 
-
 def find_patch(run_dir: Path) -> str | None:
     return find_stage_output(run_dir, "extract_patch") or find_stage_output(
         run_dir,
         "snapshot_patch",
     )
-
 
 def find_verify_record(run_dir: Path) -> dict[str, Any] | None:
     output = find_stage_output(run_dir, "verify")
@@ -120,11 +111,9 @@ def find_verify_record(run_dir: Path) -> dict[str, Any] | None:
             return value
     return None
 
-
 def find_audit_record(run_dir: Path) -> dict[str, Any] | None:
     output = find_stage_output(run_dir, "audit")
     return _last_json_object(output) if output else None
-
 
 def find_review_record(run_dir: Path) -> dict[str, Any] | None:
     status = find_stage_status(run_dir, "review")
@@ -138,18 +127,15 @@ def find_review_record(run_dir: Path) -> dict[str, Any] | None:
         return {key: value for key, value in merged.items() if value is not None}
     return {key: value for key, value in status.items() if value is not None}
 
-
 def find_test_evidence_gate_record(run_dir: Path) -> dict[str, Any] | None:
     output = find_stage_output(run_dir, "test_evidence_gate")
     value = _last_json_object(output) if output else None
     return value if isinstance(value, dict) and "status" in value else None
 
-
 def find_json_stage_record(run_dir: Path, node_id: str) -> dict[str, Any] | None:
     output = find_stage_output(run_dir, node_id)
     value = _last_json_object(output) if output else None
     return value if isinstance(value, dict) else None
-
 
 def find_stage_output(run_dir: Path, node_id: str) -> str | None:
     for stage_dir in _stage_dirs(run_dir):
@@ -160,7 +146,6 @@ def find_stage_output(run_dir: Path, node_id: str) -> str | None:
             if path.exists():
                 return path.read_text()
     return None
-
 
 def find_stage_status(run_dir: Path, node_id: str) -> dict[str, Any] | None:
     for stage_dir in _stage_dirs(run_dir):
@@ -177,7 +162,6 @@ def find_stage_status(run_dir: Path, node_id: str) -> dict[str, Any] | None:
             return value
     return None
 
-
 def _stage_dirs(run_dir: Path) -> list[Path]:
     candidates: list[Path] = []
     for root_name in ("nodes", "stages"):
@@ -185,7 +169,6 @@ def _stage_dirs(run_dir: Path) -> list[Path]:
         if root.exists():
             candidates.extend(path for path in root.iterdir() if path.is_dir())
     return sorted(candidates, key=_stage_sort_key, reverse=True)
-
 
 def _last_json_object(text: str) -> dict[str, Any] | None:
     for line in reversed(text.splitlines()):
@@ -209,7 +192,6 @@ def _last_json_object(text: str) -> dict[str, Any] | None:
             return value
     return None
 
-
 def _stage_sort_key(path: Path) -> tuple[int, int, str]:
     match = re.search(r"(\d+)-.*@(\d+)$", path.name)
     if match:
@@ -217,13 +199,11 @@ def _stage_sort_key(path: Path) -> tuple[int, int, str]:
     match = re.search(r"(\d+)", path.name)
     return (0, int(match.group(1)), path.name) if match else (0, 0, path.name)
 
-
 def _stage_dir_matches(path: Path, node_id: str) -> bool:
     name = path.name
     if name == node_id or name.startswith(f"{node_id}@"):
         return True
     return bool(re.match(rf"^\d+-{re.escape(node_id)}@", name))
-
 
 TRAJECTORY_EVENTS = {
     "agent.input",
@@ -239,7 +219,6 @@ TRAJECTORY_EVENTS = {
     "agent.compaction.completed",
     "agent.processing_end",
 }
-
 
 def trajectory_entry(event: dict[str, Any]) -> dict[str, Any] | None:
     event_name = event.get("event")
@@ -285,7 +264,6 @@ def trajectory_entry(event: dict[str, Any]) -> dict[str, Any] | None:
     else:
         entry["properties"] = props
     return {key: value for key, value in entry.items() if value is not None}
-
 
 def write_trajectory_from_events(
     events_path_or_dir: Path,

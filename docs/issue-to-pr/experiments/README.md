@@ -21,6 +21,10 @@ Current cycles:
 - [2026-06 Auto-Research V2](2026-06-auto-research-v2.md)
 - [2026-06 Auto-Research V3](2026-06-auto-research-v3.md)
 
+Plans:
+
+- [2026-06 Auto-Research V4 Plan](2026-06-auto-research-v4-plan.md)
+
 Templates:
 
 - [Experiment Template](template.md)

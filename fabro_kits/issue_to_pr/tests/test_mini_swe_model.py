@@ -7,11 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fabro_kits.issue_to_pr.light_eval import (
-    MiniSweCase,
-    grade_mini_swe_attempt,
-    run_mini_swe,
-)
+from fabro_kits.issue_to_pr.light_eval import run_mini_swe
+from fabro_kits.issue_to_pr.light_eval.grader import grade_mini_swe_attempt
 from fabro_kits.issue_to_pr.light_eval.mini_swe.artifacts import (
     materialize_model_artifacts,
 )
@@ -25,7 +22,7 @@ from fabro_kits.issue_to_pr.light_eval.mini_swe.evidence import (
     effective_expected_decision_hint,
 )
 from fabro_kits.issue_to_pr.light_eval.mini_swe.repo import model_setup_script
-from fabro_kits.issue_to_pr.light_eval.task_schema import AttemptResult
+from fabro_kits.issue_to_pr.light_eval.task_schema import AttemptResult, MiniSweCase
 
 
 class MiniSweModelTest(unittest.TestCase):

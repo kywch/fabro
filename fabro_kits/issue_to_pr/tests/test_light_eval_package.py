@@ -38,7 +38,7 @@ class LightEvalPackageCompatibilityTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("python -m fabro_kits.issue_to_pr.light_eval", result.stdout)
 
-    def test_package_facade_exports_entrypoints_and_compatibility_helpers(self):
+    def test_package_facade_exports_small_public_surface(self):
         script = (
             "import fabro_kits.issue_to_pr.light_eval as light_eval; "
             "from fabro_kits.issue_to_pr.evidence_gate import evaluate_evidence_gate; "
@@ -46,11 +46,8 @@ class LightEvalPackageCompatibilityTest(unittest.TestCase):
             "evaluate_review_accountability, load_json_object; "
             "from fabro_kits.issue_to_pr.workflow_generator import dot_escape; "
             "from fabro_kits.issue_to_pr.light_eval import "
-            "dot_escape as facade_dot_escape, evaluate_evidence_gate as facade_evidence_gate, "
-            "evaluate_review_accountability as facade_review_accountability, "
             "list_fixtures, list_mini_swe_cases, list_synthetic_tasks, "
-            "load_json_object as facade_load_json_object, "
-            "main, run_mini_swe, run_replay, run_replay_fixture, run_synthetic; "
+            "main, run_mini_swe, run_replay, run_synthetic; "
             "assert callable(main); "
             "assert callable(run_replay); "
             "assert callable(run_mini_swe); "
@@ -58,13 +55,16 @@ class LightEvalPackageCompatibilityTest(unittest.TestCase):
             "assert callable(list_fixtures); "
             "assert callable(list_mini_swe_cases); "
             "assert callable(list_synthetic_tasks); "
-            "assert callable(run_replay_fixture); "
-            "assert facade_evidence_gate is evaluate_evidence_gate; "
-            "assert facade_review_accountability is evaluate_review_accountability; "
-            "assert facade_load_json_object is load_json_object; "
-            "assert facade_dot_escape is dot_escape; "
-            "assert {'evaluate_evidence_gate', 'evaluate_review_accountability', "
-            "'load_json_object', 'dot_escape'} <= set(light_eval.__all__)"
+            "assert callable(evaluate_evidence_gate); "
+            "assert callable(evaluate_review_accountability); "
+            "assert callable(load_json_object); "
+            "assert callable(dot_escape); "
+            "assert light_eval.__all__ == ["
+            "'list_fixtures', 'list_mini_swe_cases', 'list_synthetic_tasks', "
+            "'main', 'run_mini_swe', 'run_replay', 'run_synthetic']; "
+            "removed = ('evaluate_evidence_gate', 'evaluate_review_accountability', "
+            "'load_json_object', 'dot_escape'); "
+            "assert not any(hasattr(light_eval, name) for name in removed)"
         )
         result = subprocess.run(
             [sys.executable, "-c", script],

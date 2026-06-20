@@ -58,9 +58,14 @@ code.
 | --- | --- |
 | review row | One adversarial finding with a stable `id`, category, severity, evidence, and closure requirements. |
 | row severity | Risk level assigned by adversarial review. Major rows must be accounted for before export. |
+| `falsifiable_check` | Review-row field that names the concrete check that would prove the row is resolved or still valid. |
 | moderator disposition | Same-id response to a review row. Valid states are `open`, `closed_by_evidence`, `downgraded`, and `rejected`. |
 | open row | A row whose disposition remains `open`, or a row that is otherwise unaccounted for. Open rows block export. |
 | closure check | Evidence-bound explanation/check required when a row is closed, downgraded, or rejected. Generic reassurance is not enough. |
+| evidence-backed closure scoring | Deterministic scoring of whether a closure check cites row-specific evidence, changed files, diff hunks, or machine-observed command evidence strongly enough to permit export. |
+| review recall | Eval measure for whether adversarial review found the material expected risks for a case. |
+| review precision | Eval measure for whether adversarial review avoided inventing irrelevant or overblocking rows. |
+| moderation precision | Eval measure for whether moderator dispositions preserve real blockers and close only rows with adequate evidence. |
 | orphan disposition | A moderator disposition whose `id` does not match any adversarial row. Orphans are process failures. |
 | duplicate row or disposition | Reused ids in adversarial rows or moderator dispositions. Duplicates are process failures because accountability becomes ambiguous. |
 
@@ -87,6 +92,9 @@ code.
 | `tests_passed_count` | Count of safe re-executed test commands that exited 0. It is stronger than claimed or reported test success. |
 | `commands_reported_passed_count` | Count of commands reported as passing by metadata. It does not by itself prove runtime test execution. |
 | semantic correctness | Whether the patch actually fixes the issue. Current lightweight gates can increase confidence, but they do not prove semantic correctness. |
+| artifact truthfulness | Eval judgment that produced artifacts accurately describe the patch, tests, commands, review state, and export decision. |
+| evidence sufficiency | Eval judgment that the available machine and review evidence is strong enough for the claimed readiness tier. |
+| hidden oracle | Eval-only check that is not directly handed to the model attempt. It is used to detect whether a patch actually satisfies a behavior that visible artifacts may not prove. |
 
 ## Export and Candidate Vocabulary
 
@@ -101,18 +109,37 @@ code.
 | `candidate.state = "absent"` | No useful patch was produced. |
 | `merge_candidate` | `candidate.reuse` for a ready patch. |
 | `continuation_candidate` | `candidate.reuse` for `failed_with_patch`. |
+| `next_agent_guidance` | Structured guidance for a continuation agent explaining what failed, what not to repeat, and what evidence or patch work is still needed. |
 
 ## Lightweight Eval Vocabulary
 
 | Term | Meaning |
 | --- | --- |
+| mini-SWE | Tiny issue-to-PR eval suite with generated local repos, expected patch/test shape, optional hidden oracle checks, and the same artifact/gate/export semantics used by larger issue-to-PR runs. |
+| dev suite | Baseline mini-SWE suite used as a regression check for known-good process behavior and positive controls. |
+| truthfulness suite | Mini-SWE suite designed to make hand-wavy review, weak closure, evidence contradictions, and false exports visible. |
+| case contract | Per-case declaration of expected changed files, allowed test files, hidden oracle, required review rows or row families, expected decision, and expected failure family. |
+| required row family | Expected class of adversarial review finding for a case, such as scope expansion, missing negative coverage, or claimed test mismatch. |
 | Tier 1 artifact replay | Lightweight replay that runs deterministic gates over saved artifacts to catch workflow regressions against known failure patterns. |
 | Tier 2A synthetic local repo | Lightweight synthetic eval that applies a scripted patch to a tiny local git repository, regenerates diff/audit/test-evidence facts from the repository, then runs the same gate and export bundle path. It validates repo-to-artifact derivation, not sandbox execution or live model behavior. |
 | Tier 2B sandboxed synthetic repo | Synthetic eval that runs the tiny repo mutation and diff/audit derivation through a real sandbox boundary, then reuses the same host-side gate and export checks. It validates sandboxed repo artifact derivation, not full issue-to-PR workflow execution. |
+| workflow-slice mini-SWE | Mini-SWE attempt mode that runs a deterministic local Fabro workflow slice for a mini-SWE case. It validates workflow-stage artifact plumbing without live model patching. |
 | issue workflow smoke | Tiny scripted issue-to-PR-shaped Fabro workflow that materializes patch, audit, validation, and review artifacts through workflow stages, then runs deterministic gates and export checks over those artifacts. It validates workflow-to-artifact plumbing without live model or SWE-bench variance. |
 | sandboxed synthetic workflow | Future eval rung that runs a tiny issue-to-PR workflow through a real sandbox boundary, with scripted model/stage outputs where possible. It validates workflow and sandbox artifact plumbing without full SWE-bench or live-model variance. |
 | workflow smoke | Tiny local Fabro workflow execution probe that runs through the real server, worker, workflow engine, and local sandbox with no live model calls. It validates the workflow execution boundary, not issue-to-PR artifact semantics. |
 | replay fixture | A saved input/expected-output case under `fabro_kits/issue_to_pr/fixtures/tier1_artifact_replay`. |
 | synthetic task | A local or sandboxed scripted eval case that starts from repository files instead of saved artifact JSON. |
 | false export | Eval failure where a known bad or unaccounted patch would produce a nonempty root prediction. |
+| false blank | Eval failure where a known acceptable patch is blanked or routed away from export without adequate process or quality reason. |
+| truthful pass | Eval pass where patch shape, machine evidence, review findings, moderator disposition, and final export decision all agree with the case contract. |
+| hand-wavy pass | Eval failure where a run passes or exports despite generic closure, missing evidence, contradicted artifacts, or unverified claims. |
+| `B2 model eligible` | Mini-SWE model attempt whose patch and artifacts came from the configured model workflow path and include enough provenance, command evidence, and workflow artifacts to count as real model-path evidence. |
+| `patch_pass` | Mini-SWE grade field indicating the patch matches the case contract and hidden oracle. |
+| `artifact_pass` | Mini-SWE grade field indicating the artifacts are truthful and sufficient for the claimed decision. |
+| `export_pass` | Mini-SWE grade field indicating the final export/blank decision matches the case contract. |
+| decision outcome | Eval label for whether the final route was a true export, true blank/fixup, false export, or false blank. |
+| moderation outcome | Eval label for whether moderator dispositions correctly closed, downgraded, rejected, or kept open review rows. |
+| quality failures | Eval failure families describing patch-quality problems such as empty patch, unexpected patch shape, or hidden oracle failure. |
+| honesty failures | Eval failure families describing artifact/evidence truthfulness problems such as missing command IDs, audit contradictions, weak closure, or gate/status mismatch. |
+| export failures | Eval failure families describing final routing mistakes, especially false export or unexpected blank. |
 | canary fixture | Small fixture intended to fail quickly when a specific known regression returns. |

@@ -1,17 +1,13 @@
 """Output shaping and summary helpers for mini-SWE runs."""
-
 from __future__ import annotations
-
 import json
 import shutil
 from pathlib import Path
 from typing import Any
-
 from ...artifacts import build_prediction_record
 from ..bundles import prepare_config_dir
 from ..grader import MiniSweGrade
 from ..task_schema import AttemptResult, MiniSweCase, mini_swe_source
-
 
 def prepare_mini_swe_config_dir(
     output_dir: Path,
@@ -37,7 +33,6 @@ def prepare_mini_swe_config_dir(
             shutil.copy2(attempt_result.trajectory_path, dump_dir / "trajectory.jsonl")
     return config_dir
 
-
 def oracle_for_case(case: MiniSweCase) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -51,7 +46,6 @@ def oracle_for_case(case: MiniSweCase) -> dict[str, Any]:
         "requires_test_change": case.requires_test_change,
         "expected_decision_hint": case.expected_decision_hint,
     }
-
 
 def mini_swe_instance(case: MiniSweCase) -> dict[str, Any]:
     return {
@@ -70,7 +64,6 @@ def mini_swe_instance(case: MiniSweCase) -> dict[str, Any]:
             "version": case.suite,
         },
     }
-
 
 def mini_swe_summary(results: list[dict[str, Any]], failures: list[dict[str, Any]]) -> dict[str, Any]:
     evals = [result.get("eval", {}) for result in results if isinstance(result.get("eval"), dict)]

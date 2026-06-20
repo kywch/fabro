@@ -1,14 +1,10 @@
 """Evidence and validation-contract helpers for mini-SWE runs."""
-
 from __future__ import annotations
-
 import json
 from pathlib import Path
 from typing import Any
-
 from ..task_schema import AttemptResult, MiniSweCase
 from .cases import case_behavior, tests_added_for_case
-
 
 def adversarial_review_for_case(case: MiniSweCase) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
@@ -29,7 +25,6 @@ def adversarial_review_for_case(case: MiniSweCase) -> dict[str, Any]:
         "status": "passed",
         "rows": rows,
     }
-
 
 def moderator_filter_for_case(case: MiniSweCase) -> dict[str, Any]:
     dispositions: list[dict[str, Any]] = []
@@ -59,7 +54,6 @@ def moderator_filter_for_case(case: MiniSweCase) -> dict[str, Any]:
         "dispositions": dispositions,
     }
 
-
 def review_materialization_for_case(case: MiniSweCase) -> dict[str, Any]:
     rendered_rows: list[dict[str, Any]] = []
     if case.case_id == "overblocking-good-patch-with-minor-risk":
@@ -77,7 +71,6 @@ def review_materialization_for_case(case: MiniSweCase) -> dict[str, Any]:
         "errors": [],
         "rendered_rows": rendered_rows,
     }
-
 
 def commands_run_for_case(
     case: MiniSweCase,
@@ -101,7 +94,6 @@ def commands_run_for_case(
         command["id"] = command_id
     return [command]
 
-
 def commands_run_from_artifacts(
     case: MiniSweCase,
     *,
@@ -110,7 +102,6 @@ def commands_run_from_artifacts(
 ) -> list[Any]:
     if attempt_result.attempt_origin == "scripted":
         return commands_run_for_case(case, attempt_result=attempt_result)
-
     if attempt_result.commands_run_path and attempt_result.commands_run_path.exists():
         try:
             payload = json.loads(attempt_result.commands_run_path.read_text())
@@ -118,13 +109,10 @@ def commands_run_from_artifacts(
             return []
         if isinstance(payload, list):
             return payload
-
     commands = validation_contract.get("commands_run")
     if isinstance(commands, list):
         return commands
-
     return []
-
 
 def commands_run_from_validation_contract_path(path: str | None) -> list[dict[str, Any]]:
     if not path:
@@ -143,16 +131,13 @@ def commands_run_from_validation_contract_path(path: str | None) -> list[dict[st
         return []
     return [item for item in commands if isinstance(item, dict)]
 
-
 def has_commands_run_list(value: Any) -> bool:
     return isinstance(value, list) and any(isinstance(item, dict) for item in value)
-
 
 def commands_run_artifact_exists(attempt_result: AttemptResult) -> bool:
     return bool(
         attempt_result.commands_run_path and attempt_result.commands_run_path.exists()
     )
-
 
 def eval_metadata_with_runtime_proof(
     attempt_result: AttemptResult,
@@ -179,7 +164,6 @@ def eval_metadata_with_runtime_proof(
         metadata["b2_eligible"] = False
     return metadata
 
-
 def validation_contract_for_case(
     case: MiniSweCase,
     *,
@@ -197,7 +181,6 @@ def validation_contract_for_case(
         contract["no_test_justification"] = behavior.no_test_justification
     return contract
 
-
 def has_observed_test_command_id(commands_run: list[dict[str, Any]]) -> bool:
     return any(
         command.get("id")
@@ -205,7 +188,6 @@ def has_observed_test_command_id(commands_run: list[dict[str, Any]]) -> bool:
         and command.get("exit_code") == 0
         for command in commands_run
     )
-
 
 def effective_expected_decision_hint(
     case: MiniSweCase,
@@ -222,7 +204,6 @@ def effective_expected_decision_hint(
     ):
         return "export"
     return case.expected_decision_hint
-
 
 def test_gate_has_verified_test_command(test_gate: dict[str, Any]) -> bool:
     observed = test_gate.get("observed") if isinstance(test_gate, dict) else None

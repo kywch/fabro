@@ -9,12 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from ..artifacts import (
-    build_prediction_record,
-    load_or_init_manifest,
-    run_id_for_task,
-    update_manifest_for_run,
-    write_manifest,
-    write_run_bundle,
+    build_eval_summary, load_or_init_manifest, run_id_for_task, update_manifest_for_run,
+    write_eval_root_outputs, write_run_bundle,
 )
 from ..evidence_gate import evaluate_evidence_gate
 from ..review_accountability_gate import evaluate_review_accountability
@@ -142,11 +138,7 @@ def _run_issue_workflow_smoke_to_dir(output_dir: Path, *, fabro_bin: Path) -> di
         attempt_id="001",
         output_dir=output_dir,
     )
-    write_manifest(output_dir, manifest)
-    (output_dir / "results.jsonl").write_text(json.dumps(result, sort_keys=True) + "\n")
-    (output_dir / "predictions.jsonl").write_text(
-        json.dumps(build_prediction_record(result), sort_keys=True) + "\n"
-    )
+    write_eval_root_outputs(output_dir, results=[result], manifest=manifest)
     return write_issue_workflow_smoke_summary(output_dir, smoke_dir, failures=failures)
 
 def build_issue_workflow_smoke_case(
@@ -248,18 +240,16 @@ def write_issue_workflow_smoke_summary(
     *,
     failures: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    summary = {
-        "total": 1,
-        "failed": len(failures),
-        "false_exports": sum(1 for failure in failures if failure["kind"] == "false_export"),
-        "failures": failures,
-        "issue_workflow_smoke": str(
+    summary = build_eval_summary(
+        1,
+        failures,
+        issue_workflow_smoke=str(
             (smoke_dir / "issue_workflow_smoke.json").relative_to(output_dir)
         )
         if (smoke_dir / "issue_workflow_smoke.json").exists()
         else "",
-    }
-    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    )
+    write_eval_root_outputs(output_dir, summary=summary)
     return summary
 
 def write_issue_workflow_smoke_files(

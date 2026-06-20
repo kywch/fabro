@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from ..artifacts import (
-    build_prediction_record,
-    load_or_init_manifest,
-    run_id_for_task,
-    update_manifest_for_run,
-    write_manifest,
-    write_run_bundle,
+    build_eval_summary, load_or_init_manifest, run_id_for_task, update_manifest_for_run,
+    write_eval_root_outputs, write_run_bundle,
 )
 from ..review_accountability_gate import evaluate_review_accountability, load_json_object
 from .bundles import instance_for_task, prepare_config_dir
@@ -51,21 +46,10 @@ def _run_replay_to_dir(fixture_dirs: list[Path], output_dir: Path) -> dict[str, 
         )
         failures.extend(case_result["failures"])
 
-    write_manifest(output_dir, manifest)
-    (output_dir / "results.jsonl").write_text(
-        "".join(json.dumps(result, sort_keys=True) + "\n" for result in results)
-    )
-    (output_dir / "predictions.jsonl").write_text(
-        "".join(json.dumps(build_prediction_record(result), sort_keys=True) + "\n" for result in results)
-    )
+    write_eval_root_outputs(output_dir, results=results, manifest=manifest)
     failures.extend(check_root_expected(fixture_dirs, output_dir=output_dir))
-    summary = {
-        "total": len(results),
-        "failed": len(failures),
-        "false_exports": sum(1 for failure in failures if failure["kind"] == "false_export"),
-        "failures": failures,
-    }
-    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    summary = build_eval_summary(len(results), failures)
+    write_eval_root_outputs(output_dir, summary=summary)
     return summary
 
 def run_replay_fixture(fixture_dir: Path, *, output_dir: Path) -> dict[str, Any]:

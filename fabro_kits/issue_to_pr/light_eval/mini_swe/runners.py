@@ -1,14 +1,11 @@
 """Attempt runners for mini-SWE cases."""
-
 from __future__ import annotations
-
 import hashlib
 import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
 from ...run_attempt import (
     dump_run,
     fetch_run_diff,
@@ -53,12 +50,9 @@ from .workflow_slice import (
     write_workflow_slice_trajectory,
 )
 
-
 class ScriptedCalibrationRunner:
     """Apply deterministic patches and fixture artifacts for calibration."""
-
     name = "scripted"
-
     def __init__(
         self,
         *,
@@ -67,7 +61,6 @@ class ScriptedCalibrationRunner:
     ) -> None:
         self.substrate = substrate
         self.docker_image = docker_image
-
     def run(self, case: MiniSweCase, repo_dir: Path, work_dir: Path) -> AttemptResult:
         ensure_mini_swe_case_supported(case, attempt=self.name)
         if self.substrate == "docker":
@@ -110,21 +103,16 @@ class ScriptedCalibrationRunner:
             },
         )
 
-
 class WorkflowSliceRunner:
     """Run a deterministic local Fabro workflow slice for mini-SWE."""
-
     name = "workflow-slice"
-
     def __init__(self, *, output_dir: Path, fabro_bin: Path) -> None:
         self.output_dir = output_dir
         self.fabro_bin = fabro_bin
-
     def run(self, case: MiniSweCase, repo_dir: Path, work_dir: Path) -> AttemptResult:
         ensure_mini_swe_case_supported(case, attempt=self.name)
         if not self.fabro_bin.exists():
             raise SystemExit(f"fabro binary missing: {self.fabro_bin}")
-
         slice_dir = self.output_dir / "_mini_swe_workflow_slice" / slice_case_dir_name(case)
         if slice_dir.exists():
             shutil.rmtree(slice_dir)
@@ -160,11 +148,7 @@ class WorkflowSliceRunner:
             ],
             env=env,
         )
-        (slice_dir / "run.stdout").write_text(run_proc.stdout)
-        (slice_dir / "run.stderr").write_text(run_proc.stderr)
-        run_transcript = run_proc.stdout + run_proc.stderr
-        transcript_path = slice_dir / "run.transcript"
-        transcript_path.write_text(run_transcript)
+        transcript_path, run_transcript = _write_run_output(slice_dir, run_proc)
         run_id = extract_workflow_smoke_run_id(run_transcript)
         try:
             if run_proc.returncode != 0:
@@ -178,14 +162,7 @@ class WorkflowSliceRunner:
                     + ", ".join(missing_artifacts)
                 )
         finally:
-            stop_proc = run_fabro_command(
-                self.fabro_bin,
-                ["--no-upgrade-check", "server", "stop", "--storage-dir", str(storage_dir)],
-                env=env,
-            )
-            (slice_dir / "stop.stdout").write_text(stop_proc.stdout)
-            (slice_dir / "stop.stderr").write_text(stop_proc.stderr)
-
+            _stop_fabro_server(self.fabro_bin, storage_dir, slice_dir, env)
         patch_path = artifacts_dir / "patch.diff"
         commands_run_path = artifacts_dir / "commands_run.json"
         trajectory_path = slice_dir / "trajectory.jsonl"
@@ -237,7 +214,6 @@ class WorkflowSliceRunner:
             },
         )
 
-
 @dataclass(frozen=True)
 class _ModelRunContext:
     fabro_bin: Path
@@ -248,7 +224,6 @@ class _ModelRunContext:
     storage_dir: Path
     config_path: Path
     workflow_path: Path
-
 
 @dataclass(frozen=True)
 class _ModelWorkflowArtifacts:
@@ -262,12 +237,9 @@ class _ModelWorkflowArtifacts:
     eligibility_failures: tuple[str, ...]
     run_returncode: int
 
-
 class ModelWorkflowRunner:
     """Run the generated mini-SWE repo through the real issue-to-PR workflow."""
-
     name = "model"
-
     def __init__(
         self,
         *,
@@ -286,7 +258,6 @@ class ModelWorkflowRunner:
         self.credential_bridge = credential_bridge
         self.auth_storage_dir = auth_storage_dir
         self.credential_preflight = credential_preflight
-
     def run(self, case: MiniSweCase, repo_dir: Path, work_dir: Path) -> AttemptResult:
         context = self._prepare_run_context(case, work_dir)
         credential_bridge_report = self._bridge_credentials(context)
@@ -331,7 +302,6 @@ class ModelWorkflowRunner:
                 "case_artifacts_supplied": False,
             },
         )
-
     def _prepare_run_context(self, case: MiniSweCase, work_dir: Path) -> _ModelRunContext:
         if not self.fabro_bin.exists():
             raise SystemExit(f"fabro binary missing: {self.fabro_bin}")
@@ -361,7 +331,6 @@ class ModelWorkflowRunner:
             config_path=config_path,
             workflow_path=workflow_path,
         )
-
     def _bridge_credentials(self, context: _ModelRunContext) -> dict[str, Any]:
         report = bridge_model_credentials(
             bridge=self.credential_bridge,
@@ -376,7 +345,6 @@ class ModelWorkflowRunner:
                 detail=f"credential bridge status: {report.get('status')}",
             )
         return report
-
     def _write_workflow(
         self,
         case: MiniSweCase,
@@ -395,7 +363,6 @@ class ModelWorkflowRunner:
             workflow_profile=STRUCTURED_MODERATED_PROFILE,
         )
         context.workflow_path.write_text(workflow)
-
     def _workflow_env(
         self,
         context: _ModelRunContext,
@@ -411,7 +378,6 @@ class ModelWorkflowRunner:
             credential_bridge_report["scrubbed_env_secret_names"] = ["OPENAI_API_KEY"]
             self._write_json(context.run_dir / "credential_bridge.json", credential_bridge_report)
         return env
-
     def _run_credential_preflight(
         self,
         context: _ModelRunContext,
@@ -426,14 +392,13 @@ class ModelWorkflowRunner:
         )
         self._write_json(context.run_dir / "credential_preflight.json", report)
         if self.credential_preflight and report.get("status") == "failed":
-            self._stop_server(context, env)
+            _stop_fabro_server(context.fabro_bin, context.storage_dir, context.run_dir, env)
             raise MiniSweProcessBlock(
                 reason="credential_preflight_failed",
                 message="mini-swe model credential preflight failed; fix provider auth before running model attempts.",
                 detail=f"fabro model test exited with status {report.get('returncode')}",
             )
         return report
-
     def _run_and_collect_artifacts(
         self,
         case: MiniSweCase,
@@ -442,9 +407,7 @@ class ModelWorkflowRunner:
         env: dict[str, str],
     ) -> _ModelWorkflowArtifacts:
         run_proc = self._run_workflow(case, context, env)
-        run_transcript = run_proc.stdout + run_proc.stderr
-        transcript_path = context.run_dir / "run.transcript"
-        transcript_path.write_text(run_transcript)
+        transcript_path, run_transcript = _write_run_output(context.run_dir, run_proc)
         fabro_run_id = extract_workflow_smoke_run_id(run_transcript)
         try:
             self._raise_if_workflow_ungradable(run_proc, run_transcript, fabro_run_id)
@@ -486,7 +449,7 @@ class ModelWorkflowRunner:
                 trajectory_path=trajectory_path,
             )
         finally:
-            self._stop_server(context, env)
+            _stop_fabro_server(context.fabro_bin, context.storage_dir, context.run_dir, env)
         return _ModelWorkflowArtifacts(
             fabro_run_id=fabro_run_id,
             workflow_reported_succeeded=workflow_reported_succeeded,
@@ -498,7 +461,6 @@ class ModelWorkflowRunner:
             eligibility_failures=eligibility_failures,
             run_returncode=run_proc.returncode,
         )
-
     def _run_workflow(
         self,
         case: MiniSweCase,
@@ -526,10 +488,7 @@ class ModelWorkflowRunner:
             timeout=600,
             cwd=context.command_cwd,
         )
-        (context.run_dir / "run.stdout").write_text(run_proc.stdout)
-        (context.run_dir / "run.stderr").write_text(run_proc.stderr)
         return run_proc
-
     def _raise_if_workflow_ungradable(
         self,
         run_proc: Any,
@@ -563,7 +522,6 @@ class ModelWorkflowRunner:
             ),
             detail=run_transcript[-4000:],
         )
-
     def _write_model_patch(
         self,
         repo_dir: Path,
@@ -580,7 +538,6 @@ class ModelWorkflowRunner:
         if patch.strip():
             apply_patch_to_repo(repo_dir, patch)
         return patch_path, patch
-
     def _eligibility_failures(
         self,
         *,
@@ -613,30 +570,34 @@ class ModelWorkflowRunner:
             + ["model_workflow_missing_commands_run"] * (not validation_commands)
             + ["model_workflow_missing_trajectory"] * (trajectory_path is None)
         )
-
-    def _stop_server(self, context: _ModelRunContext, env: dict[str, str]) -> None:
-        stop_proc = run_fabro_command(
-            context.fabro_bin,
-            ["--no-upgrade-check", "server", "stop", "--storage-dir", str(context.storage_dir)],
-            env=env,
-        )
-        (context.run_dir / "stop.stdout").write_text(stop_proc.stdout)
-        (context.run_dir / "stop.stderr").write_text(stop_proc.stderr)
-
     @staticmethod
     def _write_json(path: Path, payload: dict[str, Any]) -> None:
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
+def _write_run_output(output_dir: Path, run_proc: Any) -> tuple[Path, str]:
+    (output_dir / "run.stdout").write_text(run_proc.stdout)
+    (output_dir / "run.stderr").write_text(run_proc.stderr)
+    run_transcript = run_proc.stdout + run_proc.stderr
+    transcript_path = output_dir / "run.transcript"
+    transcript_path.write_text(run_transcript)
+    return transcript_path, run_transcript
+
+def _stop_fabro_server(fabro_bin: Path, storage_dir: Path, output_dir: Path, env: dict[str, str]) -> None:
+    stop_proc = run_fabro_command(
+        fabro_bin,
+        ["--no-upgrade-check", "server", "stop", "--storage-dir", str(storage_dir)],
+        env=env,
+    )
+    (output_dir / "stop.stdout").write_text(stop_proc.stdout)
+    (output_dir / "stop.stderr").write_text(stop_proc.stderr)
 
 class MiniSweProcessBlock(Exception):
     """A model attempt could not reach artifact grading."""
-
     def __init__(self, *, reason: str, message: str, detail: str | None = None) -> None:
         super().__init__(message)
         self.reason = reason
         self.message = message
         self.detail = detail
-
     def to_failure(self, *, task_id: str, attempt: str) -> dict[str, str]:
         failure = {
             "kind": "process_block",
@@ -648,7 +609,6 @@ class MiniSweProcessBlock(Exception):
         if self.detail:
             failure["detail"] = self.detail
         return failure
-
 
 def slice_case_dir_name(case: MiniSweCase) -> str:
     digest = hashlib.sha1(case.case_id.encode("utf-8")).hexdigest()[:10]

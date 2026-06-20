@@ -2,19 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
 
 from ...artifacts import (
-    build_prediction_record,
-    load_or_init_manifest,
-    run_id_for_task,
-    update_manifest_for_run,
-    write_manifest,
-    write_run_bundle,
+    load_or_init_manifest, run_id_for_task, update_manifest_for_run,
+    write_eval_root_outputs, write_run_bundle,
 )
 from ...evidence_gate import evaluate_evidence_gate
 from ...review_accountability_gate import evaluate_review_accountability
@@ -166,22 +161,11 @@ def _run_mini_swe_to_dir(
         if fail_fast and case_result["failures"]:
             break
 
-    write_manifest(output_dir, manifest)
-    (output_dir / "results.jsonl").write_text(
-        "".join(json.dumps(result, sort_keys=True) + "\n" for result in results)
-    )
-    (output_dir / "predictions.jsonl").write_text(
-        "".join(
-            json.dumps(build_prediction_record(result), sort_keys=True) + "\n"
-            for result in results
-        )
-    )
-
     summary = mini_swe_summary(results, failures)
     summary["total_duration_s"] = round(time.monotonic() - started_at, 1)
     if seed is not None:
         summary["seed"] = seed
-    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    write_eval_root_outputs(output_dir, results=results, summary=summary, manifest=manifest)
     return summary
 
 

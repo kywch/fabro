@@ -4,13 +4,13 @@ import unittest
 from pathlib import Path
 
 from fabro_kits.issue_to_pr.light_eval import (
-    DEFAULT_SYNTHETIC_DOCKER_IMAGE,
-    docker_image_available,
-    run_issue_workflow_smoke,
     run_replay,
     run_synthetic,
-    run_workflow_smoke,
 )
+from fabro_kits.issue_to_pr.light_eval.issue_workflow_smoke import run_issue_workflow_smoke
+from fabro_kits.issue_to_pr.light_eval.paths import DEFAULT_SYNTHETIC_DOCKER_IMAGE
+from fabro_kits.issue_to_pr.light_eval.process import docker_image_available
+from fabro_kits.issue_to_pr.light_eval.workflow_smoke import run_workflow_smoke
 
 
 class LightEvalReplayTest(unittest.TestCase):

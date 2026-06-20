@@ -5,17 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fabro_kits.issue_to_pr.light_eval import (
-    DEFAULT_SYNTHETIC_DOCKER_IMAGE,
-    MiniSweCase,
-    docker_image_available,
-    grade_mini_swe_attempt,
-    run_mini_swe,
-)
+from fabro_kits.issue_to_pr.light_eval import run_mini_swe
+from fabro_kits.issue_to_pr.light_eval.grader import grade_mini_swe_attempt
 from fabro_kits.issue_to_pr.light_eval.mini_swe.evidence import (
     commands_run_from_artifacts,
 )
-from fabro_kits.issue_to_pr.light_eval.task_schema import AttemptResult
+from fabro_kits.issue_to_pr.light_eval.paths import DEFAULT_SYNTHETIC_DOCKER_IMAGE
+from fabro_kits.issue_to_pr.light_eval.process import docker_image_available
+from fabro_kits.issue_to_pr.light_eval.task_schema import AttemptResult, MiniSweCase
 
 
 class MiniSweEvalTest(unittest.TestCase):

@@ -1,13 +1,10 @@
 """Canonical artifact bundle helpers for issue-to-PR attempts."""
-
 from __future__ import annotations
-
 import hashlib
 import json
 import shutil
 from pathlib import Path
 from typing import Any
-
 
 SCHEMA_VERSION = 1
 RUNS_LAYOUT = "issue-to-pr-runs-v1"
@@ -27,7 +24,6 @@ READY_TIERS = {
     "process_failed",
 }
 
-
 def build_prediction_record(result: dict[str, Any]) -> dict[str, Any]:
     """Return the single-instance equivalent of predictions.jsonl."""
     model_patch = result.get("model_patch", "")
@@ -38,7 +34,6 @@ def build_prediction_record(result: dict[str, Any]) -> dict[str, Any]:
         "model_name_or_path": result["model_name_or_path"],
         "model_patch": model_patch,
     }
-
 
 def is_export_eligible(result: dict[str, Any]) -> bool:
     """Return whether a result is eligible for root prediction export."""
@@ -56,7 +51,6 @@ def is_export_eligible(result: dict[str, Any]) -> bool:
         None,
         "export",
     }
-
 
 def build_task_record(
     instance: dict[str, Any],
@@ -102,11 +96,9 @@ def build_task_record(
         },
     }
 
-
 def run_id_for_task(task_id: str, attempt_id: str = DEFAULT_ATTEMPT_ID) -> str:
     """Return the deterministic run directory id for a task attempt."""
     return f"{task_id}--{attempt_id}"
-
 
 def write_run_bundle(
     *,
@@ -126,37 +118,29 @@ def write_run_bundle(
     config_out_dir = run_dir / "config"
     dump_out_dir = run_dir / "fabro" / "dump"
     output_out_dir = run_dir / "output"
-
     input_dir.mkdir(parents=True, exist_ok=True)
     config_out_dir.mkdir(parents=True, exist_ok=True)
     output_out_dir.mkdir(parents=True, exist_ok=True)
-
     goal_src = config_dir / "goal.txt"
     goal_path = input_dir / "goal.md"
     goal_path.write_text(goal_src.read_text() if goal_src.exists() else "")
-
     for name in ("issue.md", "oracle.json"):
         src = config_dir / name
         if src.exists():
             shutil.copy2(src, input_dir / name)
-
     for name in ("workflow.fabro", "workflow.toml"):
         src = config_dir / name
         if src.exists():
             shutil.copy2(src, config_out_dir / name)
-
     dump_src = config_dir / "run_dump"
     if dump_src.exists():
         if dump_out_dir.exists():
             shutil.rmtree(dump_out_dir)
         shutil.copytree(dump_src, dump_out_dir)
-
     patch_path = output_out_dir / "patch.diff"
     patch_path.write_text(result.get("model_patch", ""))
-
     prediction_path = output_out_dir / "prediction.json"
     _write_json_atomic(prediction_path, build_prediction_record(result))
-
     for key in (
         "verify",
         "audit",
@@ -165,10 +149,8 @@ def write_run_bundle(
         *REVIEW_ARTIFACT_NAMES,
     ):
         _write_named_json_artifact(output_out_dir / f"{key}.json", result, key)
-
     trajectory_export_path = output_out_dir / "trajectory.jsonl"
     _copy_optional(result.get("trajectory_path"), trajectory_export_path)
-
     task_record = build_task_record(instance, Path("input/goal.md"), sandbox_provider)
     if (input_dir / "issue.md").exists():
         task_record["issue"] = {"text_path": "input/issue.md"}
@@ -176,7 +158,6 @@ def write_run_bundle(
         task_record["oracle"] = {"path": "input/oracle.json"}
     _write_json_atomic(run_dir / "task.json", task_record)
     _write_json_atomic(input_dir / "envelope.json", task_record)
-
     run_record = build_run_record(
         task_id=task_id,
         run_id=run_id,
@@ -185,7 +166,6 @@ def write_run_bundle(
         run_dir=run_dir,
     )
     _write_json_atomic(run_dir / "run.json", run_record)
-
     artifacts = {
         "run": _relative_to(run_dir / "run.json", output_dir),
         "task": _relative_to(run_dir / "task.json", output_dir),
@@ -205,7 +185,6 @@ def write_run_bundle(
         artifacts.update(_maybe_artifact(key, path, output_dir))
     return artifacts
 
-
 def build_run_record(
     *,
     task_id: str,
@@ -221,7 +200,6 @@ def build_run_record(
     dump_path = run_dir / "fabro" / "dump"
     events_path = dump_path / "events.jsonl"
     trajectory_path = dump_path / "trajectory.jsonl"
-
     status = result.get("status", "error")
     phases = {
         "solve": {"status": _phase_status_for_solve(status)},
@@ -268,7 +246,6 @@ def build_run_record(
         "publish": {"status": "not_run"},
         "grade": {"status": "not_run"},
     }
-
     record = {
         "schema_version": SCHEMA_VERSION,
         "layout": RUNS_LAYOUT,
@@ -307,7 +284,6 @@ def build_run_record(
         record["eval"] = eval_metadata
     return record
 
-
 def build_candidate_record(
     result: dict[str, Any],
     patch_path: Path,
@@ -317,7 +293,6 @@ def build_candidate_record(
     patch_text = result.get("model_patch", "")
     if not patch_text.strip():
         return {"state": "absent", "reuse": "none"}
-
     review = result.get("review") if isinstance(result.get("review"), dict) else {}
     gate = (
         result.get("review_accountability_gate")
@@ -332,7 +307,6 @@ def build_candidate_record(
     context_updates = review.get("context_updates")
     if not isinstance(context_updates, dict):
         context_updates = {}
-
     if is_export_eligible(result):
         state = "ready"
         reuse = "merge_candidate"
@@ -341,11 +315,9 @@ def build_candidate_record(
         state = "failed_with_patch"
         reuse = "continuation_candidate"
         warning = "Do not merge as-is; use this patch as continuation material."
-
     readiness_tier = gate.get("readiness_tier")
     if readiness_tier not in READY_TIERS:
         readiness_tier = None
-
     record = {
         "state": state,
         "reuse": reuse,
@@ -368,7 +340,6 @@ def build_candidate_record(
     }
     return {key: value for key, value in record.items() if value is not None}
 
-
 def load_or_init_manifest(
     output_dir: Path,
     *,
@@ -382,7 +353,6 @@ def load_or_init_manifest(
             return json.loads(manifest_path.read_text())
         except json.JSONDecodeError:
             pass
-
     return {
         "schema_version": SCHEMA_VERSION,
         "layout": layout,
@@ -395,7 +365,6 @@ def load_or_init_manifest(
         "tasks": {},
         "runs": {},
     }
-
 
 def update_manifest_for_run(
     manifest: dict[str, Any],
@@ -436,11 +405,40 @@ def update_manifest_for_run(
         "task_path": _relative_to(run_dir / "task.json", output_dir),
     }
 
-
 def write_manifest(output_dir: Path, manifest: dict[str, Any]) -> None:
     """Write the root manifest atomically."""
     _write_json_atomic(output_dir / "manifest.json", manifest)
 
+def build_eval_summary(total: int, failures: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
+    return {
+        "total": total,
+        "failed": len(failures),
+        "false_exports": sum(1 for failure in failures if failure["kind"] == "false_export"),
+        "failures": failures,
+        **extra,
+    }
+
+def write_eval_root_outputs(
+    output_dir: Path,
+    *,
+    results: list[dict[str, Any]] | None = None,
+    summary: dict[str, Any] | None = None,
+    manifest: dict[str, Any] | None = None,
+) -> None:
+    if manifest is not None:
+        write_manifest(output_dir, manifest)
+    if results is not None:
+        (output_dir / "results.jsonl").write_text(
+            "".join(json.dumps(result, sort_keys=True) + "\n" for result in results)
+        )
+        (output_dir / "predictions.jsonl").write_text(
+            "".join(
+                json.dumps(build_prediction_record(result), sort_keys=True) + "\n"
+                for result in results
+            )
+        )
+    if summary is not None:
+        (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
 
 def _phase_status_for_solve(status: str) -> str:
     if status in {"completed", "no_patch"}:
@@ -451,37 +449,26 @@ def _phase_status_for_solve(status: str) -> str:
         return "failed"
     return status or "failed"
 
-
 def _verify_phase(result: dict[str, Any], path: Path, base: Path) -> dict[str, Any]:
-    verify = result.get("verify")
-    if not isinstance(verify, dict):
+    if (verify := _typed_artifact(result, "verify", dict)) is None:
         return {"status": "not_run"}
-    status = _phase_status(verify.get("status"))
-    phase = {
-        "status": status,
-        "mode": verify.get("mode"),
-        "patch_nonempty": verify.get("patch_nonempty"),
-        "failure_reason": verify.get("failure_reason"),
-    }
+    phase = _phase_fields(
+        verify, "mode", "patch_nonempty", "failure_reason",
+        status=_phase_status(verify.get("status")),
+    )
     return _with_artifact(phase, path, base)
-
 
 def _audit_phase(result: dict[str, Any], path: Path, base: Path) -> dict[str, Any]:
-    audit = result.get("audit")
-    if not isinstance(audit, dict):
+    if (audit := _typed_artifact(result, "audit", dict)) is None:
         return {"status": "not_run"}
-    phase = {
-        "status": "completed" if audit.get("patch_nonempty") is not None else "failed",
-        "patch_nonempty": audit.get("patch_nonempty"),
-        "changed_files": audit.get("changed_files"),
-        "test_files_changed": audit.get("test_files_changed"),
-    }
+    phase = _phase_fields(
+        audit, "patch_nonempty", "changed_files", "test_files_changed",
+        status="completed" if audit.get("patch_nonempty") is not None else "failed",
+    )
     return _with_artifact(phase, path, base)
 
-
 def _commands_run_phase(result: dict[str, Any], path: Path, base: Path) -> dict[str, Any]:
-    commands = result.get("commands_run")
-    if not isinstance(commands, list):
+    if (commands := _typed_artifact(result, "commands_run", list)) is None:
         return {"status": "not_run"}
     phase = {
         "status": "completed",
@@ -494,14 +481,12 @@ def _commands_run_phase(result: dict[str, Any], path: Path, base: Path) -> dict[
     }
     return _with_artifact(phase, path, base)
 
-
 def _test_evidence_gate_phase(
     result: dict[str, Any],
     path: Path,
     base: Path,
 ) -> dict[str, Any]:
-    gate = result.get("test_evidence_gate")
-    if not isinstance(gate, dict):
+    if (gate := _typed_artifact(result, "test_evidence_gate", dict)) is None:
         return {"status": "not_run"}
     judgment = gate.get("judgment") if isinstance(gate.get("judgment"), dict) else {}
     phase = {
@@ -515,23 +500,18 @@ def _test_evidence_gate_phase(
     }
     return _with_artifact(phase, path, base)
 
-
 def _generic_review_phase(
     result: dict[str, Any],
     key: str,
     path: Path,
     base: Path,
 ) -> dict[str, Any]:
-    artifact = result.get(key)
-    if not isinstance(artifact, dict):
+    if (artifact := _typed_artifact(result, key, dict)) is None:
         return {"status": "not_run"}
-    phase = {
-        "status": _phase_status(artifact.get("status"), default="completed"),
-        "stage": artifact.get("stage"),
-        "summary": artifact.get("summary"),
-        "readiness_tier": artifact.get("readiness_tier"),
-        "overall_risk": artifact.get("overall_risk"),
-    }
+    phase = _phase_fields(
+        artifact, "stage", "summary", "readiness_tier", "overall_risk",
+        status=_phase_status(artifact.get("status"), default="completed"),
+    )
     rows = artifact.get("rows")
     dispositions = artifact.get("dispositions")
     if isinstance(rows, list):
@@ -540,47 +520,31 @@ def _generic_review_phase(
         phase["disposition_count"] = len(dispositions)
     return _with_artifact(phase, path, base)
 
-
 def _review_accountability_gate_phase(
     result: dict[str, Any],
     path: Path,
     base: Path,
 ) -> dict[str, Any]:
-    gate = result.get("review_accountability_gate")
-    if not isinstance(gate, dict):
+    if (gate := _typed_artifact(result, "review_accountability_gate", dict)) is None:
         return {"status": "not_run"}
-    phase = {
-        "status": _phase_status(gate.get("status") or gate.get("process_status")),
-        "process_status": gate.get("process_status"),
-        "route_decision": gate.get("route_decision"),
-        "readiness_tier": gate.get("readiness_tier"),
-        "failure_reason": gate.get("failure_reason"),
-        "process_failures": gate.get("process_failures"),
-        "adversarial_row_count": gate.get("adversarial_row_count"),
-        "moderator_disposition_count": gate.get("moderator_disposition_count"),
-        "fixup_required_rows": gate.get("fixup_required_rows"),
-        "blocking_rows": gate.get("blocking_rows"),
-        "malformed_artifacts": gate.get("malformed_artifacts"),
-        "do_not_repeat": gate.get("do_not_repeat"),
-        "next_agent_guidance": gate.get("next_agent_guidance"),
-    }
+    phase = _phase_fields(
+        gate, "process_status", "route_decision", "readiness_tier", "failure_reason",
+        "process_failures", "adversarial_row_count", "moderator_disposition_count",
+        "fixup_required_rows", "blocking_rows", "malformed_artifacts",
+        "do_not_repeat", "next_agent_guidance",
+        status=_phase_status(gate.get("status") or gate.get("process_status")),
+    )
     return _with_artifact(phase, path, base)
 
-
 def _review_phase(result: dict[str, Any]) -> dict[str, Any]:
-    review = result.get("review")
-    if not isinstance(review, dict):
+    if (review := _typed_artifact(result, "review", dict)) is None:
         return {"status": "not_run"}
-    phase = {
-        "status": _phase_status(review.get("status") or review.get("outcome")),
-        "outcome": review.get("outcome"),
-        "preferred_next_label": review.get("preferred_next_label"),
-        "failure_class": review.get("failure_class"),
-        "failure_reason": review.get("failure_reason"),
-        "context_updates": review.get("context_updates"),
-    }
+    phase = _phase_fields(
+        review, "outcome", "preferred_next_label", "failure_class",
+        "failure_reason", "context_updates",
+        status=_phase_status(review.get("status") or review.get("outcome")),
+    )
     return {key: value for key, value in phase.items() if value is not None}
-
 
 def _phase_status(value: Any, *, default: str = "failed") -> str:
     if value in {"passed", "succeeded"}:
@@ -591,12 +555,19 @@ def _phase_status(value: Any, *, default: str = "failed") -> str:
         return "failed"
     return str(value) if value else default
 
-
 def _with_artifact(phase: dict[str, Any], path: Path, base: Path) -> dict[str, Any]:
     if path.exists():
         phase["artifact_path"] = _relative_to(path, base)
     return {key: value for key, value in phase.items() if value is not None}
 
+def _typed_artifact(result: dict[str, Any], key: str, expected_type: type) -> Any | None:
+    value = result.get(key)
+    return value if isinstance(value, expected_type) else None
+
+def _phase_fields(source: dict[str, Any], *keys: str, status: str) -> dict[str, Any]:
+    phase = {"status": status}
+    phase.update((key, source.get(key)) for key in keys)
+    return phase
 
 def _write_named_json_artifact(path: Path, result: dict[str, Any], key: str) -> None:
     artifact = result.get(key)
@@ -605,7 +576,6 @@ def _write_named_json_artifact(path: Path, result: dict[str, Any], key: str) -> 
     else:
         path.unlink(missing_ok=True)
 
-
 def _copy_optional(src_value: Any, dst: Path) -> None:
     src = _optional_path(src_value)
     if src and src.exists():
@@ -613,18 +583,15 @@ def _copy_optional(src_value: Any, dst: Path) -> None:
     else:
         dst.unlink(missing_ok=True)
 
-
 def _maybe_artifact(key: str, path: Path, base: Path) -> dict[str, str]:
     if path.exists():
         return {key: _relative_to(path, base)}
     return {}
 
-
 def _optional_path(value: Any) -> Path | None:
     if not value:
         return None
     return Path(str(value))
-
 
 def _split_repo(repo: str) -> tuple[str | None, str]:
     parts = repo.split("/", 1)
@@ -632,13 +599,11 @@ def _split_repo(repo: str) -> tuple[str | None, str]:
         return parts[0], parts[1]
     return None, repo
 
-
 def _relative_to(path: Path, base: Path) -> str:
     try:
         return path.relative_to(base).as_posix()
     except ValueError:
         return path.as_posix()
-
 
 def _write_json_atomic(path: Path, data: Any) -> None:
     tmp_path = path.with_name(f"{path.name}.tmp")
