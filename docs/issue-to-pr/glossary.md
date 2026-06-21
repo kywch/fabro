@@ -100,7 +100,7 @@ code.
 
 | Term | Meaning |
 | --- | --- |
-| export eligible | A result may write a nonempty root SWE-bench prediction only when its status is `completed` and, if moderated review artifacts exist, `review_accountability_gate.status = "passed"` with `route_decision` absent or `export`. |
+| export eligible | A result may write a nonempty root SWE-bench prediction only when its status is `completed`. If moderated review artifacts exist, export also requires `review_accountability_gate.status = "passed"`, explicit `route_decision = "export"`, `process_status = "passed"`, `readiness_tier = "ready_verified"`, clean review accounting/failure fields, and `test_evidence_gate.status = "passed"` with machine-observed `observed.tests_passed_count > 0`. |
 | prediction | SWE-bench-shaped record with `instance_id`, `model_name_or_path`, and `model_patch`. |
 | prediction blanking | Setting `model_patch` to `""` in root SWE-bench exports when a patch is not export eligible. The patch can still be preserved in the run bundle. |
 | candidate | The `run.json` record that describes whether the retained patch is ready, reusable only, or absent. |

@@ -20,14 +20,8 @@ class RunBundleArtifactsTest(unittest.TestCase):
         result = _result(
             model_patch="diff --git a/a.py b/a.py\n",
             status="completed",
-            review_accountability_gate={
-                "status": "passed",
-                "process_status": "passed",
-                "readiness_tier": "ready_unverified",
-                "route_decision": "export",
-                "adversarial_row_count": 1,
-                "moderator_disposition_count": 1,
-            },
+            review_accountability_gate=_export_gate(),
+            test_evidence_gate=_test_evidence_gate(),
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -60,7 +54,7 @@ class RunBundleArtifactsTest(unittest.TestCase):
             self.assertEqual(run["status"], "completed")
             self.assertEqual(run["candidate"]["state"], "ready")
             self.assertEqual(run["candidate"]["reuse"], "merge_candidate")
-            self.assertEqual(run["candidate"]["readiness_tier"], "ready_unverified")
+            self.assertEqual(run["candidate"]["readiness_tier"], "ready_verified")
             self.assertEqual(
                 run["phases"]["review_accountability_gate"]["status"],
                 "completed",
@@ -242,6 +236,170 @@ class RunBundleArtifactsTest(unittest.TestCase):
 
         self.assertEqual(build_prediction_record(result)["model_patch"], result["model_patch"])
 
+    def test_empty_and_whitespace_patches_are_not_export_eligible(self):
+        cases = [
+            (
+                "moderated_empty",
+                _result(
+                    model_patch="",
+                    status="completed",
+                    review_accountability_gate=_export_gate(),
+                    test_evidence_gate=_test_evidence_gate(),
+                ),
+            ),
+            (
+                "moderated_whitespace",
+                _result(
+                    model_patch=" \n\t",
+                    status="completed",
+                    review_accountability_gate=_export_gate(),
+                    test_evidence_gate=_test_evidence_gate(),
+                ),
+            ),
+            (
+                "legacy_unmoderated_empty",
+                _result(model_patch="", status="completed"),
+            ),
+            (
+                "legacy_unmoderated_whitespace",
+                _result(model_patch=" \n\t", status="completed"),
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, result in cases:
+                with self.subTest(name=name):
+                    self.assertEqual(build_prediction_record(result)["model_patch"], "")
+                    self.assertEqual(
+                        build_candidate_record(result, Path(tmp) / "patch.diff", Path(tmp)),
+                        {"state": "absent", "reuse": "none"},
+                    )
+
+    def test_moderated_export_requires_strict_accountability_contract(self):
+        base = _result(
+            model_patch="diff --git a/a.py b/a.py\n+ok\n",
+            status="completed",
+            review_accountability_gate=_export_gate(),
+            test_evidence_gate=_test_evidence_gate(),
+        )
+
+        self.assertEqual(build_prediction_record(base)["model_patch"], base["model_patch"])
+
+        cases = [
+            (
+                "missing_test_gate",
+                {"test_evidence_gate": None},
+            ),
+            (
+                "no_runtime_proof",
+                {"test_evidence_gate": _test_evidence_gate(tests_passed_count=0)},
+            ),
+            (
+                "failed_test_gate",
+                {"test_evidence_gate": _test_evidence_gate(status="failed")},
+            ),
+            (
+                "implicit_route",
+                {"review_accountability_gate": _export_gate(route_decision=None)},
+            ),
+            (
+                "process_failed",
+                {
+                    "review_accountability_gate": _export_gate(
+                        process_status="process_failed",
+                    )
+                },
+            ),
+            (
+                "unverified",
+                {
+                    "review_accountability_gate": _export_gate(
+                        readiness_tier="ready_unverified",
+                    )
+                },
+            ),
+            (
+                "process_failures",
+                {
+                    "review_accountability_gate": _export_gate(
+                        process_failures=["open_review_rows"],
+                    )
+                },
+            ),
+            (
+                "blocking_rows",
+                {
+                    "review_accountability_gate": _export_gate(
+                        blocking_rows=[{"id": "A1"}],
+                    )
+                },
+            ),
+            (
+                "malformed_artifacts",
+                {
+                    "review_accountability_gate": _export_gate(
+                        malformed_artifacts=[{"artifact": "review"}],
+                    )
+                },
+            ),
+            (
+                "unaccounted_review_rows",
+                {
+                    "review_accountability_gate": _export_gate(
+                        unaccounted_adversarial_rows=["A2"],
+                    )
+                },
+            ),
+            (
+                "duplicate_disposition_ids",
+                {
+                    "review_accountability_gate": _export_gate(
+                        duplicate_disposition_ids=["A1"],
+                    )
+                },
+            ),
+            (
+                "orphan_dispositions",
+                {
+                    "review_accountability_gate": _export_gate(
+                        orphan_dispositions=["A9"],
+                    )
+                },
+            ),
+            (
+                "invalid_dispositions",
+                {
+                    "review_accountability_gate": _export_gate(
+                        invalid_dispositions=[{"row_id": "A1"}],
+                    )
+                },
+            ),
+            (
+                "closure_failures",
+                {
+                    "review_accountability_gate": _export_gate(
+                        closure_check_failures=[{"id": "A1"}],
+                    )
+                },
+            ),
+            (
+                "row_accounting_mismatch",
+                {
+                    "review_accountability_gate": _export_gate(
+                        moderator_disposition_count=0,
+                    )
+                },
+            ),
+            (
+                "negative_row_count",
+                {"review_accountability_gate": _export_gate(adversarial_row_count=-1)},
+            ),
+        ]
+        for name, overrides in cases:
+            with self.subTest(name=name):
+                result = {**base, **overrides}
+                self.assertEqual(build_prediction_record(result)["model_patch"], "")
+
 
 def _workspace(tmp: str) -> tuple[Path, Path]:
     output_dir = Path(tmp)
@@ -280,6 +438,40 @@ def _result(**overrides) -> dict:
     }
     result.update(overrides)
     return result
+
+
+def _export_gate(**overrides) -> dict:
+    gate = {
+        "status": "passed",
+        "process_status": "passed",
+        "readiness_tier": "ready_verified",
+        "route_decision": "export",
+        "process_failures": [],
+        "adversarial_row_count": 1,
+        "moderator_disposition_count": 1,
+        "fixup_required_rows": [],
+        "blocking_rows": [],
+        "malformed_artifacts": [],
+        "unaccounted_adversarial_rows": [],
+        "unaccounted_major_rows": [],
+        "duplicate_disposition_ids": [],
+        "duplicate_adversarial_row_ids": [],
+        "orphan_dispositions": [],
+        "invalid_dispositions": [],
+        "closure_check_failures": [],
+        "open_rows": [],
+    }
+    gate.update(overrides)
+    return gate
+
+
+def _test_evidence_gate(tests_passed_count: int = 1, status: str = "passed") -> dict:
+    return {
+        "status": status,
+        "observed": {
+            "tests_passed_count": tests_passed_count,
+        },
+    }
 
 
 if __name__ == "__main__":

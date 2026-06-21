@@ -21,3 +21,4 @@ Current docs:
 
 - [Glossary](../glossary.md)
 - [Staged Workflow](staged-workflow.md)
+- [Quint Export Contract](issue-to-pr-export-contract.qnt)

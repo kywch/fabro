@@ -24,7 +24,7 @@ READY_TIERS = {
 }
 
 def build_prediction_record(result: dict[str, Any]) -> dict[str, Any]:
-    model_patch = result.get("model_patch", "")
+    model_patch = _model_patch_text(result)
     if not is_export_eligible(result):
         model_patch = ""
     return {
@@ -34,6 +34,8 @@ def build_prediction_record(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 def is_export_eligible(result: dict[str, Any]) -> bool:
+    if not _model_patch_text(result).strip():
+        return False
     if result.get("status") != "completed":
         return False
     gate = result.get("review_accountability_gate")
@@ -44,10 +46,57 @@ def is_export_eligible(result: dict[str, Any]) -> bool:
             if key != "review_accountability_gate"
         )
         return not has_moderated_review_artifacts
-    return gate.get("status") == "passed" and gate.get("route_decision") in {
-        None,
-        "export",
-    }
+    return _review_accountability_export_eligible(gate) and _test_evidence_verified(
+        result.get("test_evidence_gate")
+    )
+
+def _review_accountability_export_eligible(gate: dict[str, Any]) -> bool:
+    if gate.get("status") != "passed":
+        return False
+    if gate.get("route_decision") != "export":
+        return False
+    if gate.get("process_status") != "passed":
+        return False
+    if gate.get("readiness_tier") != "ready_verified":
+        return False
+    blocking_fields = (
+        "process_failures",
+        "blocking_rows",
+        "fixup_required_rows",
+        "malformed_artifacts",
+        "unaccounted_adversarial_rows",
+        "unaccounted_major_rows",
+        "duplicate_disposition_ids",
+        "duplicate_adversarial_row_ids",
+        "orphan_dispositions",
+        "invalid_dispositions",
+        "closure_check_failures",
+        "open_rows",
+    )
+    if any(gate.get(field) for field in blocking_fields):
+        return False
+    adversarial_row_count = gate.get("adversarial_row_count")
+    moderator_disposition_count = gate.get("moderator_disposition_count")
+    return (
+        type(adversarial_row_count) is int
+        and type(moderator_disposition_count) is int
+        and adversarial_row_count >= 0
+        and moderator_disposition_count >= 0
+        and adversarial_row_count == moderator_disposition_count
+    )
+
+def _test_evidence_verified(gate: Any) -> bool:
+    if not isinstance(gate, dict):
+        return False
+    if gate.get("status") != "passed":
+        return False
+    observed = gate.get("observed") if isinstance(gate.get("observed"), dict) else {}
+    tests_passed_count = observed.get("tests_passed_count")
+    return type(tests_passed_count) is int and tests_passed_count > 0
+
+def _model_patch_text(result: dict[str, Any]) -> str:
+    model_patch = result.get("model_patch", "")
+    return model_patch if isinstance(model_patch, str) else ""
 
 def build_task_record(
     instance: dict[str, Any],
@@ -132,7 +181,7 @@ def write_run_bundle(
             shutil.rmtree(dump_out_dir)
         shutil.copytree(dump_src, dump_out_dir)
     patch_path = output_out_dir / "patch.diff"
-    patch_path.write_text(result.get("model_patch", ""))
+    patch_path.write_text(_model_patch_text(result))
     prediction_path = output_out_dir / "prediction.json"
     _write_json_atomic(prediction_path, build_prediction_record(result))
     for key in (
@@ -199,7 +248,7 @@ def build_run_record(
     phases = {
         "solve": {"status": _phase_status_for_solve(status)},
         "change": {
-            "status": "completed" if result.get("model_patch", "").strip() else "failed",
+            "status": "completed" if _model_patch_text(result).strip() else "failed",
             "patch_path": _relative_to(patch_path, run_dir),
         },
         "verify": _verify_phase(result, output_dir / "verify.json", run_dir),
@@ -284,7 +333,7 @@ def build_candidate_record(
     patch_path: Path,
     base: Path,
 ) -> dict[str, Any]:
-    patch_text = result.get("model_patch", "")
+    patch_text = _model_patch_text(result)
     if not patch_text.strip():
         return {"state": "absent", "reuse": "none"}
     review = result.get("review") if isinstance(result.get("review"), dict) else {}

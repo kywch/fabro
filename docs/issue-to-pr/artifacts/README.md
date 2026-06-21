@@ -14,6 +14,10 @@ Current contract anchors:
 - `candidate.state = "failed_with_patch"` means the patch is preserved for
   continuation, but must not be merged or exported as a successful SWE-bench
   prediction.
+- `output/patch.diff` may retain a patch even when
+  `output/prediction.json.model_patch` is blanked.
+- `exports.swebench_prediction` records the prediction file path; it does not
+  imply that the prediction contains a nonempty patch.
 - `fabro/dump/events.jsonl` is the canonical event source.
 - `output/trajectory.jsonl` is a derived projection for easier issue-to-PR
   inspection.
@@ -38,9 +42,13 @@ When preserving a run for later study, keep these fields easy to find:
   "candidate": {
     "state": "ready|failed_with_patch|absent",
     "reuse": "merge_candidate|continuation_candidate|none",
+    "warning": "Do not merge as-is; use this patch as continuation material.",
+    "readiness_tier": "ready_verified|ready_unverified|needs_fix_code|needs_fix_tests|metadata_only_warning|process_failed",
     "patch_sha256": "...",
     "failure_class": "test_blocking",
-    "failure_reason": "..."
+    "failure_reason": "...",
+    "do_not_repeat": ["..."],
+    "next_agent_guidance": "..."
   },
   "phases": {
     "verify": {
@@ -62,6 +70,11 @@ When preserving a run for later study, keep these fields easy to find:
   }
 }
 ```
+
+For non-export-eligible runs, `output/prediction.json` is still written for
+compatibility, but `model_patch` is `""`. Use `candidate.state` and
+`candidate.reuse` to decide whether the retained patch is merge-ready or only
+continuation material.
 
 For tracked docs, prefer summaries and hashes. Keep full dumps, logs, provider
 payloads, and trajectories in an external artifact store or `tmp/` study
