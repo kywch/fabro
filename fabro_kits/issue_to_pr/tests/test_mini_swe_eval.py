@@ -41,6 +41,9 @@ class MiniSweEvalTest(unittest.TestCase):
             self.assertEqual(summary["closure_without_machine_evidence"], 0)
             self.assertEqual(summary["false_export_due_to_review"], 0)
             self.assertEqual(summary["false_export_due_to_evidence"], 0)
+            self.assertEqual(summary["classified_false_blanks"], 0)
+            self.assertEqual(summary["unclassified_false_blanks"], 0)
+            self.assertEqual(summary["safe_false_alarms"], 0)
             self.assertEqual(summary["expected_traps_caught"], 0)
             self.assertEqual(summary["artifact_honesty_failures"], 0)
             self.assertEqual(summary["expected_b2_ineligible"], 1)
@@ -416,7 +419,34 @@ class MiniSweEvalTest(unittest.TestCase):
                         "decision_outcome": "false_blank",
                     },
                     model_patch="diff --git a/tests/test_greeting.py b/tests/test_greeting.py\n",
+                    candidate={"state": "failed_with_patch", "reuse": "continuation_candidate"},
                     review_accountability_gate={"open_rows": [{"id": "A1"}]},
+                    status="failed",
+                ),
+                result(
+                    {
+                        "artifact_grade": "fail",
+                        "export_grade": "fail",
+                        "false_blank": True,
+                        "decision_outcome": "false_blank",
+                    },
+                    model_patch="diff --git a/src/greeting.py b/src/greeting.py\n",
+                    review_accountability_gate={"status": "failed", "route_decision": "fixup"},
+                    status="failed",
+                ),
+                result(
+                    {
+                        "artifact_grade": "fail",
+                        "export_grade": "fail",
+                        "false_blank": True,
+                        "decision_outcome": "false_blank",
+                    },
+                    candidate={"state": "failed_with_patch", "reuse": "continuation_candidate", "patch_bytes": 12},
+                    review_accountability_gate={
+                        "status": "failed",
+                        "route_decision": "fixup",
+                        "process_failures": ["tests_not_executed_successfully"],
+                    },
                     status="failed",
                 ),
                 result(
@@ -436,7 +466,10 @@ class MiniSweEvalTest(unittest.TestCase):
         self.assertEqual(summary["closure_without_machine_evidence"], 1)
         self.assertEqual(summary["false_export_due_to_evidence"], 1)
         self.assertEqual(summary["false_export_due_to_review"], 1)
-        self.assertEqual(summary["failed_with_patch"], 2)
+        self.assertEqual(summary["classified_false_blanks"], 2)
+        self.assertEqual(summary["unclassified_false_blanks"], 1)
+        self.assertEqual(summary["safe_false_alarms"], 2)
+        self.assertEqual(summary["failed_with_patch"], 4)
 
     def test_mini_swe_grader_derives_independent_outcomes(self):
         case = MiniSweCase(
@@ -528,6 +561,38 @@ class MiniSweEvalTest(unittest.TestCase):
             },
         )
 
+        self.assertEqual(grade.review_precision, "pass")
+        self.assertEqual(grade.moderation_outcome, "correct")
+
+    def test_mini_swe_grader_flags_missing_expected_minor_row(self):
+        case = MiniSweCase(
+            case_id="overblocking-good-patch-with-minor-risk",
+            family="overblocking",
+            suite="dev",
+            issue_text="Fix greeting",
+            expected_files=("src/greeting.py",),
+            allowed_test_files=("tests/test_greeting.py",),
+        )
+        grade = grade_mini_swe_attempt(
+            case=case,
+            patch="diff --git a/src/greeting.py b/src/greeting.py\n",
+            changed_files=["src/greeting.py", "tests/test_greeting.py"],
+            validation_contract={
+                "commands_run": [
+                    {"id": "cmd-001", "command": "python3 -m unittest", "status": "passed"}
+                ]
+            },
+            test_gate={"status": "passed"},
+            accountability_gate={
+                "status": "passed",
+                "route_decision": "export",
+                "adversarial_row_count": 0,
+                "open_rows": [],
+                "process_failures": [],
+            },
+        )
+
+        self.assertEqual(grade.review_recall, "missing_required_row")
         self.assertEqual(grade.review_precision, "pass")
         self.assertEqual(grade.moderation_outcome, "correct")
 

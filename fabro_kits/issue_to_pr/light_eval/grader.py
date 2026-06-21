@@ -188,7 +188,7 @@ def _review_outcomes(
     ):
         return "pass", "pass", "correct"
     if not accounted_ids:
-        return "pass", "invented_blocker", "overblocked"
+        return "missing_required_row", "pass", "correct"
     return "pass", "pass", "row_accounting_fail"
 
 

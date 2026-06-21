@@ -109,12 +109,7 @@ def mini_swe_summary(results: list[dict[str, Any]], failures: list[dict[str, Any
         "cases_by_attempt_origin": counts(evals, "attempt_origin"),
         "cases_by_artifact_origin": counts(evals, "artifact_origin"),
         "cases_by_substrate": counts(evals, "substrate"),
-        "failed_with_patch": sum(
-            1
-            for result in results
-            if str(result.get("model_patch", "")).strip()
-            and not is_export_eligible(result)
-        ),
+        "failed_with_patch": sum(1 for result in results if result_has_patch(result) and not (result.get("eval") if isinstance(result.get("eval"), dict) else {}).get("b2_model_eligible", is_export_eligible(result))),
         "ineligible_by_reason": ineligible_counts(evals),
         "failures": failures,
     }
@@ -129,6 +124,9 @@ def truthfulness_counts(results: list[dict[str, Any]]) -> dict[str, int]:
         "closure_without_machine_evidence": 0,
         "false_export_due_to_review": 0,
         "false_export_due_to_evidence": 0,
+        "classified_false_blanks": 0,
+        "unclassified_false_blanks": 0,
+        "safe_false_alarms": 0,
     }
     for result in results:
         item = result.get("eval")
@@ -154,6 +152,12 @@ def truthfulness_counts(results: list[dict[str, Any]]) -> dict[str, int]:
                 counts["false_export_due_to_evidence"] += 1
             elif review_weak:
                 counts["false_export_due_to_review"] += 1
+        if item.get("false_blank"):
+            if classified_false_blank(item, result):
+                counts["classified_false_blanks"] += 1
+                counts["safe_false_alarms"] += 1
+            else:
+                counts["unclassified_false_blanks"] += 1
     return counts
 
 
@@ -216,6 +220,29 @@ def machine_evidence_missing(item: dict[str, Any], result: dict[str, Any]) -> bo
     if not isinstance(commands, list):
         return True
     return not any(passed_test_command_with_id(command) for command in commands)
+
+
+def classified_false_blank(item: dict[str, Any], result: dict[str, Any]) -> bool:
+    phases = result.get("phases")
+    gate = result.get("review_accountability_gate") or (phases.get("review_accountability_gate") if isinstance(phases, dict) else {})
+    gate = gate if isinstance(gate, dict) else {}
+    candidate = result.get("candidate")
+    candidate = candidate if isinstance(candidate, dict) else {}
+    reasons = {item.get("review_precision"), item.get("moderation_outcome")}
+    for key in ("quality_failures", "honesty_failures", "export_failures"):
+        reasons.update(reason for reason in item.get(key) or () if isinstance(reason, str))
+    reasons.update(reason for reason in gate.get("process_failures") or () if isinstance(reason, str))
+    reasons.update((gate.get("failure_reason"), candidate.get("failure_reason")))
+    return (
+        (result.get("status") == "failed" or gate.get("route_decision") == "fixup")
+        and bool({candidate.get("state"), candidate.get("reuse")} & {"failed_with_patch", "continuation_candidate"})
+        and result_has_patch(result)
+        and bool(reasons & {"contract_overreach", "review_overreach", "process_block", "tests_not_executed_successfully"})
+    )
+
+
+def result_has_patch(result: dict[str, Any]) -> bool:
+    return bool(str(result.get("model_patch", "")).strip() or (result.get("candidate") if isinstance(result.get("candidate"), dict) else {}).get("patch_bytes"))
 
 
 def passed_test_command_with_id(command: Any) -> bool:
