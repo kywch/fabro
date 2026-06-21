@@ -1,4 +1,3 @@
-"""Attempt runners for mini-SWE cases."""
 from __future__ import annotations
 import hashlib
 import json
@@ -30,7 +29,7 @@ from ..workflow_common import (
     write_workflow_smoke_config,
 )
 from .artifacts import materialize_model_artifacts
-from .cases import ensure_mini_swe_case_supported
+from .cases import ensure_mini_swe_case_supported, task_contract_for_case
 from .credentials import bridge_model_credentials, credential_preflight_report
 from .evidence import (
     commands_run_from_validation_contract_path,
@@ -51,7 +50,6 @@ from .workflow_slice import (
 )
 
 class ScriptedCalibrationRunner:
-    """Apply deterministic patches and fixture artifacts for calibration."""
     name = "scripted"
     def __init__(
         self,
@@ -104,7 +102,6 @@ class ScriptedCalibrationRunner:
         )
 
 class WorkflowSliceRunner:
-    """Run a deterministic local Fabro workflow slice for mini-SWE."""
     name = "workflow-slice"
     def __init__(self, *, output_dir: Path, fabro_bin: Path) -> None:
         self.output_dir = output_dir
@@ -238,7 +235,6 @@ class _ModelWorkflowArtifacts:
     run_returncode: int
 
 class ModelWorkflowRunner:
-    """Run the generated mini-SWE repo through the real issue-to-PR workflow."""
     name = "model"
     def __init__(
         self,
@@ -353,10 +349,11 @@ class ModelWorkflowRunner:
     ) -> None:
         workflow = generate_issue_to_pr_workflow(
             graph_name="MiniSweModelWorkflow",
-            setup_script=model_setup_script(repo_dir),
+            setup_script=model_setup_script(repo_dir, task_contract_for_case(case)),
             workflow_profile=STRUCTURED_MODERATED_PROFILE,
             verify_mode=VERIFY_DIFF_CHECK,
             solve_prompt=case.issue_text,
+            simple_fixup_prompt=case.case_id == "good-test-only",
         )
         validate_generated_workflow(
             workflow,
@@ -592,7 +589,6 @@ def _stop_fabro_server(fabro_bin: Path, storage_dir: Path, output_dir: Path, env
     (output_dir / "stop.stderr").write_text(stop_proc.stderr)
 
 class MiniSweProcessBlock(Exception):
-    """A model attempt could not reach artifact grading."""
     def __init__(self, *, reason: str, message: str, detail: str | None = None) -> None:
         super().__init__(message)
         self.reason = reason

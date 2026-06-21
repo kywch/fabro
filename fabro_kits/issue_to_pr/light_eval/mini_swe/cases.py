@@ -1,5 +1,3 @@
-"""Case catalog for mini-SWE lightweight evals."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,18 +5,14 @@ from pathlib import Path
 
 from ..task_schema import MiniSweCase
 
-
 SUPPORTED_ATTEMPTS = ("scripted", "workflow-slice", "model")
 SUPPORTED_CREDENTIAL_BRIDGES = ("off", "openai-codex")
 SUPPORTED_SUBSTRATES = ("local", "docker")
 SUPPORTED_SUITES = ("dev", "locked", "shadow", "all")
 PUBLIC_TEST_COMMAND_ID = "cmd-001"
 
-
 @dataclass(frozen=True)
 class MiniSweCaseBehavior:
-    """Derived behavior knobs shared by mini-SWE runners and artifacts."""
-
     change_source: bool
     change_test: bool
     public_test_expected: str
@@ -32,7 +26,6 @@ class MiniSweCaseBehavior:
         if not self.include_public_test_command_id:
             return None
         return PUBLIC_TEST_COMMAND_ID
-
 KNOWN_MINI_SWE_CASES = (
     MiniSweCase(
         case_id="good-source-plus-test",
@@ -81,10 +74,13 @@ KNOWN_MINI_SWE_CASES = (
         suite="dev",
         issue_text=(
             "Add regression coverage for the existing `greeting(name)` behavior. "
-            "The source implementation is already correct for this task."
+            "The source implementation is already correct for this task. "
+            "Change `tests/test_greeting.py` only, do not change `src/greeting.py`, "
+            "and assert the current `hello <name>` behavior."
         ),
         expected_files=(),
         allowed_test_files=("tests/test_greeting.py",),
+        forbidden_files=("src/greeting.py",),
         requires_test_change=True,
         expected_decision_hint="export",
     ),
@@ -104,16 +100,9 @@ KNOWN_MINI_SWE_CASES = (
     ),
 )
 
-
-SUPPORTED_CASE_IDS_BY_ATTEMPT = {
-    "scripted": tuple(case.case_id for case in KNOWN_MINI_SWE_CASES),
-    "workflow-slice": tuple(case.case_id for case in KNOWN_MINI_SWE_CASES),
-    "model": tuple(case.case_id for case in KNOWN_MINI_SWE_CASES),
-}
-
+SUPPORTED_CASE_IDS = tuple(case.case_id for case in KNOWN_MINI_SWE_CASES)
 
 def case_behavior(case: MiniSweCase) -> MiniSweCaseBehavior:
-    """Return derived behavior for a generated mini-SWE case."""
     is_test_only = case.case_id == "good-test-only"
     return MiniSweCaseBehavior(
         change_source=not is_test_only,
@@ -131,7 +120,6 @@ def case_behavior(case: MiniSweCase) -> MiniSweCaseBehavior:
 
 
 def initial_public_test_expected(case: MiniSweCase) -> str:
-    """Return the expected value in the generated repo's initial public test."""
     if case.case_id == "good-source-existing-test":
         return "hello, Ada"
     return "hello Ada"
@@ -156,7 +144,6 @@ def greeting_test_text(expected: str, *, extra_name: str | None = None) -> str:
 
 
 def public_test_text_for_case(case: MiniSweCase) -> str:
-    """Return the public test text written by a successful case attempt."""
     behavior = case_behavior(case)
     return greeting_test_text(
         behavior.public_test_expected,
@@ -165,7 +152,6 @@ def public_test_text_for_case(case: MiniSweCase) -> str:
 
 
 def tests_added_for_case(case: MiniSweCase) -> list[dict[str, str]]:
-    """Return validation-contract test additions for a case."""
     return [
         {
             "path": path,
@@ -173,6 +159,19 @@ def tests_added_for_case(case: MiniSweCase) -> list[dict[str, str]]:
         }
         for path in case.allowed_test_files
     ]
+
+
+def task_contract_for_case(case: MiniSweCase) -> dict:
+    contract = dict(
+        source_change_allowed=bool(case.expected_files),
+        required_changed_files=list(case.expected_files + case.allowed_test_files),
+        forbidden_changed_files=list(case.forbidden_files),
+        expected_behavior_preserved=not bool(case.expected_files),
+        test_must_assert_current_behavior=case.case_id == "good-test-only",
+    )
+    if case.case_id == "overblocking-good-patch-with-minor-risk":
+        contract["expected_review_rows"] = [dict(id="minor-001", severity="minor", category="maintainability", summary="The test name is specific to comma behavior.", required_files=["tests/test_greeting.py"], closure_requires="runtime_tests")]
+    return contract
 
 
 def validate_mini_swe_options(
@@ -183,7 +182,6 @@ def validate_mini_swe_options(
     credential_preflight: bool,
     auth_storage_dir: Path | None,
 ) -> None:
-    """Validate cross-cutting mini-SWE runner options."""
     if attempt not in SUPPORTED_ATTEMPTS:
         raise SystemExit(f"mini-swe attempt not implemented yet: {attempt}")
     if substrate not in SUPPORTED_SUBSTRATES:
@@ -201,16 +199,13 @@ def validate_mini_swe_options(
 
 
 def ensure_mini_swe_case_supported(case: MiniSweCase, *, attempt: str) -> None:
-    """Validate that an attempt runner supports a case."""
-    supported_cases = SUPPORTED_CASE_IDS_BY_ATTEMPT.get(attempt)
-    if supported_cases is None:
+    if attempt not in SUPPORTED_ATTEMPTS:
         raise SystemExit(f"mini-swe attempt not implemented yet: {attempt}")
-    if case.case_id not in supported_cases:
+    if case.case_id not in SUPPORTED_CASE_IDS:
         raise SystemExit(f"mini-swe {attempt} case not implemented yet: {case.case_id}")
 
 
 def list_mini_swe_cases(case: str, *, suite: str = "all") -> list[MiniSweCase]:
-    """Return selected mini-SWE case definitions."""
     if suite not in SUPPORTED_SUITES:
         raise SystemExit(f"unknown mini-swe suite: {suite}")
     cases = [

@@ -1,5 +1,3 @@
-"""Artifact materialization helpers for mini-SWE model attempts."""
-
 from __future__ import annotations
 
 import json

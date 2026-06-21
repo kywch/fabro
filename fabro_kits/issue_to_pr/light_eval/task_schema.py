@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 
 AttemptOrigin = Literal["scripted", "workflow-slice", "model"]
@@ -78,15 +78,6 @@ class AttemptResult:
             "dump_path": self.dump_path.as_posix() if self.dump_path else None,
             "provenance": self.provenance,
         }
-
-
-class AttemptRunner(Protocol):
-    """Protocol for scripted, workflow-slice, and model mini-SWE attempts."""
-
-    name: AttemptOrigin
-
-    def run(self, case: MiniSweCase, repo_dir: Path, work_dir: Path) -> AttemptResult:
-        """Run one attempt against a generated repo."""
 
 
 def mini_swe_source(case: MiniSweCase) -> dict[str, str]:

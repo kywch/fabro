@@ -1,4 +1,3 @@
-"""Canonical artifact bundle helpers for issue-to-PR attempts."""
 from __future__ import annotations
 import hashlib
 import json
@@ -25,7 +24,6 @@ READY_TIERS = {
 }
 
 def build_prediction_record(result: dict[str, Any]) -> dict[str, Any]:
-    """Return the single-instance equivalent of predictions.jsonl."""
     model_patch = result.get("model_patch", "")
     if not is_export_eligible(result):
         model_patch = ""
@@ -36,7 +34,6 @@ def build_prediction_record(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 def is_export_eligible(result: dict[str, Any]) -> bool:
-    """Return whether a result is eligible for root prediction export."""
     if result.get("status") != "completed":
         return False
     gate = result.get("review_accountability_gate")
@@ -57,7 +54,6 @@ def build_task_record(
     goal_path: Path,
     sandbox_provider: str,
 ) -> dict[str, Any]:
-    """Build a domain-neutral task record from one eval instance."""
     owner, name = _split_repo(instance["repo"])
     source = instance.get("source") if isinstance(instance.get("source"), dict) else None
     repository = (
@@ -97,7 +93,6 @@ def build_task_record(
     }
 
 def run_id_for_task(task_id: str, attempt_id: str = DEFAULT_ATTEMPT_ID) -> str:
-    """Return the deterministic run directory id for a task attempt."""
     return f"{task_id}--{attempt_id}"
 
 def write_run_bundle(
@@ -110,7 +105,6 @@ def write_run_bundle(
     run_id: str | None = None,
     attempt_id: str = DEFAULT_ATTEMPT_ID,
 ) -> dict[str, str]:
-    """Write one canonical `runs/<run_id>/` bundle."""
     task_id = instance["instance_id"]
     run_id = run_id or run_id_for_task(task_id, attempt_id)
     run_dir = output_dir / "runs" / run_id
@@ -149,6 +143,7 @@ def write_run_bundle(
         *REVIEW_ARTIFACT_NAMES,
     ):
         _write_named_json_artifact(output_out_dir / f"{key}.json", result, key)
+    _copy_optional(config_dir / "validation_contract.json", output_out_dir / "validation_contract.json")
     trajectory_export_path = output_out_dir / "trajectory.jsonl"
     _copy_optional(result.get("trajectory_path"), trajectory_export_path)
     task_record = build_task_record(instance, Path("input/goal.md"), sandbox_provider)
@@ -178,6 +173,7 @@ def write_run_bundle(
         "audit",
         "commands_run",
         "test_evidence_gate",
+        "validation_contract",
         *REVIEW_ARTIFACT_NAMES,
         "trajectory",
     ):
@@ -193,7 +189,6 @@ def build_run_record(
     result: dict[str, Any],
     run_dir: Path,
 ) -> dict[str, Any]:
-    """Build the canonical run index for one attempt."""
     output_dir = run_dir / "output"
     patch_path = output_dir / "patch.diff"
     prediction_path = output_dir / "prediction.json"
@@ -289,7 +284,6 @@ def build_candidate_record(
     patch_path: Path,
     base: Path,
 ) -> dict[str, Any]:
-    """Describe whether the retained patch is publishable or only reusable."""
     patch_text = result.get("model_patch", "")
     if not patch_text.strip():
         return {"state": "absent", "reuse": "none"}
@@ -346,7 +340,6 @@ def load_or_init_manifest(
     layout: str = RUNS_LAYOUT,
     exports: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Load or initialize the root output manifest."""
     manifest_path = output_dir / "manifest.json"
     if manifest_path.exists():
         try:
@@ -375,7 +368,6 @@ def update_manifest_for_run(
     output_dir: Path,
     include_swebench_exports: bool = True,
 ) -> None:
-    """Record one canonical run in the root manifest."""
     run_dir = output_dir / "runs" / run_id
     manifest["layout"] = RUNS_LAYOUT
     if include_swebench_exports:
@@ -406,7 +398,6 @@ def update_manifest_for_run(
     }
 
 def write_manifest(output_dir: Path, manifest: dict[str, Any]) -> None:
-    """Write the root manifest atomically."""
     _write_json_atomic(output_dir / "manifest.json", manifest)
 
 def build_eval_summary(total: int, failures: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:

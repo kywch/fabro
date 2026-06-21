@@ -1,10 +1,9 @@
-"""Evidence and validation-contract helpers for mini-SWE runs."""
 from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
 from ..task_schema import AttemptResult, MiniSweCase
-from .cases import case_behavior, tests_added_for_case
+from .cases import case_behavior, task_contract_for_case, tests_added_for_case
 
 def adversarial_review_for_case(case: MiniSweCase) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
@@ -108,11 +107,19 @@ def commands_run_from_artifacts(
         except json.JSONDecodeError:
             return []
         if isinstance(payload, list):
-            return payload
+            return normalize_command_ids(payload)
     commands = validation_contract.get("commands_run")
     if isinstance(commands, list):
-        return commands
+        return normalize_command_ids(commands)
     return []
+
+def normalize_command_ids(commands: list[Any]) -> list[Any]:
+    for command in commands:
+        if isinstance(command, dict) and not str(command.get("id", "")).strip():
+            stable_id = str(command.get("stable_id", "")).strip()
+            if stable_id:
+                command["id"] = stable_id
+    return commands
 
 def commands_run_from_validation_contract_path(path: str | None) -> list[dict[str, Any]]:
     if not path:
@@ -129,7 +136,7 @@ def commands_run_from_validation_contract_path(path: str | None) -> list[dict[st
     commands = payload.get("commands_run")
     if not isinstance(commands, list):
         return []
-    return [item for item in commands if isinstance(item, dict)]
+    return normalize_command_ids([item for item in commands if isinstance(item, dict)])
 
 def has_commands_run_list(value: Any) -> bool:
     return isinstance(value, list) and any(isinstance(item, dict) for item in value)
@@ -176,6 +183,7 @@ def validation_contract_for_case(
         "mode": f"mini-swe-{attempt}",
         "commands_run": commands_run,
         "tests_added": tests_added_for_case(case),
+        **task_contract_for_case(case),
     }
     if behavior.no_test_justification:
         contract["no_test_justification"] = behavior.no_test_justification

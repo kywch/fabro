@@ -1,5 +1,3 @@
-"""Mini-SWE lightweight eval orchestration."""
-
 from __future__ import annotations
 
 import tempfile
@@ -65,7 +63,6 @@ def run_mini_swe(
     seed: int | None = None,
     fail_fast: bool = False,
 ) -> dict[str, Any]:
-    """Run mini-SWE lightweight eval cases."""
     cases = list_mini_swe_cases(case, suite=suite)
     validate_mini_swe_options(
         attempt=attempt,
@@ -183,7 +180,6 @@ def run_mini_swe_case(
     auth_storage_dir: Path | None = None,
     credential_preflight: bool = False,
 ) -> dict[str, Any]:
-    """Run one mini-SWE case."""
     started_at = time.monotonic()
     validate_mini_swe_options(
         attempt=attempt,
@@ -231,10 +227,18 @@ def run_mini_swe_case(
             "sandbox_provider": substrate,
         },
     )
-    validation_contract = read_artifact_or_default(
-        artifact_paths.get("validation_contract"),
-        validation_contract_for_case(case, attempt=attempt, commands_run=[]),
-    )
+    audit_repair = {"patch_nonempty": bool(patch.strip()), "changed_files": changed_files, "test_files_changed": test_files_changed}
+    if any(audit.get(key) != value for key, value in audit_repair.items()):
+        audit["_repo_facts_repaired"] = True
+    audit.update(audit_repair)
+    fallback_contract = validation_contract_for_case(case, attempt=attempt, commands_run=[])
+    validation_contract = {
+        **fallback_contract,
+        **read_artifact_or_default(
+            artifact_paths.get("validation_contract"),
+            fallback_contract,
+        ),
+    }
     commands_run = commands_run_from_artifacts(
         case,
         attempt_result=attempt_result,

@@ -1,5 +1,3 @@
-"""Generated repository helpers for mini-SWE cases."""
-
 from __future__ import annotations
 
 import json
@@ -17,7 +15,6 @@ from .cases import (
     public_test_text_for_case,
 )
 
-
 def create_repo_for_case(case: MiniSweCase, repo_dir: Path) -> None:
     src = repo_dir / "src"
     tests = repo_dir / "tests"
@@ -34,7 +31,6 @@ def create_repo_for_case(case: MiniSweCase, repo_dir: Path) -> None:
     git_run(repo_dir, "init")
     git_run(repo_dir, "add", "src/greeting.py", "src/__init__.py", "tests/test_greeting.py")
 
-
 def apply_case_patch(case: MiniSweCase, repo_dir: Path) -> None:
     behavior = case_behavior(case)
     if behavior.change_source:
@@ -47,13 +43,14 @@ def apply_case_patch(case: MiniSweCase, repo_dir: Path) -> None:
             public_test_text_for_case(case)
         )
 
-
-def model_setup_script(repo_dir: Path) -> str:
+def model_setup_script(repo_dir: Path, task_contract: dict[str, Any] | None = None) -> str:
     return (
         "python3 - <<'PY'\n"
+        "import json\n"
         "import shutil\n"
         "from pathlib import Path\n"
         f"src = Path({json.dumps(str(repo_dir))})\n"
+        f"task_contract = json.loads({json.dumps(json.dumps(task_contract or {}))})\n"
         "dst = Path.cwd()\n"
         "if any(dst.iterdir()):\n"
         "    raise SystemExit(f'mini-swe model setup refuses non-empty cwd: {dst}')\n"
@@ -63,10 +60,12 @@ def model_setup_script(repo_dir: Path) -> str:
         "        shutil.copytree(child, target, dirs_exist_ok=True)\n"
         "    else:\n"
         "        shutil.copy2(child, target)\n"
+        "if task_contract:\n"
+        "    out = dst / '.fabro' / 'issue-to-pr' / 'validation.json'\n"
+        "    out.parent.mkdir(parents=True, exist_ok=True); out.write_text(json.dumps(task_contract, indent=2, sort_keys=True) + '\\n')\n"
         "print('mini-swe model setup: copied generated repo')\n"
         "PY"
     )
-
 
 def append_working_dir_config(config_path: Path, working_dir: Path) -> None:
     with config_path.open("a") as handle:
@@ -75,7 +74,6 @@ def append_working_dir_config(config_path: Path, working_dir: Path) -> None:
             "[run]\n"
             f"working_dir = {json.dumps(str(working_dir.resolve()))}\n"
         )
-
 
 def apply_patch_to_repo(repo_dir: Path, patch: str) -> None:
     proc = subprocess.run(

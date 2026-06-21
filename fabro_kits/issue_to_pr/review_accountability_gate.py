@@ -1,5 +1,3 @@
-"""Review-accountability gate for issue-to-PR workflows."""
-
 from __future__ import annotations
 
 import inspect
@@ -7,10 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 MAJOR = {"blocker", "critical", "major"}
 STATES = {"open", "closed_by_evidence", "rejected", "downgraded"}
-
 
 def evaluate_review_accountability(
     *,
@@ -25,7 +21,6 @@ def evaluate_review_accountability(
     patch_diff: str = "",
     settings_ref_diff: str = "",
 ) -> dict[str, Any]:
-    """Evaluate whether adversarial review rows are export-accounted for."""
     malformed = []
     for artifact, err in (
         ("adversarial_review", adversarial_error),
@@ -220,7 +215,12 @@ def evaluate_review_accountability(
         ]
         if state in {"closed_by_evidence", "downgraded", "rejected"} and missing_required:
             disposition["missing_required_files"] = missing_required
-            add_unique(closure_check_failures, disposition)
+            if not (
+                state == "rejected"
+                and not severe
+                and str(disposition.get("category", "")).lower() == "metadata"
+            ):
+                add_unique(closure_check_failures, disposition)
         if (
             severe
             and state in {"closed_by_evidence", "downgraded", "rejected"}

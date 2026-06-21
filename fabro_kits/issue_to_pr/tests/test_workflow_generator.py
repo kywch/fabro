@@ -151,6 +151,37 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertNotIn('settings_ref_diff.count(\\"+The numeric mode', workflow)
         self.assertIn("treat open rows as a checklist", workflow)
         self.assertIn("Proceed to patch extraction.", workflow)
+        self.assertIn("expected_review_rows", workflow)
+        self.assertIn(":(exclude).fabro/issue-to-pr/**", workflow)
+
+    def test_simple_fixup_prompt_keeps_tiny_task_guidance_focused(self):
+        workflow = generate_issue_to_pr_workflow(
+            graph_name="IssueToPr",
+            setup_script=":",
+            workflow_profile=STRUCTURED_MODERATED_PROFILE,
+            verify_mode=VERIFY_DIFF_CHECK,
+            simple_fixup_prompt=True,
+        )
+
+        fixup = workflow.split('fixup         [label="Fixup"', 1)[1]
+        self.assertIn("Create the minimal required diff", fixup)
+        self.assertIn("patch_nonempty=false", fixup)
+        self.assertIn("For test-only tasks", fixup)
+        self.assertIn("do not change forbidden source files", fixup)
+        self.assertIn("instead of arguing existing coverage\\nis enough", fixup)
+        self.assertNotIn("Django docs/ref/settings.txt", fixup)
+        self.assertNotIn("release/changelog note", fixup)
+
+    def test_default_fixup_prompt_keeps_large_repo_guidance(self):
+        workflow = generate_issue_to_pr_workflow(
+            graph_name="IssueToPr",
+            setup_script=":",
+            workflow_profile=STRUCTURED_MODERATED_PROFILE,
+            verify_mode=VERIFY_DIFF_CHECK,
+        )
+
+        self.assertIn("Django docs/ref/settings.txt", workflow)
+        self.assertIn("release/changelog note", workflow)
     def test_structured_preflight_rejects_stale_loop_budget(self):
         workflow = generate_issue_to_pr_workflow(
             graph_name="IssueToPr",

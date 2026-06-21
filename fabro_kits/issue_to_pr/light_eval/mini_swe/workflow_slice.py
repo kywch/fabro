@@ -1,12 +1,10 @@
-"""Workflow-slice artifact generation for mini-SWE."""
-
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 from ..task_schema import MiniSweCase
-from .cases import case_behavior, public_test_text_for_case, tests_added_for_case
+from .cases import case_behavior, public_test_text_for_case, task_contract_for_case, tests_added_for_case
 from .evidence import (
     adversarial_review_for_case,
     moderator_filter_for_case,
@@ -26,7 +24,6 @@ WORKFLOW_SLICE_REQUIRED_ARTIFACTS = (
 
 
 def missing_workflow_slice_artifacts(artifacts_dir: Path) -> list[str]:
-    """Return required workflow-slice artifacts that were not materialized."""
     return [
         name for name in WORKFLOW_SLICE_REQUIRED_ARTIFACTS if not (artifacts_dir / name).exists()
     ]
@@ -65,6 +62,7 @@ def workflow_slice_solve_script(case: MiniSweCase, repo_dir: Path, artifacts_dir
     behavior = case_behavior(case)
     test_text = public_test_text_for_case(case) if behavior.change_test else None
     tests_added_json = json.dumps(tests_added_for_case(case))
+    task_contract_json = json.dumps(task_contract_for_case(case))
     return (
         "python3 - <<'PY'\n"
         "import json\n"
@@ -119,6 +117,7 @@ def workflow_slice_solve_script(case: MiniSweCase, repo_dir: Path, artifacts_dir
         "    'sandbox_provider': 'local',\n"
         "}\n"
         f"tests_added = {tests_added_json}\n"
+        f"task_contract = json.loads({json.dumps(task_contract_json)})\n"
         f"no_test_justification = {behavior.no_test_justification!r}\n"
         "validation_contract = {\n"
         "    'schema_version': 1,\n"
@@ -126,6 +125,7 @@ def workflow_slice_solve_script(case: MiniSweCase, repo_dir: Path, artifacts_dir
         "    'tests_added': tests_added,\n"
         "    'commands_run': [command],\n"
         "}\n"
+        "validation_contract.update(task_contract)\n"
         "if no_test_justification:\n"
         "    validation_contract['no_test_justification'] = no_test_justification\n"
         "(artifact_dir / 'patch.diff').write_text(patch)\n"

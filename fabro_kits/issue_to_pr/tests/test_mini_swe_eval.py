@@ -292,12 +292,22 @@ class MiniSweEvalTest(unittest.TestCase):
             patch = (run_dir / "output" / "patch.diff").read_text()
             prediction = json.loads((run_dir / "output" / "prediction.json").read_text())
             audit = json.loads((run_dir / "output" / "audit.json").read_text())
+            oracle = json.loads((run_dir / "input" / "oracle.json").read_text())
+            validation = json.loads(
+                (output_dir / "_configs" / "good-test-only" / "validation_contract.json").read_text()
+            )
 
             self.assertTrue(prediction["model_patch"])
             self.assertNotIn("diff --git a/src/greeting.py", patch)
             self.assertIn("diff --git a/tests/test_greeting.py", patch)
             self.assertEqual(audit["changed_files"], ["tests/test_greeting.py"])
             self.assertEqual(audit["test_files_changed"], ["tests/test_greeting.py"])
+            self.assertEqual(oracle["forbidden_files"], ["src/greeting.py"])
+            self.assertFalse(validation["source_change_allowed"])
+            self.assertEqual(validation["required_changed_files"], ["tests/test_greeting.py"])
+            self.assertEqual(validation["forbidden_changed_files"], ["src/greeting.py"])
+            self.assertTrue(validation["expected_behavior_preserved"])
+            self.assertTrue(validation["test_must_assert_current_behavior"])
 
     def test_mini_swe_minor_review_risk_does_not_overblock_good_patch(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -325,8 +335,16 @@ class MiniSweEvalTest(unittest.TestCase):
             self.assertEqual(gate["adversarial_row_count"], 1)
             self.assertEqual(gate["downgraded_rows"][0]["id"], "minor-001")
             self.assertEqual(gate["process_failures"], [])
+            self.assertEqual(
+                run["eval"]["effective_expected_decision_hint"],
+                "export",
+            )
             self.assertEqual(run["eval"]["review_precision"], "pass")
             self.assertEqual(run["eval"]["moderation_outcome"], "correct")
+            contract = json.loads(
+                (output_dir / "_configs" / "overblocking-good-patch-with-minor-risk" / "validation_contract.json").read_text()
+            )
+            self.assertEqual(contract["expected_review_rows"][0]["id"], "minor-001")
 
     def test_mini_swe_summary_derives_truthfulness_counters(self):
         def result(eval_updates, **extra):
@@ -388,6 +406,25 @@ class MiniSweEvalTest(unittest.TestCase):
                     {"artifact_grade": "fail"},
                     review_accountability_gate={"closure_check_failures": [{"id": "row-1"}]},
                 ),
+                result(
+                    {
+                        "artifact_grade": "fail",
+                        "export_grade": "fail",
+                        "false_blank": True,
+                        "review_precision": "contract_overreach",
+                        "moderation_outcome": "overblocked",
+                        "decision_outcome": "false_blank",
+                    },
+                    model_patch="diff --git a/tests/test_greeting.py b/tests/test_greeting.py\n",
+                    review_accountability_gate={"open_rows": [{"id": "A1"}]},
+                    status="failed",
+                ),
+                result(
+                    {"artifact_grade": "fail"},
+                    model_patch="diff --git a/src/greeting.py b/src/greeting.py\n",
+                    review_accountability_gate={"status": "failed", "route_decision": "fixup"},
+                    status="completed",
+                ),
             ],
             [],
         )
@@ -399,6 +436,7 @@ class MiniSweEvalTest(unittest.TestCase):
         self.assertEqual(summary["closure_without_machine_evidence"], 1)
         self.assertEqual(summary["false_export_due_to_evidence"], 1)
         self.assertEqual(summary["false_export_due_to_review"], 1)
+        self.assertEqual(summary["failed_with_patch"], 2)
 
     @unittest.skipUnless(Path("target/debug/fabro").exists(), "missing target/debug/fabro")
     def test_mini_swe_workflow_slice_exports_and_is_calibration_only(self):
@@ -751,6 +789,53 @@ class MiniSweEvalTest(unittest.TestCase):
 
         self.assertEqual(grade.review_precision, "pass")
         self.assertEqual(grade.moderation_outcome, "row_accounting_fail")
+
+    def test_mini_swe_grader_classifies_test_only_contract_overreach_fail_closed(self):
+        case = MiniSweCase(
+            case_id="good-test-only",
+            family="positive",
+            suite="dev",
+            issue_text="Add regression coverage for existing greeting behavior",
+            expected_files=(),
+            allowed_test_files=("tests/test_greeting.py",),
+        )
+        grade = grade_mini_swe_attempt(
+            case=case,
+            patch="diff --git a/tests/test_greeting.py b/tests/test_greeting.py\n",
+            changed_files=["tests/test_greeting.py"],
+            test_files_changed=["tests/test_greeting.py"],
+            validation_contract={
+                "commands_run": [
+                    {"id": "cmd-001", "command": "python3 -m unittest", "status": "passed"}
+                ]
+            },
+            test_gate={"status": "passed"},
+            accountability_gate={
+                "status": "failed",
+                "route_decision": "fixup",
+                "failure_reason": "open_review_rows",
+                "open_rows": [
+                    {
+                        "id": "A1",
+                        "category": "tests",
+                        "severity": "major",
+                        "reason": (
+                            "The new regression test still asserts the space-formatted "
+                            "greeting and does not show the comma-bearing behavior."
+                        ),
+                    }
+                ],
+            },
+        )
+
+        self.assertTrue(grade.patch_pass)
+        self.assertFalse(grade.artifact_pass)
+        self.assertFalse(grade.export_pass)
+        self.assertTrue(grade.false_blank)
+        self.assertEqual(grade.quality_failures, ())
+        self.assertEqual(grade.review_precision, "contract_overreach")
+        self.assertEqual(grade.moderation_outcome, "overblocked")
+        self.assertEqual(grade.decision_outcome, "false_blank")
 
     def test_mini_swe_grader_treats_expected_fixup_as_export_pass(self):
         case = MiniSweCase(

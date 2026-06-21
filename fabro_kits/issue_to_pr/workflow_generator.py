@@ -1,5 +1,3 @@
-"""Shared workflow graph generation for issue-to-PR style attempts."""
-
 from __future__ import annotations
 
 from .evidence_gate import build_embedded_gate_script
@@ -23,21 +21,13 @@ ADVERSARIAL_REVIEW_PATH = f"{ARTIFACT_DIR}/adversarial-review.json"
 MODERATOR_FILTER_PATH = f"{ARTIFACT_DIR}/moderator-filter.json"
 REVIEW_MATERIALIZATION_PATH = f"{ARTIFACT_DIR}/review-materialization.json"
 REVIEW_ACCOUNTABILITY_GATE_PATH = f"{ARTIFACT_DIR}/review-accountability-gate.json"
-
+PRODUCT_DIFF = "git diff -- . ':(exclude).fabro/issue-to-pr/**'"
 
 def dot_escape(text: str) -> str:
-    """Escape text for a DOT double-quoted attribute value."""
     return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
 def escape_goal_for_template(text: str) -> str:
-    """Protect issue text that looks like MiniJinja template syntax.
-
-    Fabro renders graph goals as templates. SWE-bench issue text can contain
-    Django template examples such as `{% static '...' %}`. Goal text can be
-    rendered more than once, so raw blocks are not enough; neutralize template
-    delimiters while keeping the examples readable for the agent.
-    """
     replacements = (
         ("{%", "{ %"),
         ("%}", "% }"),
@@ -50,7 +40,6 @@ def escape_goal_for_template(text: str) -> str:
     for source, target in replacements:
         escaped = escaped.replace(source, target)
     return escaped
-
 
 def default_verify_mode(workflow_profile: str, verify_mode: str | None) -> str:
     if verify_mode:
@@ -65,7 +54,6 @@ def default_verify_mode(workflow_profile: str, verify_mode: str | None) -> str:
 
 
 def validate_generated_workflow(workflow: str, *, workflow_profile: str) -> None:
-    """Validate invariants the eval harness relies on before launching Fabro."""
     if workflow_profile not in {
         STRUCTURED_PROFILE,
         STRUCTURED_GATED_PROFILE,
@@ -131,8 +119,8 @@ def generate_issue_to_pr_workflow(
     workflow_profile: str = SIMPLE_PROFILE,
     verify_mode: str | None = None,
     solve_prompt: str = "Fix this issue in the repository. Make the minimal code change needed.",
+    simple_fixup_prompt: bool = False,
 ) -> str:
-    """Generate a Fabro DOT workflow for issue-to-PR attempts."""
     verify_mode = default_verify_mode(workflow_profile, verify_mode)
     if workflow_profile == SIMPLE_PROFILE:
         return _simple_workflow(graph_name, setup_script, solve_prompt)
@@ -142,6 +130,7 @@ def generate_issue_to_pr_workflow(
             setup_script,
             verify_mode,
             include_test_evidence_gate=False,
+            simple_fixup_prompt=simple_fixup_prompt,
         )
     if workflow_profile == STRUCTURED_GATED_PROFILE:
         return _structured_workflow(
@@ -150,6 +139,7 @@ def generate_issue_to_pr_workflow(
             verify_mode,
             include_test_evidence_gate=True,
             include_moderated_review=False,
+            simple_fixup_prompt=simple_fixup_prompt,
         )
     if workflow_profile == STRUCTURED_MODERATED_PROFILE:
         return _structured_workflow(
@@ -158,6 +148,7 @@ def generate_issue_to_pr_workflow(
             verify_mode,
             include_test_evidence_gate=True,
             include_moderated_review=True,
+            simple_fixup_prompt=simple_fixup_prompt,
         )
     raise ValueError(f"unsupported workflow profile: {workflow_profile}")
 
@@ -169,7 +160,7 @@ def _simple_workflow(graph_name: str, setup_script: str, solve_prompt: str) -> s
     exit  [shape=Msquare]
     setup         [label="Setup", shape=parallelogram, script="{dot_escape(setup_script)}"]
     solve         [label="Solve", prompt="{dot_escape(solve_prompt)}"]
-    extract_patch [label="Extract Patch", shape=parallelogram, script="git diff"]
+    extract_patch [label="Extract Patch", shape=parallelogram, script="{PRODUCT_DIFF}"]
     start -> setup -> solve -> extract_patch -> exit
 }}
 '''
@@ -182,6 +173,7 @@ def _structured_workflow(
     *,
     include_test_evidence_gate: bool,
     include_moderated_review: bool = False,
+    simple_fixup_prompt: bool = False,
 ) -> str:
     gate_node = ""
     review_nodes = f'''    review        [label="Review", goal_gate=true, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, output_schema="routing", prompt="{dot_escape(_review_prompt())}"]
@@ -229,10 +221,10 @@ def _structured_workflow(
     research      [label="Research", prompt="{dot_escape(_research_prompt())}"]
     implement     [label="Implement", prompt="{dot_escape(_implement_prompt())}"]
     verify        [label="Verify", shape=parallelogram, goal_gate=true, max_retries=0, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="{dot_escape(_verify_script(verify_mode))}"]
-    snapshot_patch [label="Snapshot Patch", shape=parallelogram, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="git diff"]
+    snapshot_patch [label="Snapshot Patch", shape=parallelogram, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="{PRODUCT_DIFF}"]
     audit         [label="Audit Diff", shape=parallelogram, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="{dot_escape(_audit_script())}"]
-{gate_node}{review_nodes}    fixup         [label="Fixup", max_visits={STRUCTURED_FIXUP_MAX_VISITS}, prompt="{dot_escape(_fixup_prompt())}"]
-    extract_patch [label="Extract Patch", shape=parallelogram, script="git diff"]
+{gate_node}{review_nodes}    fixup         [label="Fixup", max_visits={STRUCTURED_FIXUP_MAX_VISITS}, prompt="{dot_escape(_fixup_prompt(simple_fixup_prompt))}"]
+    extract_patch [label="Extract Patch", shape=parallelogram, script="{PRODUCT_DIFF}"]
     start -> setup -> research -> implement -> verify
     verify -> snapshot_patch [condition="outcome=succeeded"]
     verify -> fixup        [condition="outcome=failed"]
@@ -247,7 +239,7 @@ def _structured_workflow(
 def _research_prompt() -> str:
     return """Research only; do not edit repository files or ask questions. When uncertain, choose the smallest issue-scoped investigation path yourself.
 Use read-only commands. Put notes in /tmp/fabro-research.md.
-Write {VALIDATION_CONTRACT_PATH} with JSON fields:
+Write {VALIDATION_CONTRACT_PATH} with JSON fields, preserving existing task-contract fields such as expected_review_rows:
 	acceptance_criteria including requested release/changelog notes, risky_shortcuts, likely_files, test_plan,
 research_assumptions. End with acceptance criteria and test plan.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
@@ -259,7 +251,7 @@ def _implement_prompt() -> str:
 	Use /tmp/fabro-research.md when present. Satisfy all acceptance criteria, including requested release/changelog notes, not only the title; if the contract names a release/changelog file, add one canonical note in the first patch. For testable behavior changes, change a regression test file in git diff; running existing tests alone is not enough.
 Run the most relevant focused single-process test command; when a Python repo has stdlib `unittest` tests and no pytest configuration, prefer `python3 -m unittest <module>` over pytest. For Django prefer tracked files under `tests/` and class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not package-local test files or pytest/django test. If bootstrap fails, fix the invocation before using weaker smoke evidence, and report only real exit results. Ensure `git diff --name-only` lists every claimed changed file; for new files use `git add -N` or edit tracked files.
 For Django docs/ref/settings.txt, edit only the section named by the issue; verify the nearby heading before changing a Default line and revert unrelated hunks such as cache OPTIONS.
-Before finishing, update {VALIDATION_CONTRACT_PATH}; preserve research fields and add changed_files, tests_added as objects with path/test_name_or_scope/behavior_guarded,
+Before finishing, update {VALIDATION_CONTRACT_PATH}; preserve research/task-contract fields, including expected_review_rows, and add changed_files, tests_added as objects with path/test_name_or_scope/behavior_guarded,
 commands_run objects with stable id, command, status, exit_code when known, and is_test_command, plus no_test_justification, residual_risks, final_claims. Every changed test file must appear in tests_added or be reverted; commands_run alone is not enough.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     )
@@ -289,6 +281,7 @@ modify files, or run mutating commands. Be critical; wrong requested release/cha
 Do not open a row merely because a focused issue-scoped test is narrower than all conceivable project coverage; name a concrete missing behavior, required file, or contract clause.
 Use the issue, /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH},
 {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, git diff, and touched files.
+If validation_contract.expected_review_rows exists, include those rows with the same ids unless current evidence falsifies them; minor expected rows should be accounted for, not silently omitted.
 
 Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON object:
 {
@@ -383,7 +376,20 @@ Artifact contract:
     )
 
 
-def _fixup_prompt() -> str:
+def _fixup_prompt(simple: bool = False) -> str:
+    if simple:
+        return """A quality gate failed. Do not ask questions. Re-read the original goal,
+/tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH}, {DIFF_AUDIT_PATH}, and when
+present {REVIEW_ACCOUNTABILITY_GATE_PATH}. Create the minimal required diff; if patch_nonempty=false, make an actual patch instead of arguing existing coverage
+is enough. For test-only tasks, edit only the required test file and do not change forbidden source files. Address open/fixup rows with concrete changed
+files and a focused machine-observed test command. Update validation with changed_files, tests_added, commands_run, residual_risks, and final_claims; each
+commands_run entry needs id, command, status, exit_code when known, and is_test_command. Keep the gate closed if the issue contract remains broken.""".replace(
+            "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
+        ).replace(
+            "{DIFF_AUDIT_PATH}", DIFF_AUDIT_PATH
+        ).replace(
+            "{REVIEW_ACCOUNTABILITY_GATE_PATH}", REVIEW_ACCOUNTABILITY_GATE_PATH
+        )
     return """A quality gate failed. Do not ask questions. Re-read the original goal,
 /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH}, {DIFF_AUDIT_PATH}, and when
 present {REVIEW_ACCOUNTABILITY_GATE_PATH}. Repair the whole patch, not only the
@@ -412,12 +418,12 @@ def _verify_script(verify_mode: str) -> str:
     if verify_mode != VERIFY_DIFF_CHECK:
         raise ValueError(f"unsupported verify mode: {verify_mode}")
     return """set +e
-if git diff --quiet --exit-code; then
+if git diff --quiet --exit-code -- . ':(exclude).fabro/issue-to-pr/**'; then
   printf '%s\\n' '{"schema_version":1,"status":"failed","mode":"diff-check","patch_nonempty":false,"failure_reason":"No patch produced"}'
   exit 1
 fi
 
-git diff --check
+git diff --check -- . ':(exclude).fabro/issue-to-pr/**'
 check_status=$?
 if [ "$check_status" -eq 0 ]; then
   printf '%s\\n' '{"schema_version":1,"status":"passed","mode":"diff-check","patch_nonempty":true,"failure_reason":null}'
@@ -439,8 +445,8 @@ def run(*args):
     proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     return proc.returncode, proc.stdout, proc.stderr
 
-_, names, _ = run("git", "diff", "--name-only")
-_, stat, _ = run("git", "diff", "--stat")
+_, names, _ = run("git", "diff", "--name-only", "--", ".", ":(exclude).fabro/issue-to-pr/**")
+_, stat, _ = run("git", "diff", "--stat", "--", ".", ":(exclude).fabro/issue-to-pr/**")
 changed_files = [line for line in names.splitlines() if line.strip()]
 test_files = [
     path for path in changed_files

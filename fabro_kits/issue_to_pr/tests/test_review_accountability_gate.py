@@ -694,6 +694,48 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
         self.assertEqual(report["closure_check_failures"], [])
         self.assertEqual(report["rejected_rows"][0]["closure_score"], 1)
 
+    def test_minor_rejected_metadata_row_with_unsupported_required_files_exports(self):
+        adversarial = _adversarial(
+            rows=[
+                {
+                    "id": "A1",
+                    "category": "metadata",
+                    "severity": "minor",
+                    "closure_requires": "changed_files",
+                    "required_files": ["CHANGELOG.md", "RELEASE_NOTES.md"],
+                }
+            ]
+        )
+        moderator = _moderator(
+            dispositions=[
+                {
+                    "id": "A1",
+                    "state": "rejected",
+                    "category": "metadata",
+                    "severity": "minor",
+                    "evidence": [
+                        "diff-audit.json changed_files only includes src/greeting.py.",
+                        "test-evidence-gate.json records a passing machine-verified command.",
+                    ],
+                    "closure_check": "The issue scope is the greeting implementation fix.",
+                }
+            ]
+        )
+        report = evaluate_review_accountability(
+            adversarial=adversarial,
+            moderator=moderator,
+            test_gate=_test_gate(changed_files=["src/greeting.py"], tests_passed_count=1),
+            materialization=_materialization(["A1"], ["A1"]),
+        )
+
+        self.assertEqual(report["route_decision"], "export")
+        self.assertEqual(report["closure_check_failures"], [])
+        self.assertEqual(
+            report["rejected_rows"][0]["missing_required_files"],
+            ["CHANGELOG.md", "RELEASE_NOTES.md"],
+        )
+        self.assertEqual(report["rejected_rows"][0]["closure_score"], 2)
+
     def test_issue_artifact_required_file_does_not_require_patch_change(self):
         adversarial = _adversarial(
             rows=[

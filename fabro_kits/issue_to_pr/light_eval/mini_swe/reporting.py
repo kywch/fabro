@@ -1,13 +1,13 @@
-"""Output shaping and summary helpers for mini-SWE runs."""
 from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
 from typing import Any
-from ...artifacts import build_prediction_record
+from ...artifacts import build_prediction_record, is_export_eligible
 from ..bundles import prepare_config_dir
 from ..grader import MiniSweGrade
 from ..task_schema import AttemptResult, MiniSweCase, mini_swe_source
+from .cases import task_contract_for_case
 
 def prepare_mini_swe_config_dir(
     output_dir: Path,
@@ -45,6 +45,7 @@ def oracle_for_case(case: MiniSweCase) -> dict[str, Any]:
         "forbidden_files": list(case.forbidden_files),
         "requires_test_change": case.requires_test_change,
         "expected_decision_hint": case.expected_decision_hint,
+        "task_contract": task_contract_for_case(case),
     }
 
 def mini_swe_instance(case: MiniSweCase) -> dict[str, Any]:
@@ -108,6 +109,12 @@ def mini_swe_summary(results: list[dict[str, Any]], failures: list[dict[str, Any
         "cases_by_attempt_origin": counts(evals, "attempt_origin"),
         "cases_by_artifact_origin": counts(evals, "artifact_origin"),
         "cases_by_substrate": counts(evals, "substrate"),
+        "failed_with_patch": sum(
+            1
+            for result in results
+            if str(result.get("model_patch", "")).strip()
+            and not is_export_eligible(result)
+        ),
         "ineligible_by_reason": ineligible_counts(evals),
         "failures": failures,
     }

@@ -6,9 +6,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fabro_kits.issue_to_pr.light_eval import run_mini_swe
 from fabro_kits.issue_to_pr.light_eval.grader import grade_mini_swe_attempt
+from fabro_kits.issue_to_pr.light_eval.mini_swe import orchestrator as mini_swe_orchestrator
 from fabro_kits.issue_to_pr.light_eval.mini_swe.artifacts import (
     materialize_model_artifacts,
 )
@@ -22,6 +24,7 @@ from fabro_kits.issue_to_pr.light_eval.mini_swe.evidence import (
     effective_expected_decision_hint,
 )
 from fabro_kits.issue_to_pr.light_eval.mini_swe.repo import model_setup_script
+from fabro_kits.issue_to_pr.light_eval.mini_swe.repo import apply_case_patch
 from fabro_kits.issue_to_pr.light_eval.task_schema import AttemptResult, MiniSweCase
 
 
@@ -218,6 +221,37 @@ class MiniSweModelTest(unittest.TestCase):
             self.assertIn("refuses non-empty cwd", proc.stderr)
             self.assertEqual(original_head.read_text(), "ref: refs/heads/custom-fab\n")
             self.assertFalse((dst / "src").exists())
+
+    def test_mini_swe_model_setup_seeds_task_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / "src").mkdir()
+            (repo / "src" / "__init__.py").write_text("")
+            dst = root / "dst"
+            dst.mkdir()
+
+            proc = subprocess.run(
+                model_setup_script(
+                    repo,
+                    {
+                        "expected_review_rows": [{"id": "minor-001"}],
+                        "source_change_allowed": True,
+                    },
+                ),
+                shell=True,
+                cwd=dst,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            contract = json.loads((dst / ".fabro/issue-to-pr/validation.json").read_text())
+            self.assertEqual(contract["expected_review_rows"][0]["id"], "minor-001")
+            self.assertTrue(contract["source_change_allowed"])
 
     def test_mini_swe_codex_bridge_copies_only_openai_codex_and_preserves_oauth_entry(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -699,6 +733,130 @@ class MiniSweModelTest(unittest.TestCase):
         self.assertEqual(commands, [])
         self.assertFalse(grade.artifact_pass)
         self.assertEqual(grade.honesty_failures, ("runtime_proof_missing_commands_run",))
+
+    def test_mini_swe_runtime_proof_normalizes_stable_id_to_id(self):
+        case = MiniSweCase(
+            case_id="good-source-plus-test",
+            family="positive",
+            suite="dev",
+            issue_text="Fix greeting",
+            expected_files=("src/greeting.py",),
+            allowed_test_files=("tests/test_greeting.py",),
+        )
+        attempt_result = AttemptResult(
+            attempt_origin="model",
+            artifact_origin="model_workflow",
+            substrate="local",
+            source={},
+            b2_slice_eligible=False,
+            b2_model_eligible=True,
+            b2_eligible=True,
+            eligibility_failures=(),
+        )
+        contract = {
+            "commands_run": [
+                {
+                    "stable_id": "cmd-stable-001",
+                    "command": "python3 -m unittest",
+                    "status": "passed",
+                    "exit_code": 0,
+                    "is_test_command": True,
+                }
+            ]
+        }
+
+        commands = commands_run_from_artifacts(
+            case,
+            attempt_result=attempt_result,
+            validation_contract=contract,
+        )
+        grade = grade_mini_swe_attempt(
+            case=case,
+            patch="diff --git a/src/greeting.py b/src/greeting.py\n",
+            changed_files=["src/greeting.py", "tests/test_greeting.py"],
+            validation_contract=contract,
+            test_gate={"status": "passed"},
+            accountability_gate={"status": "passed", "route_decision": "export"},
+        )
+
+        self.assertEqual(commands[0]["id"], "cmd-stable-001")
+        self.assertTrue(grade.artifact_pass)
+        self.assertEqual(grade.honesty_failures, ())
+
+    def test_mini_swe_model_repairs_stale_audit_from_repo_facts(self):
+        class FakeModelRunner:
+            def __init__(self, **kwargs):
+                self.artifacts_dir = kwargs["output_dir"] / "_fake_model_artifacts"
+                self.artifacts_dir.mkdir()
+
+            def run(self, case, repo_dir, work_dir):
+                apply_case_patch(case, repo_dir)
+                patch_path = work_dir / "patch.diff"
+                patch_path.write_text(
+                    subprocess.run(
+                        ["git", "diff"],
+                        cwd=repo_dir,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    ).stdout
+                )
+                audit_path = self.artifacts_dir / "audit.json"
+                audit_path.write_text(
+                    json.dumps(
+                        {"patch_nonempty": False, "changed_files": [], "test_files_changed": []}
+                    )
+                )
+                validation_path = self.artifacts_dir / "validation.json"
+                validation_path.write_text(
+                    json.dumps(
+                        {
+                            "commands_run": [
+                                {
+                                    "id": "cmd-001",
+                                    "command": "python3 -m unittest",
+                                    "status": "passed",
+                                    "exit_code": 0,
+                                    "is_test_command": True,
+                                }
+                            ]
+                        }
+                    )
+                )
+                return AttemptResult(
+                    attempt_origin="model",
+                    artifact_origin="model_workflow",
+                    substrate="local",
+                    source={},
+                    b2_slice_eligible=False,
+                    b2_model_eligible=True,
+                    b2_eligible=True,
+                    eligibility_failures=(),
+                    patch_path=patch_path,
+                    artifact_paths={
+                        "audit": audit_path.as_posix(),
+                        "validation_contract": validation_path.as_posix(),
+                    },
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            with patch.object(mini_swe_orchestrator, "ModelWorkflowRunner", FakeModelRunner):
+                summary = mini_swe_orchestrator.run_mini_swe(
+                    "good-source-plus-test",
+                    output_dir=output_dir,
+                    attempt="model",
+                    fabro_bin=Path("unused"),
+                )
+
+            audit = json.loads(
+                (output_dir / "runs" / "good-source-plus-test--001" / "output" / "audit.json").read_text()
+            )
+            self.assertEqual(summary["failures"], [])
+            self.assertTrue(audit["patch_nonempty"])
+            self.assertEqual(audit["changed_files"], ["src/greeting.py", "tests/test_greeting.py"])
+            self.assertEqual(audit["test_files_changed"], ["tests/test_greeting.py"])
+            self.assertTrue(audit["_repo_facts_repaired"])
 
     def test_mini_swe_preserves_produced_commands_run_verbatim(self):
         with tempfile.TemporaryDirectory() as tmp:

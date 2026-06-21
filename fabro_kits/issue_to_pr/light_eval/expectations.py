@@ -278,27 +278,14 @@ def check_root_expected(
 def synthetic_expected_for_task(task_id: str) -> dict[str, Any]:
     if task_id != "claimed-test-mismatch":
         raise SystemExit(f"unknown synthetic task: {task_id}")
-    return {
-        "task_id": task_id,
-        "expected_decision": "blank",
-        "expected_result_status": "failed",
-        "expected_route_decision": "fixup",
-        "expected_process_failures_exact": ["tests_not_executed_successfully"],
-        "expected_test_gate_status": "failed",
-        "expected_test_gate_hard_failures": [
-            "validation_claims_tests_but_diff_has_no_test_files",
-        ],
-        "expected_audit_changed_files": ["src/greeting.py"],
-        "expected_audit_test_files_changed": [],
-        "expect_prediction_blank": True,
-        "expect_patch_preserved": True,
-        "expected_candidate_state": "failed_with_patch",
-        "expected_candidate_reuse": "continuation_candidate",
-    }
+    return _claimed_test_mismatch_expected(task_id)
 
 def issue_workflow_smoke_expected() -> dict[str, Any]:
+    return _claimed_test_mismatch_expected("issue-workflow-smoke")
+
+def _claimed_test_mismatch_expected(task_id: str) -> dict[str, Any]:
     return {
-        "task_id": "issue-workflow-smoke",
+        "task_id": task_id,
         "expected_decision": "blank",
         "expected_result_status": "failed",
         "expected_route_decision": "fixup",

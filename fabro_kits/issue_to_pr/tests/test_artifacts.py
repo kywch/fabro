@@ -43,9 +43,17 @@ class RunBundleArtifactsTest(unittest.TestCase):
             run_dir = output_dir / "runs" / "django__django-11099--001"
             self.assertEqual(artifacts["run"], "runs/django__django-11099--001/run.json")
             self.assertEqual(artifacts["patch"], "runs/django__django-11099--001/output/patch.diff")
+            self.assertEqual(
+                artifacts["validation_contract"],
+                "runs/django__django-11099--001/output/validation_contract.json",
+            )
             self.assertFalse((run_dir / "manifest.json").exists())
             self.assertFalse((run_dir / "output" / "acceptance_audit.json").exists())
             self.assertFalse((run_dir / "output" / "review_ledger.json").exists())
+            self.assertEqual(
+                json.loads((run_dir / "output" / "validation_contract.json").read_text()),
+                {"commands_run": []},
+            )
 
             run = json.loads((run_dir / "run.json").read_text())
             self.assertEqual(run["layout"], "issue-to-pr-runs-v1")
@@ -243,6 +251,7 @@ def _workspace(tmp: str) -> tuple[Path, Path]:
     (config_dir / "goal.txt").write_text("fix it")
     (config_dir / "workflow.fabro").write_text("digraph G {}")
     (config_dir / "workflow.toml").write_text("[workflow]\n")
+    (config_dir / "validation_contract.json").write_text('{"commands_run": []}\n')
     (dump_dir / "events.jsonl").write_text("{}\n")
     (dump_dir / "trajectory.jsonl").write_text("{}\n")
     return output_dir, config_dir
