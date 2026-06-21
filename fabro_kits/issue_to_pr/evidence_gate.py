@@ -40,9 +40,10 @@ def evaluate_evidence_gate(
     tests_passed_count = sum(1 for command in verified_commands if command["exit_code"] == 0 and is_test_command(command["command"]))
     if audit and audit.get("patch_nonempty") is False:
         hard_failures.append("audit_reports_empty_patch")
-    if normalized_paths and not test_files_changed:
+    existing_tests_verified = verify_commands and tests_passed_count > 0 and changed_files and not test_files_changed
+    if normalized_paths and not test_files_changed and not existing_tests_verified:
         hard_failures.append("validation_claims_tests_but_diff_has_no_test_files")
-    elif normalized_paths:
+    elif normalized_paths and not existing_tests_verified:
         missing = [path for path in normalized_paths if not path_matches_claim(test_files_changed, path)] + [path for path in test_files_changed if not path_matches_claim(normalized_paths, path)]
         if missing:
             hard_failures.append("validation_claims_tests_not_in_diff: " + ", ".join(missing))
@@ -65,9 +66,14 @@ def evaluate_evidence_gate(
         warnings.append("diff_has_test_files_but_validation_contract_does_not_claim_tests")
     if not test_files_changed and not contract.get("no_test_justification"):
         warnings.append("no_test_files_and_no_test_justification")
+    missing_ids = commands_missing_ids(commands_run)
+    if missing_ids:
+        hard_failures.append("commands_missing_id: " + ", ".join(missing_ids[:3]))
     missing_status = commands_missing_status(commands_run)
     if missing_status:
         warnings.append("commands_missing_status: " + ", ".join(missing_status[:3]))
+    if verify_commands and audit.get("patch_nonempty") and tests_passed_count == 0 and any(path.endswith((".py", ".rs", ".js", ".ts", ".tsx", ".jsx")) or path.startswith(("tests/", "test_")) for path in changed_files):
+        hard_failures.append("tests_not_executed_successfully")
     hard_failures.extend(duplicate_test_definitions(test_files_changed))
     status = "failed" if hard_failures else "passed"
     route_decision = "fixup" if hard_failures else "review"
@@ -211,6 +217,16 @@ def commands_missing_status(commands_run):
             missing.append(command)
     return missing
 
+def commands_missing_ids(commands_run):
+    missing = []
+    for index, command in enumerate(commands_run):
+        label = str(command.get("command") or command.get("cmd") or "") if isinstance(command, dict) else ""
+        if not isinstance(command, dict) or not is_test_command(label) or not command_reports_passed(command, {"passed", "pass", "success", "succeeded", "ok"}):
+            continue
+        if not isinstance(command.get("id"), str) or not command["id"].strip():
+            missing.append(label or str(index))
+    return missing
+
 def commands_status_count(commands_run, statuses):
     return sum(
         1
@@ -227,16 +243,16 @@ def command_reports_passed(command, statuses):
     return False
 
 def is_test_command(command):
-    return any(token in command for token in ("tests/runtests.py", "pytest", "unittest", "cargo test", "bun test"))
+    command = command.strip()
+    return command.startswith(("pytest", "python -m unittest", "python3 -m unittest", "cargo test", "bun test")) or "tests/runtests.py" in command
 
 def verify_reported_passes(commands_run):
-    safe_tokens = ("tests/runtests.py", "pytest", "unittest", "git diff --check", "cargo test", "bun test")
     verified = []
     for item in commands_run:
         if len(verified) >= 3 or not isinstance(item, dict):
             continue
         command = str(item.get("command") or item.get("cmd") or "").strip()
-        if not command_reports_passed(item, {"passed", "pass", "success", "succeeded", "ok"}) or not command or not any(token in command for token in safe_tokens):
+        if not command_reports_passed(item, {"passed", "pass", "success", "succeeded", "ok"}) or not (is_test_command(command) or "git diff --check" in command):
             continue
         try:
             proc = subprocess.run(command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, timeout=180)
@@ -247,6 +263,8 @@ def verify_reported_passes(commands_run):
 
 def fixup_guidance(hard_failures, warnings):
     if hard_failures:
+        if "tests_not_executed_successfully" in hard_failures:
+            return "Run a focused repository test command, not bare zero-test unittest discovery; for stdlib tests use python3 -m unittest discover -s tests or python3 -m unittest tests.test_name, then record id, status, exit_code, and is_test_command."
         return (
             "Resolve evidence contradictions against machine-observed diff data. "
             "Update the patch or validation contract so claimed tests match changed "
@@ -313,6 +331,7 @@ def _embedded_gate_functions_source():
         path_matches_claim,
         duplicate_test_definitions,
         commands_missing_status,
+        commands_missing_ids,
         commands_status_count,
         command_reports_passed,
         is_test_command,

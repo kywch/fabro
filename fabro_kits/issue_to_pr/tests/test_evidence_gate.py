@@ -20,7 +20,7 @@ class EvidenceGateTest(unittest.TestCase):
     def test_exact_path_claim_passes(self):
         record = evaluate_evidence_gate(
             audit={"patch_nonempty": True, "changed_files": ["tests/test_a.py"], "test_files_changed": ["tests/test_a.py"]},
-            contract={"tests_added": ["tests/test_a.py"], "commands_run": [{"status": "passed"}]},
+            contract={"tests_added": ["tests/test_a.py"], "commands_run": [{"id": "cmd-1", "status": "passed"}]},
         )
         self.assertEqual(record["status"], "passed")
         self.assertEqual(record["judgment"]["hard_failures"], [])
@@ -29,10 +29,18 @@ class EvidenceGateTest(unittest.TestCase):
     def test_verified_command_pass_count_requires_real_exit_zero(self):
         record = evaluate_evidence_gate(
             audit={"patch_nonempty": True, "changed_files": [], "test_files_changed": []},
-            contract={"commands_run": [{"command": "python3 -m unittest fabro_kits.issue_to_pr.tests.test_artifacts.RunBundleArtifactsTest.test_candidate_patch_bytes_use_utf8_bytes", "status": "passed"}]},
+            contract={"commands_run": [{"id": "cmd-1", "command": "python3 -m unittest fabro_kits.issue_to_pr.tests.test_artifacts.RunBundleArtifactsTest.test_candidate_patch_bytes_use_utf8_bytes", "status": "passed"}]},
             verify_commands=True,
         )
         self.assertEqual(record["observed"]["tests_passed_count"], 1)
+    def test_source_only_patch_can_cite_existing_verified_test(self):
+        record = evaluate_evidence_gate(
+            audit={"patch_nonempty": True, "changed_files": ["src/greeting.py"], "test_files_changed": []},
+            contract={"tests_added": [{"path": "tests/test_artifacts.py"}], "commands_run": [{"id": "cmd-1", "command": "python3 -m unittest fabro_kits.issue_to_pr.tests.test_artifacts.RunBundleArtifactsTest.test_candidate_patch_bytes_use_utf8_bytes", "status": "passed"}]},
+            verify_commands=True,
+        )
+        self.assertEqual(record["status"], "passed")
+        self.assertNotIn("validation_claims_tests_but_diff_has_no_test_files", record["judgment"]["hard_failures"])
     def test_completed_zero_exit_counts_as_reported_pass(self):
         record = evaluate_evidence_gate(
             audit={"patch_nonempty": True, "changed_files": [], "test_files_changed": []},
@@ -40,11 +48,13 @@ class EvidenceGateTest(unittest.TestCase):
                 "commands_run": [
                     {
                         "command": "python3 -m unittest tests.test_example",
+                        "id": "cmd-1",
                         "status": "completed",
                         "exit_code": 0,
                     },
                     {
                         "command": "python3 -m unittest tests.test_other",
+                        "id": "cmd-2",
                         "status": "completed",
                         "exit_code": 1,
                     },
@@ -52,6 +62,20 @@ class EvidenceGateTest(unittest.TestCase):
             },
         )
         self.assertEqual(record["observed"]["commands_reported_passed_count"], 1)
+    def test_passed_command_requires_literal_id(self):
+        record = evaluate_evidence_gate(
+            audit={"patch_nonempty": True, "changed_files": ["tests/test_a.py"], "test_files_changed": ["tests/test_a.py"]},
+            contract={"tests_added": ["tests/test_a.py"], "commands_run": [{"command": "python3 -m unittest tests.test_a", "status": "passed", "իդ": "cmd-1"}]},
+        )
+        self.assertEqual(record["status"], "failed")
+        self.assertIn("commands_missing_id: python3 -m unittest tests.test_a", record["judgment"]["hard_failures"])
+    def test_setup_heredoc_is_not_runtime_test_command(self):
+        record = evaluate_evidence_gate(
+            audit={"patch_nonempty": True, "changed_files": ["tests/test_a.py"], "test_files_changed": ["tests/test_a.py"]},
+            contract={"tests_added": ["tests/test_a.py"], "commands_run": [{"command": "python3 - <<'PY'\nprint('unittest')\nPY", "status": "passed"}, {"id": "cmd-1", "command": "python3 -m unittest tests.test_a", "status": "passed"}]},
+        )
+        self.assertEqual(record["status"], "passed")
+        self.assertEqual(record["judgment"]["hard_failures"], [])
     def test_claimed_tests_without_changed_test_file_hard_fails(self):
         record = evaluate_evidence_gate(
             audit={"patch_nonempty": True, "changed_files": ["pkg/code.py"], "test_files_changed": []},
@@ -74,5 +98,7 @@ class EvidenceGateTest(unittest.TestCase):
             contract.write_text(json.dumps({"tests_added": [{"path": "tests/test_a.py"}], "commands_run": []}))
             script = build_embedded_gate_script(audit_path=str(audit), contract_path=str(contract), output_path=str(out))
             proc = subprocess.run(script, shell=True, executable="/bin/bash", capture_output=True, text=True)
-            self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertEqual(json.loads(out.read_text())["status"], "passed")
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            record = json.loads(out.read_text())
+            self.assertEqual(record["status"], "failed")
+            self.assertIn("tests_not_executed_successfully", record["judgment"]["hard_failures"])

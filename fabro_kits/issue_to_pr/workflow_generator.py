@@ -248,8 +248,8 @@ research_assumptions. End with acceptance criteria and test plan.""".replace(
 
 def _implement_prompt() -> str:
     return """Fix the issue with the smallest defensible patch. Do not ask questions or call request_user_input.
-	Use /tmp/fabro-research.md when present. Satisfy all acceptance criteria, including requested release/changelog notes, not only the title; if the contract names a release/changelog file, add one canonical note in the first patch. For testable behavior changes, change a regression test file in git diff; running existing tests alone is not enough.
-Run the most relevant focused single-process test command; when a Python repo has stdlib `unittest` tests and no pytest configuration, prefer `python3 -m unittest <module>` over pytest. For Django prefer tracked files under `tests/` and class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not package-local test files or pytest/django test. If bootstrap fails, fix the invocation before using weaker smoke evidence, and report only real exit results. Ensure `git diff --name-only` lists every claimed changed file; for new files use `git add -N` or edit tracked files.
+	Use /tmp/fabro-research.md when present. Satisfy all acceptance criteria, including requested release/changelog notes, not only the title; if the contract names a release/changelog file, add one canonical note in the first patch. If validation_contract.required_changed_files names a file, touch it in git diff; a no-op is not a fix, and validation-only changes are ignored. For testable behavior changes, change a regression test file in git diff; running existing tests alone is not enough.
+Run the most relevant focused single-process test command; when the goal says existing tests cover the behavior, run that concrete test module, not direct smoke, bare `python3 -m unittest`, or broad discovery that can run zero tests. When a Python repo has stdlib `unittest` tests and no pytest configuration, prefer `python3 -m unittest <module>` or `python3 -m unittest discover -s tests` over pytest. For Django prefer tracked files under `tests/` and class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not package-local test files or pytest/django test. If bootstrap fails, fix the invocation before using weaker smoke evidence, and report only real exit results. Ensure `git diff --name-only` lists every claimed changed file; for new files use `git add -N` or edit tracked files.
 For Django docs/ref/settings.txt, edit only the section named by the issue; verify the nearby heading before changing a Default line and revert unrelated hunks such as cache OPTIONS.
 Before finishing, update {VALIDATION_CONTRACT_PATH}; preserve research/task-contract fields, including expected_review_rows, and add changed_files, tests_added as objects with path/test_name_or_scope/behavior_guarded,
 commands_run objects with stable id, command, status, exit_code when known, and is_test_command, plus no_test_justification, residual_risks, final_claims. Every changed test file must appear in tests_added or be reverted; commands_run alone is not enough.""".replace(
@@ -277,7 +277,7 @@ this routing JSON:
 
 def _adversarial_review_prompt() -> str:
     return """Adversarially review the patch, read-only. Do not ask questions,
-modify files, or run mutating commands. Be critical; wrong requested release/changelog targets are major only when issue or repo evidence requires that exact file. Validation claims contradicted by diff audit or git diff are not enough. Blocker/major rows must be bounded to the issue/current diff, not universal proof over all possible integrations.
+modify files, or run mutating commands. Be critical; release/changelog rows are major only when the original issue or task contract requires that note; research notes, validation acceptance_criteria, and reviewer_objections cannot invent a docs requirement. Validation claims contradicted by diff audit or git diff are not enough. Blocker/major rows must be bounded to the issue/current diff, not universal proof over all possible integrations.
 Do not open a row merely because a focused issue-scoped test is narrower than all conceivable project coverage; name a concrete missing behavior, required file, or contract clause.
 Use the issue, /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH},
 {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, git diff, and touched files.
@@ -358,7 +358,7 @@ Rules:
 - Use closed_by_evidence only when cited evidence directly answers the row.
   Never close by denying cited git diff hunks; keep the row open unless current patch evidence disproves them.
 - Use rejected only when the row is unsupported or demands universal proof beyond the issue contract. Use downgraded when representative issue-scoped evidence covers the concrete concern.
-- Reject or downgrade info/minor rows that only ask for broader coverage after {TEST_EVIDENCE_GATE_PATH} shows a machine-verified focused test command for the issue-scoped behavior.
+- Reject metadata rows that rely only on research/validation-invented release or changelog requirements absent from the original issue or task contract. Reject or downgrade info/minor rows that only ask for broader coverage after {TEST_EVIDENCE_GATE_PATH} shows a machine-verified focused test command for the issue-scoped behavior.
 - Every closed_by_evidence, downgraded, or rejected row must include a nonempty closure_check.
 - Runtime-test proof requires machine-observed pass fields like tests_passed_count; never use test_evidence_gate.status, changed files, or commands_reported_passed_count to close test-execution rows or mark ready_verified.
 
@@ -380,10 +380,9 @@ def _fixup_prompt(simple: bool = False) -> str:
     if simple:
         return """A quality gate failed. Do not ask questions. Re-read the original goal,
 /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH}, {DIFF_AUDIT_PATH}, and when
-present {REVIEW_ACCOUNTABILITY_GATE_PATH}. Create the minimal required diff; if patch_nonempty=false, make an actual patch instead of arguing existing coverage
-is enough. For test-only tasks, edit only the required test file and do not change forbidden source files. Address open/fixup rows with concrete changed
+present {REVIEW_ACCOUNTABILITY_GATE_PATH}. Create the minimal required diff; if patch_nonempty=false, edit the required file because validation-only changes and test runs are ignored. For test-only tasks, edit only the required test file; if it already covers one input, add one small additional assertion or test method, and do not change forbidden source files. Address open/fixup rows with concrete changed
 files and a focused machine-observed test command. Update validation with changed_files, tests_added, commands_run, residual_risks, and final_claims; each
-commands_run entry needs id, command, status, exit_code when known, and is_test_command. Keep the gate closed if the issue contract remains broken.""".replace(
+commands_run entry needs id, command, status, exit_code when known, and is_test_command. If review asks for runtime_tests or existing tests, run the concrete repo test module or `python3 -m unittest discover -s tests`, not direct smoke or bare zero-test discovery. Keep the gate closed if the issue contract remains broken.""".replace(
             "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
         ).replace(
             "{DIFF_AUDIT_PATH}", DIFF_AUDIT_PATH
@@ -397,7 +396,7 @@ latest critic row. Metadata rows are not optional; keep one canonical release/ch
 		fixup_required_rows and malformed_artifacts item; treat open rows as a checklist: edit required_files, run the closure_check/falsifiable_check when present, and cite the command. When an artifact names a
 		path/check, repair that exact diff hunk before arguing it is stale; if the failed artifact is under .fabro/issue-to-pr, the next review stage must write that exact JSON file and read it back from disk, not only print JSON. Revert broad generated hunks first. For Django docs/ref/settings.txt, verify the nearby section heading before changing a Default line and revert unrelated hunks such as cache OPTIONS. Then update
 the validation contract with reviewer_objections, changed_files, commands_run,
-residual_risks, and final_claims. Every commands_run entry must include stable id, command, status, exit_code when known, and is_test_command. Every changed test file must appear in tests_added or be reverted; commands_run alone is not enough. Ensure `git diff --name-only` lists every claimed changed file; for Python repos with stdlib `unittest` tests and no pytest configuration, prefer `python3 -m unittest <module>`. For Django tests, use tracked files under `tests/`. Prefer focused single-process tests over broad
+residual_risks, and final_claims. Every commands_run entry must include stable id, command, status, exit_code when known, and is_test_command. Every changed test file must appear in tests_added or be reverted; commands_run alone is not enough. Ensure `git diff --name-only` lists every claimed changed file; for Python repos with stdlib `unittest` tests and no pytest configuration, prefer `python3 -m unittest <module>` or `python3 -m unittest discover -s tests`, never bare `python3 -m unittest`. For Django tests, use tracked files under `tests/`. Prefer focused single-process tests over broad
 suites; for Django prefer class labels like `python tests/runtests.py file_storage.tests.FileStoragePermissions --settings=test_sqlite --verbosity 1 --parallel 1`, not pytest/django test. If the full issue contract remains broken,
 keep it open.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH

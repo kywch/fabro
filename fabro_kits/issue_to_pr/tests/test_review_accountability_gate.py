@@ -485,6 +485,39 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
             "runtime_tests",
         )
 
+    def test_runtime_closure_allows_existing_test_without_changed_test_file(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(
+                rows=[
+                    {
+                        "id": "A1",
+                        "category": "tests",
+                        "severity": "minor",
+                        "closure_requires": "runtime_tests",
+                        "required_files": ["tests/test_greeting.py"],
+                    }
+                ]
+            ),
+            moderator=_moderator(
+                dispositions=[
+                    {
+                        "id": "A1",
+                        "state": "downgraded",
+                        "category": "tests",
+                        "severity": "info",
+                        "evidence": [".fabro/issue-to-pr/test-evidence-gate.json:observed.tests_passed_count=1"],
+                        "closure_check": "Focused existing test passed for the requested behavior.",
+                    }
+                ]
+            ),
+            test_gate=_test_gate(changed_files=["src/greeting.py"], tests_passed_count=1),
+            materialization=_materialization(["A1"], ["A1"]),
+        )
+
+        self.assertEqual(report["route_decision"], "export")
+        self.assertEqual(report["downgraded_rows"][0]["closure_score"], 3)
+        self.assertNotIn("missing_required_files", report["downgraded_rows"][0])
+
     def test_settings_ref_diff_is_injected(self):
         report = evaluate_review_accountability(
             adversarial=_adversarial(rows=[]),

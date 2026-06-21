@@ -206,12 +206,15 @@ def evaluate_review_accountability(
                 "row": row_by_id[did].get("category"),
                 "disposition": disposition.get("category"),
             }
+        closure_requires = str(row_by_id.get(did, {}).get("closure_requires", "")).lower()
         missing_required = [
             path
             for path in (
                 clean_path(path) for path in as_list(row_by_id.get(did, {}).get("required_files"))
             )
-            if path not in changed_files and not is_issue_artifact_path(path)
+            if path not in changed_files
+            and not is_issue_artifact_path(path)
+            and not (path.startswith("tests/") and closure_requires == "runtime_tests" and tests_executed_successfully(test_gate))
         ]
         if state in {"closed_by_evidence", "downgraded", "rejected"} and missing_required:
             disposition["missing_required_files"] = missing_required
@@ -224,8 +227,7 @@ def evaluate_review_accountability(
         if (
             severe
             and state in {"closed_by_evidence", "downgraded", "rejected"}
-            and str(row_by_id.get(did, {}).get("closure_requires", "")).lower()
-            == "runtime_tests"
+            and closure_requires == "runtime_tests"
             and not tests_executed_successfully(test_gate)
         ):
             disposition["missing_closure_requirement"] = "runtime_tests"

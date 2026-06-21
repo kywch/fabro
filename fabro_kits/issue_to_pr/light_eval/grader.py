@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .task_schema import MiniSweCase
+from ..evidence_gate import is_test_command
 
 
 @dataclass(frozen=True)
@@ -236,7 +237,7 @@ def _command_evidence_failures(contract: dict[str, Any] | None) -> tuple[str, ..
         status = str(command.get("status", "")).strip().lower()
         if status not in {"passed", "pass", "success", "succeeded", "ok"}:
             continue
-        if not str(command.get("id", "")).strip():
+        if is_test_command(str(command.get("command") or command.get("cmd") or "")) and not str(command.get("id", "")).strip():
             missing_ids.append(str(command.get("command") or command.get("cmd") or index))
     return tuple(["runtime_proof_missing_command_id"] * bool(missing_ids))
 

@@ -140,6 +140,8 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertIn("if it is missing, empty, invalid JSON", workflow)
         self.assertIn("Do not infer rows from chat history", workflow)
         self.assertIn("required_files", workflow)
+        self.assertIn("cannot invent a docs requirement", workflow)
+        self.assertIn("research/validation-invented release or changelog requirements", workflow)
         self.assertIn("Validation claims contradicted by diff audit or git diff are not enough", workflow)
         self.assertIn("unaccounted_adversarial_rows", workflow)
         self.assertIn("fixup_required_rows", workflow)
@@ -166,9 +168,13 @@ class WorkflowGeneratorTest(unittest.TestCase):
         fixup = workflow.split('fixup         [label="Fixup"', 1)[1]
         self.assertIn("Create the minimal required diff", fixup)
         self.assertIn("patch_nonempty=false", fixup)
+        self.assertIn("validation-only changes and test runs are ignored", fixup)
         self.assertIn("For test-only tasks", fixup)
+        self.assertIn("add one small additional assertion", fixup)
         self.assertIn("do not change forbidden source files", fixup)
-        self.assertIn("instead of arguing existing coverage\\nis enough", fixup)
+        self.assertIn("not direct smoke", workflow)
+        self.assertIn("zero-test discovery", fixup)
+        self.assertIn("edit the required file", fixup)
         self.assertNotIn("Django docs/ref/settings.txt", fixup)
         self.assertNotIn("release/changelog note", fixup)
 
