@@ -658,6 +658,18 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
         actual = _run_embedded(adversarial, moderator, test_gate, materialization)
         self.assertEqual(actual, expected)
 
+    def test_embedded_script_defers_annotation_evaluation(self):
+        script = build_embedded_accountability_gate_script(
+            adversarial_path="adversarial.json",
+            moderator_path="moderator.json",
+            test_gate_path="test-gate.json",
+            materialization_path="materialization.json",
+            output_path="gate.json",
+        )
+
+        self.assertEqual(script.splitlines()[1], "from __future__ import annotations")
+        self.assertIn("dict[str, Any] | None", script)
+
     def test_embedded_script_matches_pure_pass_report(self):
         adversarial = _adversarial(
             rows=[

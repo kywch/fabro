@@ -642,10 +642,10 @@ def build_embedded_accountability_gate_script(
 ) -> str:
     """Return a self-contained script for sandbox workflow execution."""
     return f"""python3 - <<'PY'
+from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
 
 MAJOR = {MAJOR!r}
 STATES = {STATES!r}
