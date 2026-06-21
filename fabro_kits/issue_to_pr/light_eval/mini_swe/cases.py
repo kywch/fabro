@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ..task_schema import MiniSweCase
 
-SUPPORTED_ATTEMPTS = ("scripted", "workflow-slice", "model")
+SUPPORTED_ATTEMPTS = ("scripted", "model")
 SUPPORTED_CREDENTIAL_BRIDGES = ("off", "openai-codex")
 SUPPORTED_SUBSTRATES = ("local", "docker")
 SUPPORTED_SUITES = ("dev", "locked", "shadow", "all")

@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 
-AttemptOrigin = Literal["scripted", "workflow-slice", "model"]
-ArtifactOrigin = Literal["fixture", "workflow_stage", "model_workflow"]
+AttemptOrigin = Literal["scripted", "model"]
+ArtifactOrigin = Literal["fixture", "model_workflow"]
 Substrate = Literal["local", "docker"]
 EvaluationRole = Literal["b2_candidate", "calibration_provenance"]
 

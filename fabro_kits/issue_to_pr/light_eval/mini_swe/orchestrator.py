@@ -42,7 +42,6 @@ from .runners import (
     MiniSweProcessBlock,
     ModelWorkflowRunner,
     ScriptedCalibrationRunner,
-    WorkflowSliceRunner,
 )
 
 
@@ -196,8 +195,6 @@ def run_mini_swe_case(
         create_repo_for_case(case, repo_dir)
         if attempt == "scripted":
             runner = ScriptedCalibrationRunner(substrate=substrate, docker_image=docker_image)
-        elif attempt == "workflow-slice":
-            runner = WorkflowSliceRunner(output_dir=output_dir, fabro_bin=fabro_bin)
         else:
             runner = ModelWorkflowRunner(
                 output_dir=output_dir,

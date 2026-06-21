@@ -880,14 +880,14 @@ class MiniSweModelTest(unittest.TestCase):
                 issue_text="Fix greeting",
             )
             attempt_result = AttemptResult(
-                attempt_origin="workflow-slice",
-                artifact_origin="workflow_stage",
+                attempt_origin="model",
+                artifact_origin="model_workflow",
                 substrate="local",
                 source={},
                 b2_slice_eligible=False,
                 b2_model_eligible=False,
                 b2_eligible=False,
-                eligibility_failures=("workflow_slice_calibration_provenance_only",),
+                eligibility_failures=("model_workflow_missing_trajectory",),
                 commands_run_path=commands_path,
             )
 

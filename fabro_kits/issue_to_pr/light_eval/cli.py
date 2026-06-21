@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     mini_swe.add_argument("--output-dir", type=Path)
     mini_swe.add_argument(
         "--attempt",
-        choices=("scripted", "workflow-slice", "model"),
+        choices=("scripted", "model"),
         default="scripted",
     )
     mini_swe.add_argument("--substrate", choices=("local", "docker"), default="local")

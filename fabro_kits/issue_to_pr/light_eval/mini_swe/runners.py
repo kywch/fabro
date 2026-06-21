@@ -15,7 +15,6 @@ from ...run_attempt import (
 from ...workflow_generator import (
     STRUCTURED_MODERATED_PROFILE,
     VERIFY_DIFF_CHECK,
-    dot_escape,
     generate_issue_to_pr_workflow,
     validate_generated_workflow,
 )
@@ -41,12 +40,6 @@ from .repo import (
     apply_patch_to_repo,
     model_setup_script,
     run_public_tests,
-)
-from .workflow_slice import (
-    missing_workflow_slice_artifacts,
-    workflow_slice_review_script,
-    workflow_slice_solve_script,
-    write_workflow_slice_trajectory,
 )
 
 class ScriptedCalibrationRunner:
@@ -98,116 +91,6 @@ class ScriptedCalibrationRunner:
                 "runner": "ScriptedCalibrationRunner",
                 "case_artifacts_supplied": True,
                 "docker_image": self.docker_image if self.substrate == "docker" else None,
-            },
-        )
-
-class WorkflowSliceRunner:
-    name = "workflow-slice"
-    def __init__(self, *, output_dir: Path, fabro_bin: Path) -> None:
-        self.output_dir = output_dir
-        self.fabro_bin = fabro_bin
-    def run(self, case: MiniSweCase, repo_dir: Path, work_dir: Path) -> AttemptResult:
-        ensure_mini_swe_case_supported(case, attempt=self.name)
-        if not self.fabro_bin.exists():
-            raise SystemExit(f"fabro binary missing: {self.fabro_bin}")
-        slice_dir = self.output_dir / "_mini_swe_workflow_slice" / slice_case_dir_name(case)
-        if slice_dir.exists():
-            shutil.rmtree(slice_dir)
-        slice_dir.mkdir(parents=True, exist_ok=True)
-        artifacts_dir = slice_dir / "stage-artifacts"
-        storage_dir = work_dir / "fabro-storage"
-        config_path = slice_dir / "settings.toml"
-        workflow_path = slice_dir / "workflow.fabro"
-        write_workflow_smoke_config(storage_dir=storage_dir, config_path=config_path)
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        workflow_path.write_text(
-            "digraph MiniSweWorkflowSlice {\n"
-            f"  graph [goal=\"{dot_escape(case.issue_text)}\"]\n"
-            "  start [shape=Mdiamond, label=\"Start\"]\n"
-            "  exit [shape=Msquare, label=\"Exit\"]\n"
-            "  solve [label=\"Solve Generated Issue\", shape=parallelogram, "
-            f"script=\"{dot_escape(workflow_slice_solve_script(case, repo_dir, artifacts_dir))}\"]\n"
-            "  review [label=\"Materialize Review\", shape=parallelogram, "
-            f"script=\"{dot_escape(workflow_slice_review_script(case, artifacts_dir))}\"]\n"
-            "  start -> solve -> review -> exit\n"
-            "}\n"
-        )
-        env = workflow_smoke_env(config_path=config_path, storage_dir=storage_dir)
-        run_proc = run_fabro_command(
-            self.fabro_bin,
-            [
-                "--no-upgrade-check",
-                "run",
-                "--auto-approve",
-                "--environment",
-                "local",
-                str(workflow_path),
-            ],
-            env=env,
-        )
-        transcript_path, run_transcript = _write_run_output(slice_dir, run_proc)
-        run_id = extract_workflow_smoke_run_id(run_transcript)
-        try:
-            if run_proc.returncode != 0:
-                raise RuntimeError(f"mini-swe workflow-slice failed: {run_proc.stderr[-2000:]}")
-            if "Status:    SUCCEEDED" not in run_transcript:
-                raise RuntimeError("mini-swe workflow-slice did not report SUCCEEDED")
-            missing_artifacts = missing_workflow_slice_artifacts(artifacts_dir)
-            if missing_artifacts:
-                raise RuntimeError(
-                    "mini-swe workflow-slice missing artifacts: "
-                    + ", ".join(missing_artifacts)
-                )
-        finally:
-            _stop_fabro_server(self.fabro_bin, storage_dir, slice_dir, env)
-        patch_path = artifacts_dir / "patch.diff"
-        commands_run_path = artifacts_dir / "commands_run.json"
-        trajectory_path = slice_dir / "trajectory.jsonl"
-        write_workflow_slice_trajectory(
-            trajectory_path=trajectory_path,
-            case=case,
-            fabro_run_id=run_id,
-            workflow_path=workflow_path,
-            artifacts_dir=artifacts_dir,
-        )
-        return AttemptResult(
-            attempt_origin="workflow-slice",
-            artifact_origin="workflow_stage",
-            substrate="local",
-            source=mini_swe_source(case),
-            b2_slice_eligible=False,
-            b2_model_eligible=False,
-            b2_eligible=False,
-            eligibility_failures=tuple(
-                ["workflow_slice_custom_deterministic_workflow"]
-                + ["workflow_slice_case_specific_artifacts"]
-                + ["workflow_slice_calibration_provenance_only"]
-                + ["workflow_run_id_missing"] * (not run_id)
-            ),
-            evaluation_role="calibration_provenance",
-            eligibility_proof={
-                "repo_facts_recomputed": True,
-                "artifact_claims_compared": True,
-                "commands_run_source": "workflow_stage_artifact",
-            },
-            patch_path=patch_path,
-            artifact_paths={
-                "audit": (artifacts_dir / "audit.json").as_posix(),
-                "validation_contract": (artifacts_dir / "validation_contract.json").as_posix(),
-                "adversarial_review": (artifacts_dir / "adversarial_review.json").as_posix(),
-                "moderator_filter": (artifacts_dir / "moderator_filter.json").as_posix(),
-                "review_materialization": (artifacts_dir / "review_materialization.json").as_posix(),
-            },
-            commands_run_path=commands_run_path,
-            trajectory_path=trajectory_path,
-            transcript_path=transcript_path,
-            dump_path=slice_dir,
-            provenance={
-                "runner": "WorkflowSliceRunner",
-                "fabro_run_id": run_id,
-                "workflow_path": workflow_path.as_posix(),
-                "artifacts_dir": artifacts_dir.as_posix(),
-                "case_artifacts_supplied": False,
             },
         )
 
@@ -498,8 +381,8 @@ class ModelWorkflowRunner:
                 message=(
                     "mini-swe model attempt needs a configured LLM provider. "
                     "Set ANTHROPIC_API_KEY or OPENAI_API_KEY, pass --provider/--model "
-                    "for an already configured provider, or use --attempt workflow-slice "
-                    "for deterministic local coverage."
+                    "for an already configured provider, or use --attempt scripted "
+                    "for deterministic calibration coverage."
                 ),
                 detail=run_proc.stderr[-4000:],
             )
