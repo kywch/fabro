@@ -81,7 +81,7 @@ class WorkflowGeneratorTest(unittest.TestCase):
         )
 
         self.assertIn("adversarial_review", workflow)
-        self.assertIn("adversarial_artifact_gate", workflow)
+        self.assertNotIn("adversarial_artifact_gate", workflow)
         self.assertIn("moderator_filter", workflow)
         self.assertIn("materialize_review_artifacts", workflow)
         self.assertIn("review_accountability_gate", workflow)
@@ -92,11 +92,7 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertIn(MODERATOR_FILTER_PATH, workflow)
         self.assertIn(REVIEW_MATERIALIZATION_PATH, workflow)
         self.assertIn(REVIEW_ACCOUNTABILITY_GATE_PATH, workflow)
-        self.assertIn("adversarial_review -> adversarial_artifact_gate", workflow)
-        self.assertIn(
-            'adversarial_artifact_gate -> moderator_filter [condition="outcome=succeeded"]',
-            workflow,
-        )
+        self.assertIn("adversarial_review -> moderator_filter", workflow)
         self.assertIn(
             'materialize_review_artifacts -> review_accountability_gate [condition="outcome=succeeded"]',
             workflow,

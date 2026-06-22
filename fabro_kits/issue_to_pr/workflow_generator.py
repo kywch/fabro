@@ -80,9 +80,6 @@ def validate_generated_workflow(workflow: str, *, workflow_profile: str) -> None
         expected_by_node["adversarial_review"] = (
             f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}"
         )
-        expected_by_node["adversarial_artifact_gate"] = (
-            f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}"
-        )
         expected_by_node["moderator_filter"] = (
             f"max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}"
         )
@@ -192,7 +189,6 @@ def _structured_workflow(
     review -> fixup        [label="Fix"]"""
     if include_moderated_review:
         review_nodes = f'''    adversarial_review [label="Adversarial Review", max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, prompt="{dot_escape(_adversarial_review_prompt())}"]
-    adversarial_artifact_gate [label="Adversarial Artifact Gate", shape=parallelogram, goal_gate=true, max_retries=0, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="{dot_escape(_adversarial_artifact_gate_script())}"]
     moderator_filter   [label="Moderator Filter", max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, prompt="{dot_escape(_moderator_filter_prompt())}"]
     materialize_review_artifacts [label="Materialize Review Artifacts", shape=parallelogram, goal_gate=true, max_retries=0, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="{dot_escape(_review_materialization_script())}"]
     review_accountability_gate [label="Review Accountability Gate", shape=parallelogram, goal_gate=true, max_retries=0, max_visits={STRUCTURED_VERIFY_REVIEW_MAX_VISITS}, script="{dot_escape(_review_accountability_gate_script())}"]
@@ -201,10 +197,7 @@ def _structured_workflow(
     test_evidence_gate -> adversarial_review [condition="outcome=succeeded"]
     test_evidence_gate -> fixup              [condition="outcome=failed"]
     test_evidence_gate -> fixup              [label="Fallback"]
-    adversarial_review -> adversarial_artifact_gate
-    adversarial_artifact_gate -> moderator_filter [condition="outcome=succeeded"]
-    adversarial_artifact_gate -> fixup           [condition="outcome=failed"]
-    adversarial_artifact_gate -> fixup           [label="Fallback"]
+    adversarial_review -> moderator_filter
     moderator_filter -> materialize_review_artifacts
     materialize_review_artifacts -> review_accountability_gate [condition="outcome=succeeded"]
     materialize_review_artifacts -> review_accountability_gate [condition="outcome=failed"]
@@ -491,25 +484,6 @@ def _test_evidence_gate_script() -> str:
         contract_path=VALIDATION_CONTRACT_PATH,
         output_path=TEST_EVIDENCE_GATE_PATH,
     )
-
-
-def _adversarial_artifact_gate_script() -> str:
-    return f"""python3 - <<'PY'
-import json; from pathlib import Path
-SRC = Path("{ADVERSARIAL_REVIEW_PATH}"); OUT = Path("{REVIEW_ACCOUNTABILITY_GATE_PATH}")
-try:
-    obj = json.loads(SRC.read_text(encoding="utf-8")); error = "rows_not_list"
-except Exception as exc:
-    obj = None; error = str(exc)
-ok = isinstance(obj, dict) and isinstance(obj.get("rows"), list)
-bad = {{"artifact": "adversarial_review", "path": str(SRC), "error": error}}
-report = {{"schema_version": 1, "stage": "adversarial_artifact_gate", "status": "passed" if ok else "failed", "process_status": "passed" if ok else "process_failed", "failure_reason": None if ok else "adversarial_review_file_missing_or_invalid", "process_failures": [] if ok else ["adversarial_review_file_missing_or_invalid"], "malformed_artifacts": [] if ok else [bad], "fixup_required_rows": [] if ok else [{{**bad, "reason": "Write valid JSON with a rows list before moderation."}}], "next_agent_guidance": "Proceed to moderator." if ok else f"Re-run review after fixing the patch; the adversarial reviewer must write {{SRC}} and read it back."}}
-if not ok:
-    OUT.parent.mkdir(parents=True, exist_ok=True); OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
-print(json.dumps(report, sort_keys=True))
-raise SystemExit(0 if ok else 1)
-PY
-"""
 
 
 def _review_materialization_script() -> str:

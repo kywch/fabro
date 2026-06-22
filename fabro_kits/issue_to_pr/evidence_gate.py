@@ -244,7 +244,34 @@ def command_reports_passed(command, statuses):
 
 def is_test_command(command):
     command = command.strip()
-    return command.startswith(("pytest", "python -m unittest", "python3 -m unittest", "cargo test", "bun test")) or "tests/runtests.py" in command
+    prefixes = (
+        "pytest",
+        "python -m pytest",
+        "python3 -m pytest",
+        "python -m unittest",
+        "python3 -m unittest",
+        "tox",
+        "nox",
+        "cargo test",
+        "cargo nextest run",
+        "bun test",
+        "npm test",
+        "npm run test",
+        "yarn test",
+        "pnpm test",
+        "go test",
+        "mvn test",
+        "mvnw test",
+        "./mvnw test",
+        "gradle test",
+        "./gradlew test",
+        "make test",
+        "ctest",
+        "mix test",
+        "swift test",
+        "dotnet test",
+    )
+    return command.startswith(prefixes) or "tests/runtests.py" in command
 
 def verified_command_base(item, command):
     record = {"command": command}

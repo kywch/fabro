@@ -89,6 +89,42 @@ class EvidenceGateTest(unittest.TestCase):
         )
         self.assertEqual(record["status"], "failed")
         self.assertIn("commands_missing_id: python3 -m unittest tests.test_a", record["judgment"]["hard_failures"])
+    def test_common_test_commands_require_ids(self):
+        commands = [
+            "pytest tests/test_a.py",
+            "python -m pytest tests/test_a.py",
+            "python3 -m pytest tests/test_a.py",
+            "python -m unittest tests.test_a",
+            "python3 -m unittest tests.test_a",
+            "tox -e py",
+            "nox -s tests",
+            "cargo test -p pkg",
+            "cargo nextest run -p pkg",
+            "bun test",
+            "npm test",
+            "npm run test -- --runInBand",
+            "yarn test",
+            "pnpm test",
+            "go test ./...",
+            "mvn test",
+            "./mvnw test",
+            "gradle test",
+            "./gradlew test",
+            "make test",
+            "ctest --output-on-failure",
+            "mix test",
+            "swift test",
+            "dotnet test",
+            "python tests/runtests.py file_storage.tests",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                record = evaluate_evidence_gate(
+                    audit={"patch_nonempty": True, "changed_files": ["tests/test_a.py"], "test_files_changed": ["tests/test_a.py"]},
+                    contract={"tests_added": ["tests/test_a.py"], "commands_run": [{"command": command, "status": "passed"}]},
+                )
+                self.assertEqual(record["status"], "failed")
+                self.assertIn(f"commands_missing_id: {command}", record["judgment"]["hard_failures"])
     def test_setup_heredoc_is_not_runtime_test_command(self):
         record = evaluate_evidence_gate(
             audit={"patch_nonempty": True, "changed_files": ["tests/test_a.py"], "test_files_changed": ["tests/test_a.py"]},

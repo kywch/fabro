@@ -34,9 +34,7 @@ structured-moderated:
   audit -> test_evidence_gate
   test_evidence_gate -> adversarial_review  # pass
   test_evidence_gate -> fixup -> verify  # fail/fallback
-  adversarial_review -> adversarial_artifact_gate
-  adversarial_artifact_gate -> moderator_filter  # pass
-  adversarial_artifact_gate -> fixup -> verify  # fail/fallback
+  adversarial_review -> moderator_filter
   moderator_filter -> materialize_review_artifacts
   materialize_review_artifacts -> review_accountability_gate
   review_accountability_gate -> extract_patch  # export
@@ -89,7 +87,6 @@ lane does not become a blanket rejector.
 | `test_evidence_gate` | Check diff facts, validation claims, and safe test execution evidence. In embedded workflow mode it re-runs bounded claimed passing test commands and only machine-observed exit-0 test commands count as runtime proof. | live `.fabro/issue-to-pr/test-evidence-gate.json`; bundled `output/test_evidence_gate.json` |
 | `review` | Approve or route to fixup in the structured and structured-gated profiles. | review phase metadata |
 | `adversarial_review` | Produce falsifiable risk rows for the current patch. | live `.fabro/issue-to-pr/adversarial-review.json`; bundled `output/adversarial_review.json` |
-| `adversarial_artifact_gate` | Ensure adversarial review output is present and parseable before moderation. | gate status and malformed artifact details |
 | `moderator_filter` | Account for adversarial rows with same-id dispositions. | live `.fabro/issue-to-pr/moderator-filter.json`; bundled `output/moderator_filter.json` |
 | `materialize_review_artifacts` | Join adversarial rows and moderator dispositions into review materialization. | live `.fabro/issue-to-pr/review-materialization.json`; bundled `output/review_materialization.json` |
 | `review_accountability_gate` | Fail closed on malformed review artifacts, open rows of any severity, missing or generic closure checks, missing runtime proof, duplicate/orphan/unaccounted rows, invalid dispositions, or other process failures. | live `.fabro/issue-to-pr/review-accountability-gate.json`; bundled `output/review_accountability_gate.json` |
