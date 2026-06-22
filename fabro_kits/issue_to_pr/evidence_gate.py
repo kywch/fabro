@@ -37,7 +37,7 @@ def evaluate_evidence_gate(
         commands_run = []
     commands_reported_passed_count = commands_status_count(commands_run, {"passed", "pass", "success", "succeeded", "ok"})
     verified_commands = verify_reported_passes(commands_run) if verify_commands else []
-    tests_passed_count = sum(1 for command in verified_commands if command["exit_code"] == 0 and is_test_command(command["command"]))
+    tests_passed_count = sum(1 for command in verified_commands if command["exit_code"] == 0 and is_test_command(command["command"]) and not command.get("zero_test_output"))
     if audit and audit.get("patch_nonempty") is False:
         hard_failures.append("audit_reports_empty_patch")
     existing_tests_verified = verify_commands and tests_passed_count > 0 and changed_files and not test_files_changed
@@ -254,6 +254,14 @@ def verified_command_base(item, command):
         record["validation_command_id"] = command_id.strip()
     return record
 
+def output_reports_zero_tests(output):
+    text = output.lower()
+    return bool(
+        re.search(r"\bran\s+0\s+tests?\b", text)
+        or re.search(r"\bcollected\s+0\s+items?\b", text)
+        or re.search(r"\b0\s+tests?\s+collected\b", text)
+    )
+
 def verify_reported_passes(commands_run):
     verified = []
     for item in commands_run:
@@ -264,7 +272,7 @@ def verify_reported_passes(commands_run):
             continue
         try:
             proc = subprocess.run(command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, timeout=180)
-            verified.append({**verified_command_base(item, command), "exit_code": proc.returncode, "output_tail": proc.stdout[-2000:]})
+            verified.append({**verified_command_base(item, command), "exit_code": proc.returncode, "zero_test_output": output_reports_zero_tests(proc.stdout), "output_tail": proc.stdout[-2000:]})
         except Exception as exc:
             verified.append({**verified_command_base(item, command), "exit_code": None, "error": str(exc)})
     return verified
@@ -344,6 +352,7 @@ def _embedded_gate_functions_source():
         command_reports_passed,
         is_test_command,
         verified_command_base,
+        output_reports_zero_tests,
         verify_reported_passes,
         fixup_guidance,
         evaluate_evidence_gate,

@@ -7,6 +7,7 @@ from .cases import case_behavior, task_contract_for_case, tests_added_for_case
 
 def adversarial_review_for_case(case: MiniSweCase) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
+    checked_risks: list[dict[str, Any]] = []
     if case.case_id == "overblocking-good-patch-with-minor-risk":
         rows.append(
             {
@@ -18,10 +19,22 @@ def adversarial_review_for_case(case: MiniSweCase) -> dict[str, Any]:
                 "closure_requires": "runtime_tests",
             }
         )
+    elif case_behavior(case).change_source:
+        checked_risks.append(
+            {
+                "risk": "source behavior change may miss the requested greeting contract",
+                "evidence": ["src/greeting.py"],
+                "counterexample_check": (
+                    "src/greeting.py changes the greeting return value and "
+                    "public tests exercise the requested behavior"
+                ),
+            }
+        )
     return {
         "schema_version": 1,
         "stage": "adversarial_review",
         "status": "passed",
+        "checked_risks": checked_risks,
         "rows": rows,
     }
 

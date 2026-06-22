@@ -163,6 +163,10 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertIn("Proceed to patch extraction.", workflow)
         self.assertIn("expected_review_rows", workflow)
         self.assertIn(":(exclude).fabro/issue-to-pr/**", workflow)
+        self.assertIn("checked_risks", workflow)
+        self.assertIn("counterexample_checks", workflow)
+        self.assertIn("checked_risks or counterexample_checks must cite exact changed source paths", workflow)
+        self.assertIn("checked_risks and counterexample_checks are not rows or dispositions", workflow)
 
     def test_simple_fixup_prompt_keeps_tiny_task_guidance_focused(self):
         workflow = generate_issue_to_pr_workflow(

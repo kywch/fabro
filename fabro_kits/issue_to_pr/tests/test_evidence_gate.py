@@ -35,6 +35,24 @@ class EvidenceGateTest(unittest.TestCase):
         self.assertEqual(record["observed"]["tests_passed_count"], 1)
         self.assertEqual(record["observed"]["verified_commands"][0]["id"], "cmd-1")
         self.assertEqual(record["observed"]["verified_commands"][0]["validation_command_id"], "cmd-1")
+    def test_zero_test_output_does_not_count_as_passed_test(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "tests").mkdir()
+            old = os.getcwd()
+            try:
+                os.chdir(root)
+                record = evaluate_evidence_gate(
+                    audit={"patch_nonempty": True, "changed_files": ["src/fix.py"], "test_files_changed": []},
+                    contract={"commands_run": [{"id": "cmd-1", "command": "python3 -m unittest discover -s tests", "status": "passed"}], "no_test_justification": "existing focused tests"},
+                    verify_commands=True,
+                )
+            finally:
+                os.chdir(old)
+
+        self.assertEqual(record["observed"]["tests_passed_count"], 0)
+        self.assertTrue(record["observed"]["verified_commands"][0]["zero_test_output"])
+        self.assertIn("tests_not_executed_successfully", record["judgment"]["hard_failures"])
     def test_source_only_patch_can_cite_existing_verified_test(self):
         record = evaluate_evidence_gate(
             audit={"patch_nonempty": True, "changed_files": ["src/greeting.py"], "test_files_changed": []},
@@ -116,3 +134,16 @@ class EvidenceGateTest(unittest.TestCase):
             record = json.loads(out.read_text())
             self.assertEqual(record["observed"]["verified_commands"][0]["id"], "cmd-embedded-1")
             self.assertEqual(record["observed"]["verified_commands"][0]["validation_command_id"], "cmd-embedded-1")
+    def test_embedded_script_rejects_zero_test_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "tests").mkdir()
+            audit, contract, out = root / "audit.json", root / "contract.json", root / "gate.json"
+            audit.write_text(json.dumps({"patch_nonempty": True, "changed_files": ["src/fix.py"], "test_files_changed": []}))
+            contract.write_text(json.dumps({"commands_run": [{"id": "cmd-empty", "command": "python3 -m unittest discover -s tests", "status": "passed"}], "no_test_justification": "existing focused tests"}))
+            script = build_embedded_gate_script(audit_path=str(audit), contract_path=str(contract), output_path=str(out))
+            proc = subprocess.run(script, shell=True, executable="/bin/bash", cwd=root, capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            record = json.loads(out.read_text())
+            self.assertEqual(record["observed"]["tests_passed_count"], 0)
+            self.assertTrue(record["observed"]["verified_commands"][0]["zero_test_output"])

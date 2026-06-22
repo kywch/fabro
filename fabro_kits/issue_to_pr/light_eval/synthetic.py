@@ -140,6 +140,16 @@ def run_synthetic_task(
         "schema_version": 1,
         "stage": "adversarial_review",
         "status": "passed",
+        "checked_risks": [
+            {
+                "risk": "source behavior changed without matching test-file evidence",
+                "evidence": ["src/greeting.py"],
+                "counterexample_check": (
+                    "src/greeting.py is the only changed source file in the "
+                    "synthetic patch"
+                ),
+            }
+        ],
         "rows": [],
     }
     moderator = {

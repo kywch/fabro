@@ -69,6 +69,16 @@ def evaluate_review_accountability(
         clean_path(path)
         for path in as_list(test_gate.get("changed_files") if isinstance(test_gate, dict) else None)
     }
+    source_diff_files = nontrivial_source_diff_files(patch_diff)
+    if rows == [] and source_diff_files and not concrete_empty_review_checks(adversarial, source_diff_files):
+        malformed.append(
+            {
+                "artifact": "adversarial_review",
+                "field": "rows",
+                "error": "empty_rows_without_checked_risks",
+                "changed_source_files": source_diff_files,
+            }
+        )
     if (
         "``OPTIONS``" in settings_ref_diff
         and "+Default: ``0o644``" in settings_ref_diff
@@ -402,6 +412,80 @@ def is_issue_artifact_path(path: str) -> bool:
     return path.startswith(".fabro/issue-to-pr/")
 
 
+def concrete_empty_review_checks(adversarial: Any, source_files: list[str]) -> bool:
+    if not isinstance(adversarial, dict):
+        return False
+    return any(
+        concrete_checked_risk(item, source_files)
+        for key in ("checked_risks", "counterexample_checks")
+        for item in as_list(adversarial.get(key))
+    )
+
+
+def concrete_checked_risk(item: Any, source_files: list[str]) -> bool:
+    if not isinstance(item, dict):
+        return False
+    evidence = " ".join(text_values(item.get("evidence")))
+    check = str(
+        item.get("counterexample_check")
+        or item.get("falsifiable_check")
+        or item.get("check")
+        or ""
+    ).strip()
+    risk = str(item.get("risk") or item.get("failure_mode") or "").strip()
+    text = " ".join([evidence, check, risk])
+    return bool(
+        risk
+        and check
+        and evidence
+        and any(path in text for path in source_files)
+    )
+
+
+def nontrivial_source_diff_files(patch_diff: str) -> list[str]:
+    paths = []
+    old_path = ""
+    current_path = ""
+    for line in patch_diff.splitlines():
+        if line.startswith("--- a/"):
+            old_path = clean_path(line[len("--- a/") :])
+            continue
+        if line == "+++ /dev/null":
+            current_path = old_path
+            continue
+        if line.startswith("+++ b/"):
+            current_path = clean_path(line[len("+++ b/") :])
+            continue
+        if (
+            current_path
+            and is_source_path(current_path)
+            and line[:1] in {"+", "-"}
+            and not line.startswith(("+++", "---"))
+            and nontrivial_source_line(line[1:])
+            and current_path not in paths
+        ):
+            paths.append(current_path)
+    return paths
+
+
+def is_source_path(path: str) -> bool:
+    path = clean_path(path)
+    source_exts = (
+        ".py", ".rs", ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".c",
+        ".cc", ".cpp", ".h", ".hpp", ".cs", ".rb", ".php", ".swift", ".kt",
+    )
+    return (
+        not is_test_path(path)
+        and not path.startswith(("docs/", ".fabro/"))
+        and path.endswith(source_exts)
+    )
+
+
+def nontrivial_source_line(line: str) -> bool:
+    stripped = line.strip()
+    return bool(stripped) and not stripped.startswith(("#", "//", "/*", "*", "*/"))
+
+
 def has_evidence(row: Any) -> bool:
     if not isinstance(row, dict):
         return False
@@ -699,6 +783,11 @@ def _embedded_gate_functions_source() -> str:
         add_unique,
         clean_path,
         is_issue_artifact_path,
+        concrete_empty_review_checks,
+        concrete_checked_risk,
+        nontrivial_source_diff_files,
+        is_source_path,
+        nontrivial_source_line,
         has_evidence,
         tests_executed_successfully,
         score_closure,

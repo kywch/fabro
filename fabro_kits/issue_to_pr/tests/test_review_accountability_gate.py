@@ -435,7 +435,7 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
 
     def test_source_raises_line_removal_is_not_negative_test_coverage(self):
         report = evaluate_review_accountability(
-            adversarial=_adversarial(rows=[]),
+            adversarial=_adversarial(rows=[], checked_risks=[{"risk": "source behavior change", "evidence": ["src/parser.py"], "counterexample_check": "src/parser.py diff changes only the source return path"}]),
             moderator=_moderator(dispositions=[]),
             test_gate=_test_gate(changed_files=["src/parser.py"]),
             materialization=_materialization([], []),
@@ -450,6 +450,48 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
         )
 
         self.assertEqual(report["route_decision"], "export")
+
+    def test_empty_rows_fail_for_nontrivial_source_diff_without_checked_risks(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(rows=[]),
+            moderator=_moderator(dispositions=[]),
+            test_gate=_test_gate(changed_files=["src/parser.py"]),
+            materialization=_materialization([], []),
+            patch_diff=(
+                "diff --git a/src/parser.py b/src/parser.py\n"
+                "--- a/src/parser.py\n"
+                "+++ b/src/parser.py\n"
+                "@@ -1,2 +1,2 @@\n"
+                "-    return None\n"
+                "+    return value\n"
+            ),
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("review_artifact_missing_or_malformed", report["process_failures"])
+        self.assertEqual(report["malformed_artifacts"][0]["error"], "empty_rows_without_checked_risks")
+
+    def test_empty_rows_with_checked_risks_keep_zero_rows_and_export(self):
+        for key in ("checked_risks", "counterexample_checks"):
+            with self.subTest(key=key):
+                report = evaluate_review_accountability(
+                    adversarial=_adversarial(rows=[], **{key: [{"risk": "source behavior change", "check": "reviewed src/parser.py counterexample path", "evidence": ["src/parser.py"]}]}),
+                    moderator=_moderator(dispositions=[]),
+                    test_gate=_test_gate(changed_files=["src/parser.py"]),
+                    materialization=_materialization([], []),
+                    patch_diff=(
+                        "diff --git a/src/parser.py b/src/parser.py\n"
+                        "--- a/src/parser.py\n"
+                        "+++ b/src/parser.py\n"
+                        "@@ -1,2 +1,2 @@\n"
+                        "-    return None\n"
+                        "+    return value\n"
+                    ),
+                )
+
+                self.assertEqual(report["route_decision"], "export")
+                self.assertEqual(report["adversarial_row_count"], 0)
+                self.assertEqual(report["moderator_disposition_count"], 0)
 
     def test_runtime_closure_requires_machine_observed_test_execution(self):
         report = evaluate_review_accountability(
@@ -898,13 +940,14 @@ def _run_embedded(adversarial, moderator, test_gate, materialization):
         return json.loads(paths["output"].read_text())
 
 
-def _adversarial(rows):
+def _adversarial(rows, **extra):
     return {
         "schema_version": 1,
         "stage": "adversarial_review",
         "summary": "review",
         "rows": rows,
         "overall_risk": "medium",
+        **extra,
     }
 
 

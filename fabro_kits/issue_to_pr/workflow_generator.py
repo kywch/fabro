@@ -289,6 +289,14 @@ Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON ob
   "schema_version": 1,
   "stage": "adversarial_review",
   "summary": "<one sentence>",
+  "checked_risks": [
+    {
+      "risk": "<concrete risk considered when no row is opened>",
+      "evidence": ["<changed source path, diff fact, or artifact field>"],
+      "counterexample_check": "<why current evidence does not justify a row>"
+    }
+  ],
+  "counterexample_checks": ["<optional concrete read-only checks against changed source paths>"],
   "rows": [
     {
       "id": "A1",
@@ -306,6 +314,7 @@ Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON ob
 }
 
 Artifact contract:
+- If rows is empty for a nontrivial source diff, checked_risks or counterexample_checks must cite exact changed source paths or diff facts.
 - You must write the JSON object to {ADVERSARIAL_REVIEW_PATH} using a file-writing tool; a final answer that only prints JSON is ignored and fails the workflow.
 - After writing, read {ADVERSARIAL_REVIEW_PATH} back from disk. If it is missing, empty, invalid JSON, or lacks a rows list, rewrite the file before finishing.
 - End with exactly the same JSON object on one line. Do not ask how to write it, include Markdown, or output the object twice.""".replace(
@@ -331,6 +340,7 @@ Hard contract:
 - Use read-only inspection only. Do not run tests or commands that may write.
 - Machine artifacts outrank claims. Treat {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, and `git diff` as authoritative.
 - First read {ADVERSARIAL_REVIEW_PATH}; if it is missing, empty, invalid JSON, or has no rows list, write process_failed with dispositions=[] and stop. Do not infer rows from chat history or other artifacts.
+- checked_risks and counterexample_checks are not rows or dispositions; do not synthesize dispositions from them.
 
 Use a file-writing tool to overwrite {MODERATOR_FILTER_PATH} with one JSON object before your final answer; escape literal backslashes as JSON \\\\; printing without writing fails:
 {
