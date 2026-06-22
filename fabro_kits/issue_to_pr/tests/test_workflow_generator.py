@@ -163,6 +163,9 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertIn("counterexample_checks", workflow)
         self.assertIn("checked_risks or counterexample_checks must cite exact changed source paths", workflow)
         self.assertIn("checked_risks and counterexample_checks are not rows or dispositions", workflow)
+        self.assertIn("scope_assessment", workflow)
+        self.assertIn("literal_issue_fixed", workflow)
+        self.assertIn("option_matrix", workflow)
 
     def test_simple_fixup_prompt_keeps_tiny_task_guidance_focused(self):
         workflow = generate_issue_to_pr_workflow(

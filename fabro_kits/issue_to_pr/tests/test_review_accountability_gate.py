@@ -493,6 +493,141 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
                 self.assertEqual(report["adversarial_row_count"], 0)
                 self.assertEqual(report["moderator_disposition_count"], 0)
 
+    def test_empty_rows_broad_semantic_change_requires_option_matrix(self):
+        report = _empty_review_with_scope(
+            {
+                "literal_issue_fixed": True,
+                "scope_narrowed_reason": "",
+                "broad_semantic_change": True,
+                "option_matrix": [],
+                "residual_risk": "none",
+            }
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("review_artifact_missing_or_malformed", report["process_failures"])
+        self.assertEqual(report["malformed_artifacts"][0]["error"], "missing_option_matrix")
+
+    def test_empty_rows_broad_semantic_change_requires_option_matrix_list(self):
+        report = _empty_review_with_scope(
+            {
+                "literal_issue_fixed": True,
+                "scope_narrowed_reason": "",
+                "broad_semantic_change": True,
+                "option_matrix": "checked one option",
+                "residual_risk": "none",
+            }
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertEqual(report["malformed_artifacts"][0]["error"], "missing_option_matrix")
+
+    def test_empty_rows_broad_semantic_change_with_option_matrix_exports(self):
+        report = _empty_review_with_scope(
+            {
+                "literal_issue_fixed": True,
+                "scope_narrowed_reason": "",
+                "broad_semantic_change": True,
+                "option_matrix": ["changed only the requested parser branch"],
+                "residual_risk": "none",
+            }
+        )
+
+        self.assertEqual(report["route_decision"], "export")
+
+    def test_empty_rows_literal_issue_not_fixed_requires_reason(self):
+        report = _empty_review_with_scope(
+            {
+                "literal_issue_fixed": False,
+                "scope_narrowed_reason": "",
+                "broad_semantic_change": False,
+                "option_matrix": [],
+                "residual_risk": "none",
+            }
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("review_artifact_missing_or_malformed", report["process_failures"])
+        self.assertEqual(report["malformed_artifacts"][0]["error"], "missing_scope_narrowed_reason")
+
+    def test_empty_rows_literal_issue_not_fixed_requires_text_reason(self):
+        report = _empty_review_with_scope(
+            {
+                "literal_issue_fixed": False,
+                "scope_narrowed_reason": True,
+                "broad_semantic_change": False,
+                "option_matrix": [],
+                "residual_risk": "none",
+            }
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertEqual(report["malformed_artifacts"][0]["error"], "missing_scope_narrowed_reason")
+
+    def test_empty_rows_literal_issue_not_fixed_with_reason_exports(self):
+        report = _empty_review_with_scope(
+            {
+                "literal_issue_fixed": False,
+                "scope_narrowed_reason": "Issue text was scoped to the explicit parser branch.",
+                "broad_semantic_change": False,
+                "option_matrix": [],
+                "residual_risk": "none",
+            }
+        )
+
+        self.assertEqual(report["route_decision"], "export")
+
+    def test_empty_rows_narrow_scope_assessment_exports(self):
+        report = _empty_review_with_scope(
+            {
+                "literal_issue_fixed": True,
+                "scope_narrowed_reason": "",
+                "broad_semantic_change": False,
+                "option_matrix": [],
+                "residual_risk": "none",
+            }
+        )
+
+        self.assertEqual(report["route_decision"], "export")
+
+    def test_scope_assessment_is_ignored_when_rows_are_nonempty(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(
+                rows=[{"id": "A1", "category": "code", "severity": "minor"}],
+                scope_assessment={
+                    "literal_issue_fixed": False,
+                    "scope_narrowed_reason": "",
+                    "broad_semantic_change": True,
+                    "option_matrix": [],
+                    "residual_risk": "none",
+                },
+            ),
+            moderator=_moderator(
+                dispositions=[
+                    {
+                        "id": "A1",
+                        "state": "rejected",
+                        "category": "code",
+                        "severity": "minor",
+                        "evidence": ["src/parser.py"],
+                        "closure_check": "Rejected against src/parser.py evidence.",
+                    }
+                ]
+            ),
+            test_gate=_test_gate(changed_files=["src/parser.py"]),
+            materialization=_materialization(["A1"], ["A1"]),
+            patch_diff=_source_patch_diff(),
+        )
+
+        self.assertNotIn(
+            "missing_scope_narrowed_reason",
+            [item.get("error") for item in report["malformed_artifacts"]],
+        )
+        self.assertNotIn(
+            "missing_option_matrix",
+            [item.get("error") for item in report["malformed_artifacts"]],
+        )
+
     def test_runtime_closure_requires_machine_observed_test_execution(self):
         report = evaluate_review_accountability(
             adversarial=_adversarial(
@@ -938,6 +1073,37 @@ def _run_embedded(adversarial, moderator, test_gate, materialization):
         if proc.returncode != expected_returncode:
             raise AssertionError(proc.stdout + proc.stderr)
         return json.loads(paths["output"].read_text())
+
+
+def _empty_review_with_scope(scope_assessment):
+    return evaluate_review_accountability(
+        adversarial=_adversarial(
+            rows=[],
+            checked_risks=[
+                {
+                    "risk": "source behavior change",
+                    "check": "reviewed src/parser.py counterexample path",
+                    "evidence": ["src/parser.py"],
+                }
+            ],
+            scope_assessment=scope_assessment,
+        ),
+        moderator=_moderator(dispositions=[]),
+        test_gate=_test_gate(changed_files=["src/parser.py"]),
+        materialization=_materialization([], []),
+        patch_diff=_source_patch_diff(),
+    )
+
+
+def _source_patch_diff():
+    return (
+        "diff --git a/src/parser.py b/src/parser.py\n"
+        "--- a/src/parser.py\n"
+        "+++ b/src/parser.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        "-    return None\n"
+        "+    return value\n"
+    )
 
 
 def _adversarial(rows, **extra):

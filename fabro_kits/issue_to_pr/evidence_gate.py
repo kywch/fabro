@@ -6,6 +6,7 @@ import json
 import inspect
 import ast
 import re
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -192,7 +193,7 @@ def duplicate_test_definitions(paths):
         if not path.endswith(".py") or not file_path.exists():
             continue
         try:
-            tree = ast.parse(file_path.read_text(errors="ignore"))
+            tree = ast.parse(file_path.read_text(encoding="utf-8", errors="replace"))
         except SyntaxError:
             continue
         for scope in [tree] + [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]:
@@ -271,7 +272,19 @@ def is_test_command(command):
         "swift test",
         "dotnet test",
     )
-    return command.startswith(prefixes) or "tests/runtests.py" in command
+    return command.startswith(prefixes) or is_runtests_command(command)
+
+def is_runtests_command(command):
+    try:
+        tokens = shlex.split(command, comments=True)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    runtests = {"tests/runtests.py", "./tests/runtests.py"}
+    if tokens[0] in runtests:
+        return True
+    return len(tokens) >= 2 and tokens[0] in {"python", "python3"} and tokens[1] in runtests
 
 def verified_command_base(item, command):
     record = {"command": command}
@@ -298,7 +311,7 @@ def verify_reported_passes(commands_run):
         if not command_reports_passed(item, {"passed", "pass", "success", "succeeded", "ok"}) or not (is_test_command(command) or "git diff --check" in command):
             continue
         try:
-            proc = subprocess.run(command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, timeout=180)
+            proc = subprocess.run(command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, encoding="utf-8", errors="replace", timeout=180)
             verified.append({**verified_command_base(item, command), "exit_code": proc.returncode, "zero_test_output": output_reports_zero_tests(proc.stdout), "output_tail": proc.stdout[-2000:]})
         except Exception as exc:
             verified.append({**verified_command_base(item, command), "exit_code": None, "error": str(exc)})
@@ -331,6 +344,7 @@ def build_embedded_gate_script(
 import ast
 import json
 import re
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -344,7 +358,7 @@ def read_json(path):
     if not path.exists():
         return None
     try:
-        value = json.loads(path.read_text())
+        value = json.loads(path.read_text(encoding="utf-8", errors="replace"))
     except json.JSONDecodeError as exc:
         return {{"_json_error": str(exc)}}
     return value if isinstance(value, dict) else {{"_json_error": "expected object"}}
@@ -378,6 +392,7 @@ def _embedded_gate_functions_source():
         commands_status_count,
         command_reports_passed,
         is_test_command,
+        is_runtests_command,
         verified_command_base,
         output_reports_zero_tests,
         verify_reported_passes,

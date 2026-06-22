@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from fabro_kits.issue_to_pr.evidence_gate import build_embedded_gate_script, evaluate_evidence_gate
+from fabro_kits.issue_to_pr.evidence_gate import build_embedded_gate_script, evaluate_evidence_gate, is_test_command
 def evaluate_with_test_file(name, source):
     with tempfile.TemporaryDirectory() as tmp:
         tests = Path(tmp) / "tests"
@@ -132,6 +132,19 @@ class EvidenceGateTest(unittest.TestCase):
         )
         self.assertEqual(record["status"], "passed")
         self.assertEqual(record["judgment"]["hard_failures"], [])
+    def test_runtests_recognition_ignores_comments_and_heredoc_text(self):
+        self.assertFalse(is_test_command("echo ok # python tests/runtests.py file_storage.tests"))
+        self.assertFalse(is_test_command("python3 - <<'PY'\ntests/runtests.py file_storage.tests\nPY"))
+    def test_runtests_recognition_matches_actual_tokens(self):
+        commands = [
+            "python tests/runtests.py file_storage.tests",
+            "python3 tests/runtests.py file_storage.tests",
+            "./tests/runtests.py file_storage.tests",
+            "tests/runtests.py file_storage.tests",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertTrue(is_test_command(command))
     def test_claimed_tests_without_changed_test_file_hard_fails(self):
         record = evaluate_evidence_gate(
             audit={"patch_nonempty": True, "changed_files": ["pkg/code.py"], "test_files_changed": []},
@@ -183,3 +196,19 @@ class EvidenceGateTest(unittest.TestCase):
             record = json.loads(out.read_text())
             self.assertEqual(record["observed"]["tests_passed_count"], 0)
             self.assertTrue(record["observed"]["verified_commands"][0]["zero_test_output"])
+    def test_embedded_script_replaces_invalid_utf8_in_verified_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audit, contract, out = root / "audit.json", root / "contract.json", root / "gate.json"
+            tests = root / "tests"
+            tests.mkdir()
+            (tests / "__init__.py").write_text("")
+            (tests / "test_bytes.py").write_text("import sys, unittest\n\nclass T(unittest.TestCase):\n    def test_bytes(self):\n        sys.stdout.buffer.write(b'ok\\xff\\n')\n")
+            audit.write_text(json.dumps({"patch_nonempty": True, "changed_files": [], "test_files_changed": []}))
+            command = "python3 -m unittest tests.test_bytes"
+            contract.write_text(json.dumps({"commands_run": [{"id": "cmd-bytes", "command": command, "status": "passed"}], "no_test_justification": "decode hardening"}))
+            script = build_embedded_gate_script(audit_path=str(audit), contract_path=str(contract), output_path=str(out))
+            proc = subprocess.run(script, shell=True, executable="/bin/bash", cwd=root, capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            record = json.loads(out.read_text())
+            self.assertIn("ok\ufffd", record["observed"]["verified_commands"][0]["output_tail"])

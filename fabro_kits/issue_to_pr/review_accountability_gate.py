@@ -79,6 +79,29 @@ def evaluate_review_accountability(
                 "changed_source_files": source_diff_files,
             }
         )
+    if rows == [] and isinstance(adversarial, dict):
+        scope_assessment = adversarial.get("scope_assessment")
+        if isinstance(scope_assessment, dict):
+            if scope_assessment.get("literal_issue_fixed") is False and not nonempty_scope_text(
+                scope_assessment.get("scope_narrowed_reason")
+            ):
+                malformed.append(
+                    {
+                        "artifact": "adversarial_review",
+                        "field": "scope_assessment.scope_narrowed_reason",
+                        "error": "missing_scope_narrowed_reason",
+                    }
+                )
+            if scope_assessment.get("broad_semantic_change") is True and not nonempty_scope_list(
+                scope_assessment.get("option_matrix")
+            ):
+                malformed.append(
+                    {
+                        "artifact": "adversarial_review",
+                        "field": "scope_assessment.option_matrix",
+                        "error": "missing_option_matrix",
+                    }
+                )
     if (
         "``OPTIONS``" in settings_ref_diff
         and "+Default: ``0o644``" in settings_ref_diff
@@ -381,7 +404,7 @@ def evaluate_review_accountability(
 
 def load_json_object(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     try:
-        obj = json.loads(path.read_text())
+        obj = json.loads(path.read_text(encoding="utf-8", errors="replace"))
     except Exception as exc:
         return None, {"path": str(path), "error": str(exc)}
     if not isinstance(obj, dict):
@@ -396,6 +419,14 @@ def row_id(row: Any) -> str | None:
 
 def as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def nonempty_scope_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def nonempty_scope_list(value: Any) -> bool:
+    return isinstance(value, list) and bool(value)
 
 
 def add_unique(values: list[Any], value: Any) -> None:
@@ -753,8 +784,8 @@ adversarial, adversarial_error = load_json_object(ADVERSARIAL)
 moderator, moderator_error = load_json_object(MODERATOR)
 test_gate, test_gate_error = load_json_object(TEST_GATE)
 materialization, materialization_error = load_json_object(MATERIALIZATION)
-settings_ref_diff = subprocess.run(["git", "diff", "--", "docs/ref/settings.txt"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout
-patch_diff = subprocess.run(["git", "diff"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout
+settings_ref_diff = subprocess.run(["git", "diff", "--", "docs/ref/settings.txt"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, encoding="utf-8", errors="replace").stdout
+patch_diff = subprocess.run(["git", "diff"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, encoding="utf-8", errors="replace").stdout
 report = evaluate_review_accountability(
     adversarial=adversarial,
     moderator=moderator,
@@ -780,6 +811,8 @@ def _embedded_gate_functions_source() -> str:
         load_json_object,
         row_id,
         as_list,
+        nonempty_scope_text,
+        nonempty_scope_list,
         add_unique,
         clean_path,
         is_issue_artifact_path,

@@ -290,6 +290,13 @@ Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON ob
     }
   ],
   "counterexample_checks": ["<optional concrete read-only checks against changed source paths>"],
+  "scope_assessment": {
+    "literal_issue_fixed": true,
+    "scope_narrowed_reason": "<required only when literal_issue_fixed is false>",
+    "broad_semantic_change": false,
+    "option_matrix": ["<required only when broad_semantic_change is true>"],
+    "residual_risk": "<remaining issue-scoped risk, or none>"
+  },
   "rows": [
     {
       "id": "A1",
@@ -308,6 +315,7 @@ Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON ob
 
 Artifact contract:
 - If rows is empty for a nontrivial source diff, checked_risks or counterexample_checks must cite exact changed source paths or diff facts.
+- If rows is empty, include scope_assessment. When literal_issue_fixed is false, scope_narrowed_reason must explain the narrow interpretation. When broad_semantic_change is true, option_matrix must list the considered implementation options.
 - You must write the JSON object to {ADVERSARIAL_REVIEW_PATH} using a file-writing tool; a final answer that only prints JSON is ignored and fails the workflow.
 - After writing, read {ADVERSARIAL_REVIEW_PATH} back from disk. If it is missing, empty, invalid JSON, or lacks a rows list, rewrite the file before finishing.
 - End with exactly the same JSON object on one line. Do not ask how to write it, include Markdown, or output the object twice.""".replace(
@@ -446,7 +454,7 @@ import subprocess
 from pathlib import Path
 
 def run(*args):
-    proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, encoding="utf-8", errors="replace")
     return proc.returncode, proc.stdout, proc.stderr
 
 _, names, _ = run("git", "diff", "--name-only", "--", ".", ":(exclude).fabro/issue-to-pr/**")
@@ -505,7 +513,7 @@ REQUIRED_KEYS = {{
 
 def load(name, path):
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8", errors="replace")
     except Exception as exc:
         return None, {{"artifact": name, "path": str(path), "error": str(exc)}}
     candidates = [text, re.sub(r'\\\\(?!["\\\\/bfnrtu])', r'\\\\\\\\', text)]
