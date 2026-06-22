@@ -33,6 +33,8 @@ class EvidenceGateTest(unittest.TestCase):
             verify_commands=True,
         )
         self.assertEqual(record["observed"]["tests_passed_count"], 1)
+        self.assertEqual(record["observed"]["verified_commands"][0]["id"], "cmd-1")
+        self.assertEqual(record["observed"]["verified_commands"][0]["validation_command_id"], "cmd-1")
     def test_source_only_patch_can_cite_existing_verified_test(self):
         record = evaluate_evidence_gate(
             audit={"patch_nonempty": True, "changed_files": ["src/greeting.py"], "test_files_changed": []},
@@ -102,3 +104,15 @@ class EvidenceGateTest(unittest.TestCase):
             record = json.loads(out.read_text())
             self.assertEqual(record["status"], "failed")
             self.assertIn("tests_not_executed_successfully", record["judgment"]["hard_failures"])
+    def test_embedded_script_preserves_verified_command_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audit, contract, out = root / "audit.json", root / "contract.json", root / "gate.json"
+            audit.write_text(json.dumps({"patch_nonempty": True, "changed_files": [], "test_files_changed": []}))
+            contract.write_text(json.dumps({"commands_run": [{"id": "cmd-embedded-1", "command": "python3 -m unittest fabro_kits.issue_to_pr.tests.test_artifacts.RunBundleArtifactsTest.test_candidate_patch_bytes_use_utf8_bytes", "status": "passed"}], "no_test_justification": "existing focused regression"}))
+            script = build_embedded_gate_script(audit_path=str(audit), contract_path=str(contract), output_path=str(out))
+            proc = subprocess.run(script, shell=True, executable="/bin/bash", capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            record = json.loads(out.read_text())
+            self.assertEqual(record["observed"]["verified_commands"][0]["id"], "cmd-embedded-1")
+            self.assertEqual(record["observed"]["verified_commands"][0]["validation_command_id"], "cmd-embedded-1")

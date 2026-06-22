@@ -284,6 +284,14 @@ vault metadata, and the model probe:
 "$FABRO_BIN" model test --provider openai --model gpt-5.4-mini
 ```
 
+If `credential_bridge.status` is `copied` but preflight still fails, inspect the
+`model test` error before rerunning the panel. A failure containing
+`refresh_token_reused` means the copied `OPENAI_CODEX` OAuth entry is stale; the
+V4 `auth-storage` directory may still exist and copy successfully, but it is no
+longer a usable credential source. Refresh the server credential with
+`provider login`, confirm `model test` passes, then recopy
+`/storage/vaults/default/secrets.json` into the mini-SWE auth storage root.
+
 ### Fresh Local Server Smoke
 
 When testing the current checkout with a throwaway local server, authenticate
@@ -449,6 +457,7 @@ summary; do not treat smoke success as a resolved SWE-bench task.
 | Server rejects dev token | token is not `fabro_dev_` plus 64 hex chars | inspect `tmp/issue-to-pr-smoke/.env` |
 | Docker sandbox never starts | Fabro container cannot reach Docker socket | `docker logs fabro-issue-to-pr-smoke-fabro-1` |
 | `model test` fails | OpenAI/Codex auth missing or expired | rerun `"$FABRO_BIN" provider login --provider openai --server http://127.0.0.1:32276/api/v1` |
+| Mini-SWE bridge copies but preflight fails with `refresh_token_reused` | copied `OPENAI_CODEX` OAuth entry is stale | refresh provider login, verify `model test`, then recopy the vault into `MINI_SWE_AUTH_STORAGE` |
 | Fresh checkout server says no LLM providers configured | `OPENAI_CODEX` exists only in another server vault | run `auth login`, `provider login --provider openai`, and `model test` against the fresh server target |
 | Fresh socket smoke tries to start another server | CLI socket target auto-start used incomplete active settings | prefer an explicit HTTP target and export `FABRO_SERVER` for the eval subprocess |
 | Run waits for input | workflow is interactive or missing auto approval | use `--auto-approve` and noninteractive prompts |

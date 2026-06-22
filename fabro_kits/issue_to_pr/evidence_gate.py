@@ -246,6 +246,14 @@ def is_test_command(command):
     command = command.strip()
     return command.startswith(("pytest", "python -m unittest", "python3 -m unittest", "cargo test", "bun test")) or "tests/runtests.py" in command
 
+def verified_command_base(item, command):
+    record = {"command": command}
+    command_id = item.get("id")
+    if isinstance(command_id, str) and command_id.strip():
+        record["id"] = command_id.strip()
+        record["validation_command_id"] = command_id.strip()
+    return record
+
 def verify_reported_passes(commands_run):
     verified = []
     for item in commands_run:
@@ -256,9 +264,9 @@ def verify_reported_passes(commands_run):
             continue
         try:
             proc = subprocess.run(command, shell=True, executable="/bin/bash", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, timeout=180)
-            verified.append({"command": command, "exit_code": proc.returncode, "output_tail": proc.stdout[-2000:]})
+            verified.append({**verified_command_base(item, command), "exit_code": proc.returncode, "output_tail": proc.stdout[-2000:]})
         except Exception as exc:
-            verified.append({"command": command, "exit_code": None, "error": str(exc)})
+            verified.append({**verified_command_base(item, command), "exit_code": None, "error": str(exc)})
     return verified
 
 def fixup_guidance(hard_failures, warnings):
@@ -335,6 +343,7 @@ def _embedded_gate_functions_source():
         commands_status_count,
         command_reports_passed,
         is_test_command,
+        verified_command_base,
         verify_reported_passes,
         fixup_guidance,
         evaluate_evidence_gate,

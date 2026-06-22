@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import inspect
 import json
 from pathlib import Path
@@ -268,6 +269,11 @@ def evaluate_review_accountability(
                 test_gate=test_gate,
                 patch_diff=patch_diff,
             )
+            if not has_evidence(disposition) and not safe_minor_rejection_without_artifact_evidence(
+                disposition, severe
+            ):
+                disposition["missing_rejection_evidence"] = True
+                add_unique(closure_check_failures, disposition)
             if closure_score_too_low(disposition, severe):
                 add_unique(closure_check_failures, disposition)
             rejected_rows.append(disposition)
@@ -486,6 +492,7 @@ def safe_minor_rejection_without_artifact_evidence(
     return (
         not severe
         and disposition.get("state") == "rejected"
+        and str(disposition.get("category", "")).lower() == "metadata"
         and disposition.get("closure_score") == 1
         and str(disposition.get("row_closure_requires", "")).lower() == "none"
     )
@@ -642,7 +649,6 @@ def build_embedded_accountability_gate_script(
 ) -> str:
     """Return a self-contained script for sandbox workflow execution."""
     return f"""python3 - <<'PY'
-from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
@@ -709,4 +715,31 @@ def _embedded_gate_functions_source() -> str:
         normalize_negative_test_line,
         next_agent_guidance,
     )
-    return "\n\n".join(inspect.getsource(function) for function in functions)
+    return "\n\n".join(_python36_source(inspect.getsource(function)) for function in functions)
+
+
+def _python36_source(source: str) -> str:
+    class StripAnnotations(ast.NodeTransformer):
+        def visit_FunctionDef(self, node):
+            self.generic_visit(node)
+            node.returns = None
+            args = list(getattr(node.args, "posonlyargs", []))
+            args.extend(node.args.args)
+            args.extend(node.args.kwonlyargs)
+            for arg in args:
+                arg.annotation = None
+            if node.args.vararg:
+                node.args.vararg.annotation = None
+            if node.args.kwarg:
+                node.args.kwarg.annotation = None
+            return node
+
+        def visit_AnnAssign(self, node):
+            self.generic_visit(node)
+            if node.value is None:
+                return ast.Assign(targets=[node.target], value=ast.Constant(value=None))
+            return ast.Assign(targets=[node.target], value=node.value)
+
+    tree = StripAnnotations().visit(ast.parse(source))
+    ast.fix_missing_locations(tree)
+    return ast.unparse(tree)

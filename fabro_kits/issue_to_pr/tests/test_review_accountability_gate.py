@@ -1,3 +1,4 @@
+import ast
 import json
 import subprocess
 import tempfile
@@ -658,7 +659,7 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
         actual = _run_embedded(adversarial, moderator, test_gate, materialization)
         self.assertEqual(actual, expected)
 
-    def test_embedded_script_defers_annotation_evaluation(self):
+    def test_embedded_script_is_old_python_annotation_compatible(self):
         script = build_embedded_accountability_gate_script(
             adversarial_path="adversarial.json",
             moderator_path="moderator.json",
@@ -666,9 +667,13 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
             materialization_path="materialization.json",
             output_path="gate.json",
         )
+        body = script.split("python3 - <<'PY'\n", 1)[1].rsplit("\nPY\n", 1)[0]
 
-        self.assertEqual(script.splitlines()[1], "from __future__ import annotations")
-        self.assertIn("dict[str, Any] | None", script)
+        compile(body, "<embedded-accountability-gate>", "exec")
+        ast.parse(body, "<embedded-accountability-gate>", feature_version=(3, 6))
+        self.assertNotIn("from __future__ import annotations", script)
+        self.assertNotIn(" | None", script)
+        self.assertNotRegex(script, r"\b(?:dict|list|set|tuple)\[")
 
     def test_embedded_script_matches_pure_pass_report(self):
         adversarial = _adversarial(
@@ -738,6 +743,39 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
         self.assertEqual(report["route_decision"], "export")
         self.assertEqual(report["closure_check_failures"], [])
         self.assertEqual(report["rejected_rows"][0]["closure_score"], 1)
+
+    def test_rejected_non_metadata_row_without_evidence_fails(self):
+        adversarial = _adversarial(
+            rows=[
+                {
+                    "id": "A1",
+                    "category": "scope",
+                    "severity": "minor",
+                    "closure_requires": "none",
+                }
+            ]
+        )
+        moderator = _moderator(
+            dispositions=[
+                {
+                    "id": "A1",
+                    "state": "rejected",
+                    "category": "scope",
+                    "severity": "minor",
+                    "closure_check": "This is outside the issue contract.",
+                }
+            ]
+        )
+        report = evaluate_review_accountability(
+            adversarial=adversarial,
+            moderator=moderator,
+            test_gate=_test_gate(changed_files=["src/greeting.py"], tests_passed_count=1),
+            materialization=_materialization(["A1"], ["A1"]),
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("invalid_closure_checks", report["process_failures"])
+        self.assertTrue(report["closure_check_failures"][0]["missing_rejection_evidence"])
 
     def test_minor_rejected_metadata_row_with_unsupported_required_files_exports(self):
         adversarial = _adversarial(

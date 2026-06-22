@@ -278,6 +278,7 @@ this routing JSON:
 def _adversarial_review_prompt() -> str:
     return """Adversarially review the patch, read-only. Do not ask questions,
 modify files, or run mutating commands. Be critical; release/changelog rows are major only when the original issue or task contract requires that note; research notes, validation acceptance_criteria, and reviewer_objections cannot invent a docs requirement. Validation claims contradicted by diff audit or git diff are not enough. Blocker/major rows must be bounded to the issue/current diff, not universal proof over all possible integrations.
+Review only the current issue and current patch. Other repository files are context, not targets. Rows must target changed files, required files, artifact contradictions, or issue-contract gaps.
 Do not open a row merely because a focused issue-scoped test is narrower than all conceivable project coverage; name a concrete missing behavior, required file, or contract clause.
 Use the issue, /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH},
 {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, git diff, and touched files.
@@ -291,7 +292,7 @@ Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON ob
   "rows": [
     {
       "id": "A1",
-      "category": "code|tests|metadata|process",
+      "category": "code|tests|metadata|process|scope",
       "severity": "blocker|major|minor|info",
       "failure_mode": "<specific possible failure>",
       "evidence": ["<file/path, diff fact, artifact field, or command claim>"],
@@ -319,7 +320,7 @@ Artifact contract:
 
 
 def _moderator_filter_prompt() -> str:
-    return """Moderate the adversarial review.
+    return """Moderate the adversarial review. Falsify, do not merely verify.
 
 This is pass 2 of a three-stage review pattern. Filter only the rows from
 {ADVERSARIAL_REVIEW_PATH}. Do not invent objections.
@@ -339,7 +340,7 @@ Use a file-writing tool to overwrite {MODERATOR_FILTER_PATH} with one JSON objec
     {
       "id": "A1",
       "state": "open|closed_by_evidence|rejected|downgraded",
-      "category": "code|tests|metadata|process",
+      "category": "code|tests|metadata|process|scope",
       "severity": "blocker|major|minor|info",
       "evidence": ["<required for closed_by_evidence or downgraded>"],
       "closure_check": "<required for closed/downgraded/rejected rows>",
@@ -354,10 +355,11 @@ Use a file-writing tool to overwrite {MODERATOR_FILTER_PATH} with one JSON objec
 Rules:
 - Every adversarial row needs exactly one same-id disposition and no extra IDs; empty is valid only with zero rows.
 - Keep severe rows open when any required_files are absent from changed_files.
-- Use open for any unresolved objection. Open rows of any severity block export.
+- Use open for any unresolved objection. Keep rows open unless current evidence directly answers or disproves them. Open rows of any severity block export.
 - Use closed_by_evidence only when cited evidence directly answers the row.
   Never close by denying cited git diff hunks; keep the row open unless current patch evidence disproves them.
-- Use rejected only when the row is unsupported or demands universal proof beyond the issue contract. Use downgraded when representative issue-scoped evidence covers the concrete concern.
+- Use rejected only when concrete cited evidence shows the row is unsupported or demands universal proof beyond the issue contract. Use downgraded when representative issue-scoped evidence covers the concrete concern.
+- Every non-open disposition must cite concrete evidence. Rejected rows need evidence of unsupportedness except narrow minor metadata rows with closure_requires=none.
 - Reject metadata rows that rely only on research/validation-invented release or changelog requirements absent from the original issue or task contract. Reject or downgrade info/minor rows that only ask for broader coverage after {TEST_EVIDENCE_GATE_PATH} shows a machine-verified focused test command for the issue-scoped behavior.
 - Every closed_by_evidence, downgraded, or rejected row must include a nonempty closure_check.
 - Runtime-test proof requires machine-observed pass fields like tests_passed_count; never use test_evidence_gate.status, changed files, or commands_reported_passed_count to close test-execution rows or mark ready_verified.
