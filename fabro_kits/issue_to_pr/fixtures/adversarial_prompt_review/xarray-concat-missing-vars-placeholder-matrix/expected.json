@@ -1,0 +1,39 @@
+{
+  "case_id": "xarray-concat-missing-vars-placeholder-matrix",
+  "expected_rows": [
+    {
+      "categories": [
+        "code",
+        "scope"
+      ],
+      "id": "xarray-concat-missing-vars-placeholder-matrix",
+      "keyword_groups": [
+        [
+          "missing variables",
+          "allow_missing_vars",
+          "_missing_concat_var"
+        ],
+        [
+          "fill_value",
+          "maybe_promote",
+          "NaN"
+        ],
+        [
+          "coords",
+          "existing dim",
+          "coordinate"
+        ],
+        [
+          "dask",
+          "lazy",
+          "materialize"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "xarray/core/concat.py",
+        "xarray/tests/test_concat.py"
+      ]
+    }
+  ]
+}

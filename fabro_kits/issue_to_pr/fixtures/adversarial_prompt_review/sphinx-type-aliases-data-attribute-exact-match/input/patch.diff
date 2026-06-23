@@ -1,0 +1,161 @@
+diff --git a/CHANGES b/CHANGES
+index a55a43687..ef6c6a2fd 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -38,6 +38,8 @@ Bugs fixed
+ * #4606: autodoc: the location of the warning is incorrect for inherited method
+ * #8105: autodoc: the signature of class constructor is incorrect if the class
+   is decorated
++* autodoc: ``autodoc_type_aliases`` is applied to data and attribute
++  annotations
+ 
+ Testing
+ --------
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index 171a3e7b0..f4b5496c6 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -88,6 +88,27 @@ INSTANCEATTR = object()
+ SLOTSATTR = object()
+ 
+ 
++def _get_type_hints(obj: Any, type_aliases: Dict[str, str]) -> Dict[str, Any]:
++    try:
++        return get_type_hints(obj, None, type_aliases)
++    except NameError:
++        # Failed to evaluate ForwardRef (maybe TYPE_CHECKING)
++        return safe_getattr(obj, '__annotations__', {})
++    except TypeError:
++        return {}
++    except KeyError:
++        # a broken class found (refs: https://github.com/sphinx-doc/sphinx/issues/8084)
++        return {}
++    except AttributeError:
++        # AttributeError is raised on 3.5.2 (fixed by 3.5.3)
++        return {}
++
++
++def _stringify_typehint(annotation: Any, type_aliases: Dict[str, str]) -> str:
++    objrepr = stringify_typehint(annotation)
++    return type_aliases.get(objrepr, objrepr)
++
++
+ def members_option(arg: Any) -> Union[object, List[str]]:
+     """Used to convert the :members: option to auto directives."""
+     if arg is None or arg is True:
+@@ -1701,27 +1722,18 @@ class DataDocumenter(ModuleLevelDocumenter):
+         sourcename = self.get_sourcename()
+         if not self.options.annotation:
+             # obtain annotation for this data
+-            try:
+-                annotations = get_type_hints(self.parent)
+-            except NameError:
+-                # Failed to evaluate ForwardRef (maybe TYPE_CHECKING)
+-                annotations = safe_getattr(self.parent, '__annotations__', {})
+-            except TypeError:
+-                annotations = {}
+-            except KeyError:
+-                # a broken class found (refs: https://github.com/sphinx-doc/sphinx/issues/8084)
+-                annotations = {}
+-            except AttributeError:
+-                # AttributeError is raised on 3.5.2 (fixed by 3.5.3)
+-                annotations = {}
++            annotations = _get_type_hints(self.parent, self.config.autodoc_type_aliases)
+ 
+             if self.objpath[-1] in annotations:
+-                objrepr = stringify_typehint(annotations.get(self.objpath[-1]))
++                objrepr = _stringify_typehint(annotations.get(self.objpath[-1]),
++                                              self.config.autodoc_type_aliases)
+                 self.add_line('   :type: ' + objrepr, sourcename)
+             else:
+                 key = ('.'.join(self.objpath[:-1]), self.objpath[-1])
+                 if self.analyzer and key in self.analyzer.annotations:
+-                    self.add_line('   :type: ' + self.analyzer.annotations[key],
++                    objrepr = self.config.autodoc_type_aliases.get(
++                        self.analyzer.annotations[key], self.analyzer.annotations[key])
++                    self.add_line('   :type: ' + objrepr,
+                                   sourcename)
+ 
+             try:
+@@ -2092,27 +2104,18 @@ class AttributeDocumenter(DocstringStripSignatureMixin, ClassLevelDocumenter):
+         sourcename = self.get_sourcename()
+         if not self.options.annotation:
+             # obtain type annotation for this attribute
+-            try:
+-                annotations = get_type_hints(self.parent)
+-            except NameError:
+-                # Failed to evaluate ForwardRef (maybe TYPE_CHECKING)
+-                annotations = safe_getattr(self.parent, '__annotations__', {})
+-            except TypeError:
+-                annotations = {}
+-            except KeyError:
+-                # a broken class found (refs: https://github.com/sphinx-doc/sphinx/issues/8084)
+-                annotations = {}
+-            except AttributeError:
+-                # AttributeError is raised on 3.5.2 (fixed by 3.5.3)
+-                annotations = {}
++            annotations = _get_type_hints(self.parent, self.config.autodoc_type_aliases)
+ 
+             if self.objpath[-1] in annotations:
+-                objrepr = stringify_typehint(annotations.get(self.objpath[-1]))
++                objrepr = _stringify_typehint(annotations.get(self.objpath[-1]),
++                                              self.config.autodoc_type_aliases)
+                 self.add_line('   :type: ' + objrepr, sourcename)
+             else:
+                 key = ('.'.join(self.objpath[:-1]), self.objpath[-1])
+                 if self.analyzer and key in self.analyzer.annotations:
+-                    self.add_line('   :type: ' + self.analyzer.annotations[key],
++                    objrepr = self.config.autodoc_type_aliases.get(
++                        self.analyzer.annotations[key], self.analyzer.annotations[key])
++                    self.add_line('   :type: ' + objrepr,
+                                   sourcename)
+ 
+             # data descriptors do not have useful values
+diff --git a/tests/roots/test-ext-autodoc/target/type_aliases.py b/tests/roots/test-ext-autodoc/target/type_aliases.py
+new file mode 100644
+index 000000000..4106c7595
+--- /dev/null
++++ b/tests/roots/test-ext-autodoc/target/type_aliases.py
+@@ -0,0 +1,16 @@
++from __future__ import annotations
++
++
++#: blah blah blah
++var: String
++
++
++class MyString:
++    """mystring"""
++
++    #: blah blah blah
++    var: String
++
++    def __init__(self):
++        #: blah blah blah
++        self.inst: String
+diff --git a/tests/test_ext_autodoc_configs.py b/tests/test_ext_autodoc_configs.py
+index 3d1005ac0..3346224fe 100644
+--- a/tests/test_ext_autodoc_configs.py
++++ b/tests/test_ext_autodoc_configs.py
+@@ -737,6 +737,21 @@ def test_autodoc_type_aliases(app):
+     ]
+ 
+ 
++@pytest.mark.skipif(sys.version_info < (3, 7), reason='python 3.7+ is required.')
++@pytest.mark.sphinx('text', testroot='ext-autodoc')
++def test_autodoc_type_aliases_for_variables_and_attributes(app):
++    app.config.autodoc_type_aliases = {'String': 'target.type_aliases.MyString'}
++
++    options = {"members": None, "undoc-members": True}
++    actual = list(do_autodoc(app, 'module', 'target.type_aliases', options))
++    assert '.. py:data:: var' in actual
++    assert '   :type: target.type_aliases.MyString' in actual
++    assert '   .. py:attribute:: MyString.var' in actual
++    assert '      :type: target.type_aliases.MyString' in actual
++    assert '   .. py:attribute:: MyString.inst' in actual
++    assert actual.count('      :type: target.type_aliases.MyString') == 2
++
++
+ @pytest.mark.sphinx('html', testroot='ext-autodoc')
+ def test_autodoc_default_options(app):
+     # no settings

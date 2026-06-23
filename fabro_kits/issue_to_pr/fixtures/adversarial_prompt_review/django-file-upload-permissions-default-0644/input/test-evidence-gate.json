@@ -1,0 +1,145 @@
+{
+  "changed_files": [
+    "django/conf/global_settings.py",
+    "docs/howto/deployment/checklist.txt",
+    "docs/ref/settings.txt",
+    "docs/releases/3.0.txt",
+    "tests/file_storage/tests.py",
+    "tests/staticfiles_tests/test_storage.py",
+    "tests/test_utils/tests.py"
+  ],
+  "claimed_tests": [
+    "tests/file_storage/tests.py",
+    "tests/file_storage/tests.py",
+    "tests/test_utils/tests.py",
+    "tests/staticfiles_tests/test_storage.py",
+    "tests/staticfiles_tests/test_storage.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "Default FileSystemStorage saves files with FILE_UPLOAD_PERMISSIONS default mode 0o644 despite a restrictive process umask.",
+        "path": "tests/file_storage/tests.py",
+        "test_name_or_scope": "FileStoragePermissions.test_file_upload_default_permissions"
+      },
+      {
+        "behavior_guarded": "Explicit FILE_UPLOAD_PERMISSIONS=None retains legacy umask-dependent behavior.",
+        "path": "tests/file_storage/tests.py",
+        "test_name_or_scope": "FileStoragePermissions.test_file_upload_permissions_none"
+      },
+      {
+        "behavior_guarded": "default_storage exposes the new default file_permissions_mode and updates when FILE_UPLOAD_PERMISSIONS is overridden.",
+        "path": "tests/test_utils/tests.py",
+        "test_name_or_scope": "OverrideSettingsTests.test_override_file_upload_permissions"
+      },
+      {
+        "behavior_guarded": "collectstatic uses the new default 0o644 file permission while directory permissions remain controlled by umask when FILE_UPLOAD_DIRECTORY_PERMISSIONS is None.",
+        "path": "tests/staticfiles_tests/test_storage.py",
+        "test_name_or_scope": "TestStaticFilePermissions.test_collect_static_files_default_permissions"
+      },
+      {
+        "behavior_guarded": "Explicit FILE_UPLOAD_PERMISSIONS=None preserves legacy umask-dependent static file permission behavior.",
+        "path": "tests/staticfiles_tests/test_storage.py",
+        "test_name_or_scope": "TestStaticFilePermissions.test_collect_static_files_permissions_none"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "tests/file_storage/tests.py",
+      "tests/file_storage/tests.py",
+      "tests/test_utils/tests.py",
+      "tests/staticfiles_tests/test_storage.py",
+      "tests/staticfiles_tests/test_storage.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "tests/file_storage/tests.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "tests/file_storage/tests.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "tests/test_utils/tests.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "tests/staticfiles_tests/test_storage.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "tests/staticfiles_tests/test_storage.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "django/conf/global_settings.py",
+      "docs/howto/deployment/checklist.txt",
+      "docs/ref/settings.txt",
+      "docs/releases/3.0.txt",
+      "tests/file_storage/tests.py",
+      "tests/staticfiles_tests/test_storage.py",
+      "tests/test_utils/tests.py"
+    ],
+    "commands_claimed_count": 2,
+    "commands_reported_passed_count": 2,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "tests/file_storage/tests.py",
+      "tests/staticfiles_tests/test_storage.py",
+      "tests/test_utils/tests.py"
+    ],
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "python tests/runtests.py file_storage.tests.FileStoragePermissions test_utils.tests.OverrideSettingsTests.test_override_file_upload_permissions staticfiles_tests.test_storage.TestStaticFilePermissions --settings=test_sqlite --verbosity 1 --parallel 1",
+        "exit_code": 0,
+        "id": "focused-permission-tests",
+        "output_tail": "..........\n----------------------------------------------------------------------\nRan 10 tests in 0.084s\n\nOK\nTesting against Django installed in '/workspace/django'\nSystem check identified no issues (0 silenced).\n",
+        "validation_command_id": "focused-permission-tests",
+        "zero_test_output": false
+      },
+      {
+        "command": "git diff --check -- . ':(exclude).fabro/issue-to-pr/**'",
+        "exit_code": 0,
+        "id": "diff-check",
+        "output_tail": "",
+        "validation_command_id": "diff-check",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "tests/file_storage/tests.py",
+    "tests/staticfiles_tests/test_storage.py",
+    "tests/test_utils/tests.py"
+  ],
+  "warnings": []
+}

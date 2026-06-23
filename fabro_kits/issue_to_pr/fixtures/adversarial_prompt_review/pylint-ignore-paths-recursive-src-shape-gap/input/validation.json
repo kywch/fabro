@@ -1,0 +1,13 @@
+{
+  "acceptance_criteria": [
+    "Recursive traversal should apply ignore-paths to normalized project-relative paths.",
+    "Basename ignore behavior should remain unchanged.",
+    "Regression coverage should represent the reported recursive src/ path shape closely enough to prove the fix."
+  ],
+  "commands_run": [
+    "python -m pytest tests/test_self.py::TestRunTC::test_ignore_path_recursive_current_dir -q",
+    "python -m pytest tests/lint/unittest_lint.py::test_recursive_ignore -q"
+  ],
+  "issue": "When running pylint recursively, ignore-paths patterns such as ^src/gen/.*$ should exclude generated files from linting.",
+  "schema_version": 1
+}

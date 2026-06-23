@@ -1,0 +1,165 @@
+{
+  "changed_files": [
+    "doc/whats-new.rst",
+    "xarray/core/concat.py",
+    "xarray/tests/test_concat.py"
+  ],
+  "claimed_tests": [
+    "xarray/tests/test_concat.py",
+    "xarray/tests/test_concat.py",
+    "xarray/tests/test_concat.py",
+    "xarray/tests/test_concat.py",
+    "xarray/tests/test_concat.py",
+    "xarray/tests/test_concat.py",
+    "xarray/tests/test_concat.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "Datasets with disjoint data variables concatenate along a new dimension, preserving the union and filling missing whole-variable slots with default missing values.",
+        "path": "xarray/tests/test_concat.py",
+        "test_name_or_scope": "TestConcatDataset.test_concat_missing_data_vars_new_dim"
+      },
+      {
+        "behavior_guarded": "Datasets with disjoint data variables concatenate along an existing dimension, filling absent variable segments.",
+        "path": "xarray/tests/test_concat.py",
+        "test_name_or_scope": "TestConcatDataset.test_concat_missing_data_vars_existing_dim"
+      },
+      {
+        "behavior_guarded": "Explicit fill_value is used for whole-variable gaps.",
+        "path": "xarray/tests/test_concat.py",
+        "test_name_or_scope": "TestConcatDataset.test_concat_missing_data_vars_fill_value"
+      },
+      {
+        "behavior_guarded": "Explicit fill_value=np.nan promotes integer missing-variable placeholders so NaN is preserved instead of being cast to an integer sentinel.",
+        "path": "xarray/tests/test_concat.py",
+        "test_name_or_scope": "TestConcatDataset.test_concat_missing_data_vars_explicit_nan_fill_value"
+      },
+      {
+        "behavior_guarded": "data_vars='different' treats missing variables as concatenated rather than raising KeyError.",
+        "path": "xarray/tests/test_concat.py",
+        "test_name_or_scope": "TestConcatDataset.test_concat_missing_data_vars_different"
+      },
+      {
+        "behavior_guarded": "Missing whole-variable placeholders are created lazily for dask-backed variables.",
+        "path": "xarray/tests/test_concat.py",
+        "test_name_or_scope": "TestConcatDataset.test_concat_missing_data_vars_lazy"
+      },
+      {
+        "behavior_guarded": "Previous mismatched-data-variable error path now fills missing data variables while coordinate mismatch protections remain.",
+        "path": "xarray/tests/test_concat.py",
+        "test_name_or_scope": "TestConcatDataset.test_concat_errors / test_concat_compat updates"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "xarray/tests/test_concat.py",
+      "xarray/tests/test_concat.py",
+      "xarray/tests/test_concat.py",
+      "xarray/tests/test_concat.py",
+      "xarray/tests/test_concat.py",
+      "xarray/tests/test_concat.py",
+      "xarray/tests/test_concat.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "xarray/tests/test_concat.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "xarray/tests/test_concat.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "xarray/tests/test_concat.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "xarray/tests/test_concat.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "xarray/tests/test_concat.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "xarray/tests/test_concat.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "xarray/tests/test_concat.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "doc/whats-new.rst",
+      "xarray/core/concat.py",
+      "xarray/tests/test_concat.py"
+    ],
+    "commands_claimed_count": 4,
+    "commands_reported_passed_count": 4,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "xarray/tests/test_concat.py"
+    ],
+    "tests_passed_count": 3,
+    "verified_commands": [
+      {
+        "command": "pytest xarray/tests/test_concat.py::TestConcatDataset::test_concat_missing_data_vars_explicit_nan_fill_value -q",
+        "exit_code": 0,
+        "id": "explicit-nan-regression",
+        "output_tail": ".                                                                        [100%]\n=============================== warnings summary ===============================\n../opt/miniconda3/envs/testbed/lib/python3.10/site-packages/_pytest/config/__init__.py:1373\n  /opt/miniconda3/envs/testbed/lib/python3.10/site-packages/_pytest/config/__init__.py:1373: PytestConfigWarning: Unknown config option: env\n  \n    self._warn_or_fail_if_strict(f\"Unknown config option: {key}\\n\")\n\nxarray/core/pdcompat.py:45\n  /workspace/xarray/core/pdcompat.py:45: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    if LooseVersion(pd.__version__) < \"0.25.0\":\n\n../opt/miniconda3/envs/testbed/lib/python3.10/site-packages/setuptools/_distutils/version.py:345\n  /opt/miniconda3/envs/testbed/lib/python3.10/site-packages/setuptools/_distutils/version.py:345: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    other = LooseVersion(other)\n\nxarray/core/dask_array_compat.py:7\nxarray/core/dask_array_compat.py:7\n  /workspace/xarray/core/dask_array_compat.py:7: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    if LooseVersion(dask_version) >= LooseVersion(\"2.0.0\"):\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n1 passed, 5 warnings in 1.23s\n",
+        "validation_command_id": "explicit-nan-regression",
+        "zero_test_output": false
+      },
+      {
+        "command": "pytest xarray/tests/test_concat.py -k 'missing_data_vars or test_concat_errors or test_concat_compat or test_concat_fill_value' -q",
+        "exit_code": 0,
+        "id": "focused-concat-regressions",
+        "output_tail": "\")\n\nxarray/core/pdcompat.py:45\n  /workspace/xarray/core/pdcompat.py:45: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    if LooseVersion(pd.__version__) < \"0.25.0\":\n\n../opt/miniconda3/envs/testbed/lib/python3.10/site-packages/setuptools/_distutils/version.py:345\n  /opt/miniconda3/envs/testbed/lib/python3.10/site-packages/setuptools/_distutils/version.py:345: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    other = LooseVersion(other)\n\nxarray/core/dask_array_compat.py:7\nxarray/core/dask_array_compat.py:7\n  /workspace/xarray/core/dask_array_compat.py:7: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    if LooseVersion(dask_version) >= LooseVersion(\"2.0.0\"):\n\nxarray/tests/test_concat.py::test_concat_compat\n  /workspace/xarray/core/dataarray.py:680: FutureWarning: elementwise comparison failed; returning scalar instead, but in the future will perform elementwise comparison\n    return key in self.data\n\nxarray/tests/test_concat.py::test_concat_compat\nxarray/tests/test_concat.py::test_concat_compat\nxarray/tests/test_concat.py::TestConcatDataset::test_concat_fill_value[fill_value0]\nxarray/tests/test_concat.py::TestConcatDataset::test_concat_fill_value[2]\nxarray/tests/test_concat.py::TestConcatDataset::test_concat_fill_value[2.0]\nxarray/tests/test_concat.py::TestConcatDataArray::test_concat_fill_value[fill_value0]\nxarray/tests/test_concat.py::TestConcatDataArray::test_concat_fill_value[2]\nxarray/tests/test_concat.py::TestConcatDataArray::test_concat_fill_value[2.0]\n  /workspace/xarray/core/alignment.py:300: FutureWarning: Index.__or__ operating as a set operation is deprecated, in the future this will be a logical operation matching Series.__or__.  Use index.union(other) instead.\n    index = joiner(matching_indexes)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n14 passed, 27 deselected, 14 warnings in 1.20s\n",
+        "validation_command_id": "focused-concat-regressions",
+        "zero_test_output": false
+      },
+      {
+        "command": "pytest xarray/tests/test_concat.py -q",
+        "exit_code": 0,
+        "id": "full-concat-module",
+        "output_tail": "core/dask_array_compat.py:7: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    if LooseVersion(dask_version) >= LooseVersion(\"2.0.0\"):\n\nxarray/tests/test_concat.py::test_concat_compat\n  /workspace/xarray/core/dataarray.py:680: FutureWarning: elementwise comparison failed; returning scalar instead, but in the future will perform elementwise comparison\n    return key in self.data\n\nxarray/tests/test_concat.py: 11 warnings\n  /workspace/xarray/core/alignment.py:300: FutureWarning: Index.__or__ operating as a set operation is deprecated, in the future this will be a logical operation matching Series.__or__.  Use index.union(other) instead.\n    index = joiner(matching_indexes)\n\nxarray/tests/test_concat.py::TestConcatDataset::test_concat_simple[dim2-different]\nxarray/tests/test_concat.py::TestConcatDataset::test_concat_simple[dim2-minimal]\nxarray/tests/test_concat.py::TestConcatDataset::test_concat_2\nxarray/tests/test_concat.py::TestConcatDataset::test_concat_coords_kwarg[dim2-different]\nxarray/tests/test_concat.py::TestConcatDataset::test_concat_coords_kwarg[dim2-minimal]\nxarray/tests/test_concat.py::TestConcatDataset::test_concat_coords_kwarg[dim2-all]\nxarray/tests/test_concat.py::TestConcatDataArray::test_concat\n  /workspace/xarray/core/groupby.py:194: FutureWarning: is_monotonic is deprecated and will be removed in a future version. Use is_monotonic_increasing instead.\n    return index.is_unique and index.is_monotonic\n\nxarray/tests/test_concat.py::TestConcatDataset::test_concat_join_kwarg\nxarray/tests/test_concat.py::TestConcatDataArray::test_concat_join_kwarg\n  /workspace/xarray/core/alignment.py:300: FutureWarning: Index.__and__ operating as a set operation is deprecated, in the future this will be a logical operation matching Series.__and__.  Use index.intersection(other) instead.\n    index = joiner(matching_indexes)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n41 passed, 26 warnings in 1.59s\n",
+        "validation_command_id": "full-concat-module",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "xarray/tests/test_concat.py"
+  ],
+  "warnings": []
+}

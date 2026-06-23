@@ -1,0 +1,20 @@
+diff --git a/src/greeting.py b/src/greeting.py
+index 6830578..3056209 100644
+--- a/src/greeting.py
++++ b/src/greeting.py
+@@ -1,2 +1,2 @@
+ def greeting(name):
+-    return f"hello {name}"
++    return f"hello, {name}"
+diff --git a/tests/test_greeting.py b/tests/test_greeting.py
+index e4de1eb..37242dc 100644
+--- a/tests/test_greeting.py
++++ b/tests/test_greeting.py
+@@ -4,5 +4,5 @@ from src.greeting import greeting
+ 
+ 
+ class GreetingTest(unittest.TestCase):
+-    def test_greeting_uses_comma(self):
+-        self.assertEqual(greeting("Ada"), 'hello Ada')
++    def test_greeting_returns_expected_text(self):
++        self.assertEqual(greeting("Ada"), "hello, Ada")

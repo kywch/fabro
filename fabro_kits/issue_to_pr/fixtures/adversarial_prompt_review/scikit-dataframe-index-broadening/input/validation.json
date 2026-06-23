@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "issue": "Permit internal validation to preserve DataFrame index metadata for an estimator path that explicitly opts into pandas input.",
+  "acceptance_criteria": [
+    "The opted-in estimator path should accept DataFrames.",
+    "Validation paths that do not opt in should continue rejecting DataFrames."
+  ],
+  "commands_run": [
+    "pytest sklearn/tests/test_dataframe_validation.py::test_opt_in_index"
+  ]
+}

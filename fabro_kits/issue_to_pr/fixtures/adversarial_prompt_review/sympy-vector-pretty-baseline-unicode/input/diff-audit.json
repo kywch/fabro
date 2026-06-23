@@ -1,0 +1,16 @@
+{
+  "changed_files": [
+    "sympy/printing/pretty/pretty.py",
+    "sympy/vector/tests/test_printing.py"
+  ],
+  "diff_stat": [
+    " sympy/printing/pretty/pretty.py     | 71 +++++++++++--------------------------",
+    " sympy/vector/tests/test_printing.py | 33 +++++++++++++----",
+    " 2 files changed, 47 insertions(+), 57 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "sympy/vector/tests/test_printing.py"
+  ]
+}

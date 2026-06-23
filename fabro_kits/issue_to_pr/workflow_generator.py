@@ -22,10 +22,8 @@ MODERATOR_FILTER_PATH = f"{ARTIFACT_DIR}/moderator-filter.json"
 REVIEW_MATERIALIZATION_PATH = f"{ARTIFACT_DIR}/review-materialization.json"
 REVIEW_ACCOUNTABILITY_GATE_PATH = f"{ARTIFACT_DIR}/review-accountability-gate.json"
 PRODUCT_DIFF = "git diff -- . ':(exclude).fabro/issue-to-pr/**'"
-
 def dot_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-
 
 def escape_goal_for_template(text: str) -> str:
     replacements = (
@@ -40,7 +38,6 @@ def escape_goal_for_template(text: str) -> str:
     for source, target in replacements:
         escaped = escaped.replace(source, target)
     return escaped
-
 def default_verify_mode(workflow_profile: str, verify_mode: str | None) -> str:
     if verify_mode:
         return verify_mode
@@ -51,7 +48,6 @@ def default_verify_mode(workflow_profile: str, verify_mode: str | None) -> str:
     }:
         return VERIFY_DIFF_CHECK
     return VERIFY_NONE
-
 
 def validate_generated_workflow(workflow: str, *, workflow_profile: str) -> None:
     if workflow_profile not in {
@@ -100,14 +96,12 @@ def validate_generated_workflow(workflow: str, *, workflow_profile: str) -> None
             f"{', '.join(missing)} must include expected max_visits values"
         )
 
-
 def _node_definition_contains(workflow: str, node_id: str, needle: str) -> bool:
     for line in workflow.splitlines():
         stripped = line.strip()
         if stripped.startswith(f"{node_id} ") or stripped.startswith(f"{node_id}["):
             return needle in stripped
     return False
-
 
 def generate_issue_to_pr_workflow(
     *,
@@ -149,7 +143,6 @@ def generate_issue_to_pr_workflow(
         )
     raise ValueError(f"unsupported workflow profile: {workflow_profile}")
 
-
 def _simple_workflow(graph_name: str, setup_script: str, solve_prompt: str) -> str:
     return f'''digraph {graph_name} {{
     rankdir=LR
@@ -161,7 +154,6 @@ def _simple_workflow(graph_name: str, setup_script: str, solve_prompt: str) -> s
     start -> setup -> solve -> extract_patch -> exit
 }}
 '''
-
 
 def _structured_workflow(
     graph_name: str,
@@ -228,7 +220,6 @@ def _structured_workflow(
 }}
 '''
 
-
 def _research_prompt() -> str:
     return """Research only; do not edit repository files or ask questions. When uncertain, choose the smallest issue-scoped investigation path yourself.
 Use read-only commands. Put notes in /tmp/fabro-research.md.
@@ -237,7 +228,6 @@ Write {VALIDATION_CONTRACT_PATH} with JSON fields, preserving existing task-cont
 research_assumptions. End with acceptance criteria and test plan.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     )
-
 
 def _implement_prompt() -> str:
     return """Fix the issue with the smallest defensible patch. Do not ask questions or call request_user_input.
@@ -248,7 +238,6 @@ Before finishing, update {VALIDATION_CONTRACT_PATH}; preserve research/task-cont
 commands_run objects with stable id, command, status, exit_code when known, and is_test_command, plus no_test_justification, residual_risks, final_claims. Every changed test file must appear in tests_added or be reverted; commands_run alone is not enough.""".replace(
         "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
     )
-
 
 def _review_prompt() -> str:
     return """Review read-only; do not ask questions, edit, or run mutating commands.
@@ -267,7 +256,6 @@ this routing JSON:
         "{DIFF_AUDIT_PATH}", DIFF_AUDIT_PATH
     )
 
-
 def _adversarial_review_prompt() -> str:
     return """Adversarially review the patch, read-only. Do not ask questions,
 modify files, or run mutating commands. Be critical; release/changelog rows are major only when the original issue or task contract requires that note; research notes, validation acceptance_criteria, and reviewer_objections cannot invent a docs requirement. Validation claims contradicted by diff audit or git diff are not enough. Blocker/major rows must be bounded to the issue/current diff, not universal proof over all possible integrations.
@@ -275,20 +263,15 @@ Review only the current issue and current patch. Other repository files are cont
 Do not open a row merely because a focused issue-scoped test is narrower than all conceivable project coverage; name a concrete missing behavior, required file, or contract clause.
 Use the issue, /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH},
 {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, git diff, and touched files.
-If validation_contract.expected_review_rows exists, include those rows with the same ids unless current evidence falsifies them; minor expected rows should be accounted for, not silently omitted.
+Generate plausible issue-scoped findings as rows first. Do not hide plausible unresolved findings in checked_risks or counterexample_checks; those fields are only for risks directly falsified or fully answered by concrete evidence.
+If validation_contract.expected_review_rows exists, include those rows with the same ids unless current evidence explicitly falsifies them. expected_review_rows cannot be satisfied via checked_risks except for directly falsified risks.
 
 Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON object:
 {
   "schema_version": 1,
   "stage": "adversarial_review",
   "summary": "<one sentence>",
-  "checked_risks": [
-    {
-      "risk": "<concrete risk considered when no row is opened>",
-      "evidence": ["<changed source path, diff fact, or artifact field>"],
-      "counterexample_check": "<why current evidence does not justify a row>"
-    }
-  ],
+  "checked_risks": [{"risk": "<non-finding risk directly falsified or fully answered>", "evidence": ["<changed source path, diff fact, or artifact field>"], "counterexample_check": "<why current evidence directly answers it>"}],
   "counterexample_checks": ["<optional concrete read-only checks against changed source paths>"],
   "scope_assessment": {
     "literal_issue_fixed": true,
@@ -314,7 +297,8 @@ Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON ob
 }
 
 Artifact contract:
-- If rows is empty for a nontrivial source diff, checked_risks or counterexample_checks must cite exact changed source paths or diff facts.
+- Unresolved plausible risks must be rows; checked_risks and counterexample_checks are for concrete falsification/answers, not parking lots.
+- If rows is empty for a nontrivial source diff, checked_risks or counterexample_checks must cite exact changed source paths or diff facts and the concrete reason no row is justified.
 - If rows is empty, include scope_assessment. When literal_issue_fixed is false, scope_narrowed_reason must explain the narrow interpretation. When broad_semantic_change is true, option_matrix must list the considered implementation options.
 - You must write the JSON object to {ADVERSARIAL_REVIEW_PATH} using a file-writing tool; a final answer that only prints JSON is ignored and fails the workflow.
 - After writing, read {ADVERSARIAL_REVIEW_PATH} back from disk. If it is missing, empty, invalid JSON, or lacks a rows list, rewrite the file before finishing.
@@ -327,7 +311,6 @@ Artifact contract:
     ).replace(
         "{ADVERSARIAL_REVIEW_PATH}", ADVERSARIAL_REVIEW_PATH
     )
-
 
 def _moderator_filter_prompt() -> str:
     return """Moderate the adversarial review. Falsify, do not merely verify.
@@ -388,7 +371,6 @@ Artifact contract:
         "{TEST_EVIDENCE_GATE_PATH}", TEST_EVIDENCE_GATE_PATH
     )
 
-
 def _fixup_prompt(simple: bool = False) -> str:
     if simple:
         return """A quality gate failed. Do not ask questions. Re-read the original goal,
@@ -419,7 +401,6 @@ keep it open.""".replace(
         "{REVIEW_ACCOUNTABILITY_GATE_PATH}", REVIEW_ACCOUNTABILITY_GATE_PATH
     )
 
-
 def _verify_script(verify_mode: str) -> str:
     if verify_mode == VERIFY_NONE:
         return (
@@ -446,13 +427,11 @@ printf '%s\\n' '{"schema_version":1,"status":"failed","mode":"diff-check","patch
 exit "$check_status"
 """
 
-
 def _audit_script() -> str:
     return f"""python3 - <<'PY'
 import json
 import subprocess
 from pathlib import Path
-
 def run(*args):
     proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, encoding="utf-8", errors="replace")
     return proc.returncode, proc.stdout, proc.stderr
@@ -485,14 +464,12 @@ print(json.dumps(audit, sort_keys=True))
 PY
 """
 
-
 def _test_evidence_gate_script() -> str:
     return build_embedded_gate_script(
         audit_path=DIFF_AUDIT_PATH,
         contract_path=VALIDATION_CONTRACT_PATH,
         output_path=TEST_EVIDENCE_GATE_PATH,
     )
-
 
 def _review_materialization_script() -> str:
     return f"""python3 - <<'PY'
@@ -510,7 +487,6 @@ REQUIRED_KEYS = {{
     "adversarial_review": ("schema_version", "stage", "summary", "rows", "overall_risk"),
     "moderator_filter": ("schema_version", "stage", "dispositions", "readiness_tier", "next_agent_guidance"),
 }}
-
 def load(name, path):
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -576,7 +552,6 @@ print(json.dumps(report, sort_keys=True))
 raise SystemExit(1 if status != "passed" else 0)
 PY
 """
-
 
 def _review_accountability_gate_script() -> str:
     return build_embedded_accountability_gate_script(

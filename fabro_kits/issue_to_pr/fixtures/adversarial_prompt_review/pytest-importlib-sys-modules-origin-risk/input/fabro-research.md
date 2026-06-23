@@ -1,0 +1,1 @@
+Round 05 critical review marked this as a process risk. The patch returns sys.modules[module_name] before inspecting a spec for the requested file path. A sharp review should ask whether the cached module has the same origin/path as the file being imported; otherwise the shortcut can return a stale or wrong module when module_name collides or root/path mapping changes.

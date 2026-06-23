@@ -9,6 +9,7 @@ from pathlib import Path
 from .issue_workflow_smoke import run_issue_workflow_smoke
 from .mini_swe import run_mini_swe
 from .paths import DEFAULT_SYNTHETIC_DOCKER_IMAGE
+from .prompt_review import run_prompt_review
 from .replay import run_replay
 from .synthetic import run_synthetic
 from .workflow_smoke import run_workflow_smoke
@@ -64,6 +65,30 @@ def main(argv: list[str] | None = None) -> int:
     mini_swe.add_argument("--format", choices=("json", "text"), default="json")
     mini_swe.add_argument("--fail-fast", action="store_true")
 
+    prompt_review = subparsers.add_parser("prompt-review")
+    prompt_review.add_argument("--case", default="all")
+    prompt_review.add_argument("--output-dir", type=Path)
+    prompt_review.add_argument("--fabro-bin", type=Path, default=Path("target/debug/fabro"))
+    prompt_review.add_argument("--provider")
+    prompt_review.add_argument("--model")
+    prompt_review.add_argument(
+        "--credential-bridge",
+        choices=("off", "openai-codex"),
+        default="off",
+        help="Copy selected model credentials into the throwaway prompt-review storage.",
+    )
+    prompt_review.add_argument(
+        "--auth-storage-dir",
+        type=Path,
+        help="Source Fabro storage root for --credential-bridge openai-codex.",
+    )
+    prompt_review.add_argument(
+        "--credential-preflight",
+        action="store_true",
+        help="Run `fabro model test` before prompt-review model execution.",
+    )
+    prompt_review.add_argument("--format", choices=("json", "text"), default="json")
+
     workflow_smoke = subparsers.add_parser("workflow-smoke")
     workflow_smoke.add_argument("--output-dir", type=Path)
     workflow_smoke.add_argument("--fabro-bin", type=Path, default=Path("target/debug/fabro"))
@@ -114,6 +139,22 @@ def main(argv: list[str] | None = None) -> int:
             mini_swe.error(str(exc))
         _print_report(report, output_format=args.format)
         return 0 if not report["failures"] else 1
+    if args.command == "prompt-review":
+        try:
+            report = run_prompt_review(
+                args.case,
+                output_dir=args.output_dir,
+                fabro_bin=args.fabro_bin,
+                provider=args.provider,
+                model=args.model,
+                credential_bridge=args.credential_bridge,
+                auth_storage_dir=args.auth_storage_dir,
+                credential_preflight=args.credential_preflight,
+            )
+        except SystemExit as exc:
+            prompt_review.error(str(exc))
+        _print_prompt_review_report(report, output_format=args.format)
+        return 0 if not report["failures"] else 1
     if args.command == "workflow-smoke":
         report = run_workflow_smoke(output_dir=args.output_dir, fabro_bin=args.fabro_bin)
         print(json.dumps(report, indent=2, sort_keys=True))
@@ -139,6 +180,28 @@ def _print_report(report: dict, *, output_format: str = "json") -> None:
             f"false_exports={report.get('false_exports', 0)} "
             f"process_blocked={report.get('process_blocked', 0)} "
             f"b2_eligible={report.get('b2_eligible', 0)}"
+        )
+        failures = report.get("failures")
+        if failures:
+            print(json.dumps(failures, indent=2, sort_keys=True))
+        return
+    print(json.dumps(report, indent=2, sort_keys=True))
+
+
+def _print_prompt_review_report(report: dict, *, output_format: str = "json") -> None:
+    if output_format == "text":
+        print(
+            "prompt-review: "
+            f"total={report.get('total', 0)} "
+            f"failed={report.get('failed', 0)} "
+            f"process_failed={report.get('process_failed', 0)} "
+            f"artifact_missing={report.get('artifact_missing', 0)} "
+            f"artifact_invalid={report.get('artifact_invalid', 0)} "
+            f"prompt_miss={report.get('prompt_miss', 0)} "
+            f"artifact_valid={report.get('artifact_valid', 0)} "
+            f"row_recall={report.get('row_recall', 0):.3f} "
+            f"not_hidden={report.get('not_hidden', 0)} "
+            f"precision={report.get('precision', 0):.3f}"
         )
         failures = report.get("failures")
         if failures:

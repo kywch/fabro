@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "issue": "Handle escaped starargs in generated autodoc signatures without changing ordinary literal escaped asterisks.",
+  "acceptance_criteria": [
+    "Escaped *args and **kwargs signatures should render correctly.",
+    "Literal escaped stars in non-stararg text should remain escaped."
+  ],
+  "commands_run": [
+    "pytest tests/test_ext_autodoc.py::test_escaped_starargs"
+  ]
+}

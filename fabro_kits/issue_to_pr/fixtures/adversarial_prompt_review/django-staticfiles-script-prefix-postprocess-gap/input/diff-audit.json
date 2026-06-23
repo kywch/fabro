@@ -1,0 +1,30 @@
+{
+  "changed_files": [
+    "django/core/files/storage.py",
+    "django/templatetags/static.py",
+    "django/urls/base.py",
+    "docs/ref/settings.txt",
+    "docs/releases/3.1.txt",
+    "tests/file_storage/tests.py",
+    "tests/staticfiles_tests/test_storage.py",
+    "tests/template_tests/syntax_tests/test_static.py"
+  ],
+  "diff_stat": [
+    " django/core/files/storage.py                     |  3 +-",
+    " django/templatetags/static.py                    |  3 +-",
+    " django/urls/base.py                              | 17 ++++++",
+    " docs/ref/settings.txt                            | 11 ++++",
+    " docs/releases/3.1.txt                            |  8 ++-",
+    " tests/file_storage/tests.py                      | 47 +++++++++++++++-",
+    " tests/staticfiles_tests/test_storage.py          | 38 ++++++++++++-",
+    " tests/template_tests/syntax_tests/test_static.py | 68 ++++++++++++++++++++++++",
+    " 8 files changed, 190 insertions(+), 5 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "tests/file_storage/tests.py",
+    "tests/staticfiles_tests/test_storage.py",
+    "tests/template_tests/syntax_tests/test_static.py"
+  ]
+}

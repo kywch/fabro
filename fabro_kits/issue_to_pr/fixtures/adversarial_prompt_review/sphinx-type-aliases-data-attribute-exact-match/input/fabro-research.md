@@ -1,0 +1,1 @@
+The saved run had empty rows around Sphinx type aliases. A useful review should check whether aliasing only exact String annotations misses analyzer-discovered, dotted, attribute, or compound type-hint paths.

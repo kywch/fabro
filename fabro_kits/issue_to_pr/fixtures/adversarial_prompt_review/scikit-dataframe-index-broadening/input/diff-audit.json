@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "changed_files": [
+    {
+      "path": "sklearn/utils/validation.py",
+      "change_type": "modified",
+      "source": true
+    }
+  ],
+  "summary": "Changes the general DataFrame rejection guard based on whether an index attribute exists."
+}

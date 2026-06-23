@@ -1,0 +1,33 @@
+{
+  "case_id": "sympy-trigsimp-broad-euler-rewrite",
+  "expected_rows": [
+    {
+      "categories": [
+        "code"
+      ],
+      "id": "sympy-trigsimp-broad-euler-rewrite",
+      "keyword_groups": [
+        [
+          "rewrite(cos)",
+          "rewrite"
+        ],
+        [
+          "exp",
+          "I",
+          "Euler"
+        ],
+        [
+          "broad",
+          "non-Euler",
+          "performance",
+          "unrelated"
+        ]
+      ],
+      "min_severity": "minor",
+      "required_path_tokens": [
+        "sympy/simplify/trigsimp.py",
+        "sympy/simplify/tests/test_trigsimp.py"
+      ]
+    }
+  ]
+}

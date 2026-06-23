@@ -1,0 +1,73 @@
+diff --git a/doc/whats_new/v0.20.rst b/doc/whats_new/v0.20.rst
+index fad5db0e7a..d651e50e02 100644
+--- a/doc/whats_new/v0.20.rst
++++ b/doc/whats_new/v0.20.rst
+@@ -585,6 +585,9 @@ Utils
+   that arrays of bytes/strings will be interpreted as decimal numbers
+   beginning in version 0.22. :issue:`10229` by :user:`Ryan Lee <rtlee9>`
+ 
++- Fixed a bug in :func:`utils.check_array` where ``warn_on_dtype=True`` did not
++  warn when pandas ``DataFrame`` input was converted during validation.
++
+ Preprocessing
+ 
+ - Fixed bugs in :class:`preprocessing.LabelEncoder` which would sometimes throw
+diff --git a/sklearn/utils/tests/test_validation.py b/sklearn/utils/tests/test_validation.py
+index 00182fa0aa..73640b5bf2 100644
+--- a/sklearn/utils/tests/test_validation.py
++++ b/sklearn/utils/tests/test_validation.py
+@@ -338,6 +338,28 @@ def test_check_array_pandas_dtype_object_conversion():
+     assert_equal(check_array(X_df, ensure_2d=False).dtype.kind, "f")
+ 
+ 
++def test_check_array_pandas_dataframe_dtype_warning():
++    # check that pandas dataframes with homogeneous dtype objects warn
++    # when converted
++    try:
++        import pandas as pd
++    except ImportError:
++        raise SkipTest("Pandas not found")
++
++    X = pd.DataFrame([[1, 2, 3], [2, 3, 4]], dtype=object)
++    warning_msg = "Data with input dtype object was converted to float64."
++    X_checked = assert_warns_message(DataConversionWarning, warning_msg,
++                                     check_array, X, warn_on_dtype=True)
++    assert_equal(X_checked.dtype, np.float64)
++
++    warning_msg = ("Data with input dtype object was converted to float64 "
++                   "by SomeEstimator.")
++    X_checked = assert_warns_message(DataConversionWarning, warning_msg,
++                                     check_array, X, warn_on_dtype=True,
++                                     estimator="SomeEstimator")
++    assert_equal(X_checked.dtype, np.float64)
++
++
+ def test_check_array_on_mock_dataframe():
+     arr = np.array([[0.2, 0.7], [0.6, 0.5], [0.4, 0.1], [0.7, 0.2]])
+     mock_df = MockDataFrame(arr)
+diff --git a/sklearn/utils/validation.py b/sklearn/utils/validation.py
+index fe1f7236ec..86193dab4a 100644
+--- a/sklearn/utils/validation.py
++++ b/sklearn/utils/validation.py
+@@ -465,6 +465,21 @@ def check_array(array, accept_sparse=False, accept_large_sparse=True,
+     if not hasattr(dtype_orig, 'kind'):
+         # not a data type (e.g. a column named dtype in a pandas DataFrame)
+         dtype_orig = None
++    if dtype_orig is None:
++        # DataFrames have a per-column dtype, exposed as a ``dtypes``
++        # attribute. If all dtypes are homogeneous, represent them with a
++        # single dtype to enable proper dtype conversion warnings.
++        dtypes_orig = getattr(array, "dtypes", None)
++        if dtypes_orig is not None:
++            dtypes_orig = np.asarray(dtypes_orig)
++            if dtypes_orig.size > 0:
++                dtypes_orig = dtypes_orig.ravel()
++                first_dtype = dtypes_orig[0]
++                if all(dtype == first_dtype for dtype in dtypes_orig):
++                    try:
++                        dtype_orig = np.dtype(first_dtype)
++                    except TypeError:
++                        dtype_orig = None
+ 
+     if dtype_numeric:
+         if dtype_orig is not None and dtype_orig.kind == "O":

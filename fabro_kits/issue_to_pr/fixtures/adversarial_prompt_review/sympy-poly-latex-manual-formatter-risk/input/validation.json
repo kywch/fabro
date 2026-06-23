@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "issue": "Improve Poly LaTeX output for finite-field polynomials without regressing existing polynomial formatting.",
+  "acceptance_criteria": [
+    "Finite-field Poly output should show the modulus.",
+    "Existing Poly LaTeX formatting should continue to use printer semantics for terms and signs."
+  ],
+  "commands_run": [
+    "python -m pytest sympy/printing/tests/test_latex.py -k poly"
+  ]
+}

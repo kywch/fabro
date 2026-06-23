@@ -1,0 +1,34 @@
+{
+  "case_id": "requests-iter-content-socket-error-mapping",
+  "expected_rows": [
+    {
+      "categories": [
+        "code",
+        "tests"
+      ],
+      "id": "requests-iter-content-socket-error-mapping",
+      "keyword_groups": [
+        [
+          "iter_content"
+        ],
+        [
+          "socket.error",
+          "socket"
+        ],
+        [
+          "ConnectionError"
+        ],
+        [
+          "raw.stream",
+          "ChunkedEncodingError",
+          "ContentDecodingError"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "requests/models.py",
+        "test_requests.py"
+      ]
+    }
+  ]
+}

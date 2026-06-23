@@ -1,0 +1,38 @@
+{
+  "case_id": "django-file-upload-permissions-default-0644",
+  "expected_rows": [
+    {
+      "categories": [
+        "code",
+        "metadata",
+        "tests"
+      ],
+      "id": "django-file-upload-permissions-default-0644",
+      "keyword_groups": [
+        [
+          "FILE_UPLOAD_PERMISSIONS"
+        ],
+        [
+          "0o644",
+          "permissions"
+        ],
+        [
+          "TemporaryUploadedFile",
+          "temporary upload",
+          "collectstatic"
+        ],
+        [
+          "docs",
+          "release note",
+          "settings"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "django/conf/global_settings.py",
+        "docs/ref/settings.txt",
+        "tests/file_storage/tests.py"
+      ]
+    }
+  ]
+}

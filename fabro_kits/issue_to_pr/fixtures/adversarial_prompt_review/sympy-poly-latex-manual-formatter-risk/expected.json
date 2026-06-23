@@ -1,0 +1,29 @@
+{
+  "case_id": "sympy-poly-latex-manual-formatter-risk",
+  "expected_rows": [
+    {
+      "id": "sympy-poly-manual-format",
+      "category": "code",
+      "min_severity": "major",
+      "required_path_tokens": [
+        "sympy/printing/latex.py"
+      ],
+      "keyword_groups": [
+        [
+          "manual",
+          "str(poly.as_expr",
+          "replace"
+        ],
+        [
+          "Poly",
+          "polynomial"
+        ],
+        [
+          "latex",
+          "printer",
+          "format"
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "changed_files": [
+    "changelog/10811.bugfix.rst",
+    "src/_pytest/pathlib.py",
+    "testing/acceptance_test.py",
+    "testing/test_pathlib.py"
+  ],
+  "claimed_tests": [
+    "testing/test_pathlib.py",
+    "testing/acceptance_test.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "import_path(..., mode=\"importlib\") returns the existing sys.modules entry for the computed module name instead of creating a fresh module for the same path.",
+        "path": "testing/test_pathlib.py",
+        "test_name_or_scope": "TestImportPath.test_remembers_previous_imports"
+      },
+      {
+        "behavior_guarded": "--doctest-modules with --import-mode=importlib does not duplicate a package module that was first imported as a side effect of collecting another module.",
+        "path": "testing/acceptance_test.py",
+        "test_name_or_scope": "test_doctest_and_normal_imports_with_importlib"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "testing/test_pathlib.py",
+      "testing/acceptance_test.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "testing/test_pathlib.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "testing/acceptance_test.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "changelog/10811.bugfix.rst",
+      "src/_pytest/pathlib.py",
+      "testing/acceptance_test.py",
+      "testing/test_pathlib.py"
+    ],
+    "commands_claimed_count": 3,
+    "commands_reported_passed_count": 3,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "testing/acceptance_test.py",
+      "testing/test_pathlib.py"
+    ],
+    "tests_passed_count": 3,
+    "verified_commands": [
+      {
+        "command": "python -m pytest testing/test_pathlib.py -k importmode",
+        "exit_code": 0,
+        "id": "pathlib-importmode",
+        "output_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.9.25, pytest-8.0.0.dev46+g2f7415cfb, pluggy-1.3.0\nrootdir: /workspace\nconfigfile: pyproject.toml\ncollected 52 items / 48 deselected / 4 selected\n\ntesting/test_pathlib.py ....                                             [100%]\n\n======================= 4 passed, 48 deselected in 0.09s =======================\n",
+        "validation_command_id": "pathlib-importmode",
+        "zero_test_output": false
+      },
+      {
+        "command": "python -m pytest testing/acceptance_test.py -k doctest_and_normal_imports_with_importlib",
+        "exit_code": 0,
+        "id": "acceptance-doctest-normal-imports-importlib",
+        "output_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.9.25, pytest-8.0.0.dev46+g2f7415cfb, pluggy-1.3.0\nrootdir: /workspace\nconfigfile: pyproject.toml\ncollected 81 items / 80 deselected / 1 selected\n\ntesting/acceptance_test.py .                                             [100%]\n\n======================= 1 passed, 80 deselected in 0.31s =======================\n",
+        "validation_command_id": "acceptance-doctest-normal-imports-importlib",
+        "zero_test_output": false
+      },
+      {
+        "command": "python -m pytest testing/test_doctest.py -k importmode",
+        "exit_code": 0,
+        "id": "doctest-importmode",
+        "output_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.9.25, pytest-8.0.0.dev46+g2f7415cfb, pluggy-1.3.0\nrootdir: /workspace\nconfigfile: pyproject.toml\ncollected 134 items / 133 deselected / 1 selected\n\ntesting/test_doctest.py .                                                [100%]\n\n====================== 1 passed, 133 deselected in 0.10s =======================\n",
+        "validation_command_id": "doctest-importmode",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "testing/acceptance_test.py",
+    "testing/test_pathlib.py"
+  ],
+  "warnings": []
+}

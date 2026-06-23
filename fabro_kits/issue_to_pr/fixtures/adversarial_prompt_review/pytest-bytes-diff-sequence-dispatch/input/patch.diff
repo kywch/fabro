@@ -1,0 +1,62 @@
+diff --git a/src/_pytest/assertion/util.py b/src/_pytest/assertion/util.py
+index 762e5761d..bc305eb00 100644
+--- a/src/_pytest/assertion/util.py
++++ b/src/_pytest/assertion/util.py
+@@ -89,6 +89,10 @@ def istext(x):
+     return isinstance(x, str)
+ 
+ 
++def isbytes(x):
++    return isinstance(x, bytes)
++
++
+ def isdict(x):
+     return isinstance(x, dict)
+ 
+@@ -125,7 +129,9 @@ def assertrepr_compare(config, op, left, right):
+     explanation = None
+     try:
+         if op == "==":
+-            if istext(left) and istext(right):
++            if (istext(left) and istext(right)) or (
++                isbytes(left) and isbytes(right)
++            ):
+                 explanation = _diff_text(left, right, verbose)
+             else:
+                 if issequence(left) and issequence(right):
+@@ -178,10 +184,9 @@ def _diff_text(left, right, verbose=0):
+     def escape_for_readable_diff(binary_text):
+         """
+         Ensures that the internal string is always valid unicode, converting any bytes safely to valid unicode.
+-        This is done using repr() which then needs post-processing to fix the encompassing quotes and un-escape
+-        newlines and carriage returns (#429).
++        This is done using repr() which then needs post-processing to un-escape newlines and carriage returns (#429).
+         """
+-        r = str(repr(binary_text)[1:-1])
++        r = str(repr(binary_text))
+         r = r.replace(r"\n", "\n")
+         r = r.replace(r"\r", "\r")
+         return r
+diff --git a/testing/test_assertion.py b/testing/test_assertion.py
+index 0fcfd9f27..0300c5d31 100644
+--- a/testing/test_assertion.py
++++ b/testing/test_assertion.py
+@@ -313,6 +313,18 @@ class TestAssert_reprcompare:
+         assert "- spam" in diff
+         assert "+ eggs" in diff
+ 
++    def test_bytes_diff(self):
++        diff = callequal(b"", b"42")[1:]
++        assert "- b''" in diff
++        assert "+ b'42'" in diff
++        assert "?   ++" in diff
++        assert "Right contains 2 more items, first extra item: 52" not in diff
++
++        diff = callequal(b"abc", b"abd")[1:]
++        assert "- b'abc'" in diff
++        assert "+ b'abd'" in diff
++        assert "At index 2 diff: 99 != 100" not in diff
++
+     def test_text_skipping(self):
+         lines = callequal("a" * 50 + "spam", "a" * 50 + "eggs")
+         assert "Skipping" in lines[1]

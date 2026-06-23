@@ -1,0 +1,86 @@
+diff --git a/astropy/io/ascii/rst.py b/astropy/io/ascii/rst.py
+index abdeba8efb..f2f5402eb4 100644
+--- a/astropy/io/ascii/rst.py
++++ b/astropy/io/ascii/rst.py
+@@ -57,10 +57,14 @@ class RST(FixedWidth):
+     data_class = SimpleRSTData
+     header_class = SimpleRSTHeader
+ 
+-    def __init__(self):
+-        super().__init__(delimiter_pad=None, bookend=False)
++    def __init__(self, header_rows=None):
++        super().__init__(
++            delimiter_pad=None, bookend=False, header_rows=header_rows
++        )
++        self.data.start_line = len(self.header.header_rows) + 2
+ 
+     def write(self, lines):
+         lines = super().write(lines)
+-        lines = [lines[1]] + lines + [lines[1]]
++        position_line = lines[len(self.header.header_rows)]
++        lines = [position_line] + lines + [position_line]
+         return lines
+diff --git a/astropy/io/ascii/tests/test_rst.py b/astropy/io/ascii/tests/test_rst.py
+index 84d6fed401..528ccc659c 100644
+--- a/astropy/io/ascii/tests/test_rst.py
++++ b/astropy/io/ascii/tests/test_rst.py
+@@ -2,7 +2,9 @@
+ 
+ from io import StringIO
+ 
++import astropy.units as u
+ from astropy.io import ascii
++from astropy.table import QTable
+ 
+ from .common import assert_almost_equal, assert_equal
+ 
+@@ -185,3 +187,42 @@ Col1      Col2 Col3 Col4
+ ==== ========= ==== ====
+ """,
+     )
++
++
++def test_write_header_rows():
++    """Write a SimpleRST table with additional header rows."""
++    tbl = QTable({"wave": [350, 950] * u.nm, "response": [0.7, 1.2] * u.count})
++    out = StringIO()
++    tbl.write(out, format="ascii.rst", header_rows=["name", "unit"])
++    assert_equal_splitlines(
++        out.getvalue(),
++        """\
++===== ========
++ wave response
++   nm       ct
++===== ========
++350.0      0.7
++950.0      1.2
++===== ========
++""",
++    )
++
++
++def test_read_header_rows():
++    """Read a SimpleRST table with additional header rows."""
++    table = """\
++===== ========
++ wave response
++   nm       ct
++===== ========
++350.0      0.7
++950.0      1.2
++===== ========
++"""
++    reader = ascii.get_reader(Reader=ascii.RST, header_rows=["name", "unit"])
++    dat = reader.read(table)
++    assert_equal(dat.colnames, ["wave", "response"])
++    assert_equal(dat["wave"].unit, u.nm)
++    assert_equal(dat["response"].unit, u.count)
++    assert_equal(len(dat), 2)
++    assert_equal(dat["wave"][0], 350.0)
+diff --git a/docs/changes/io.ascii/0000.feature.rst b/docs/changes/io.ascii/0000.feature.rst
+new file mode 100644
+index 0000000000..3eef76cdb0
+--- /dev/null
++++ b/docs/changes/io.ascii/0000.feature.rst
+@@ -0,0 +1 @@
++Added support for ``header_rows`` in RestructuredText (``ascii.rst``) table output.

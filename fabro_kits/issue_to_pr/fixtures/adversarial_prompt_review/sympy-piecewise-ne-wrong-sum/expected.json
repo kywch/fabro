@@ -1,0 +1,35 @@
+{
+  "case_id": "sympy-piecewise-ne-wrong-sum",
+  "expected_rows": [
+    {
+      "categories": [
+        "code"
+      ],
+      "id": "sympy-piecewise-ne-wrong-sum",
+      "keyword_groups": [
+        [
+          "Piecewise"
+        ],
+        [
+          "Ne",
+          "not equal"
+        ],
+        [
+          "endpoint",
+          "interior",
+          "range"
+        ],
+        [
+          "wrong sum",
+          "incorrect sum",
+          "silently wrong"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "sympy/concrete/delta.py",
+        "sympy/concrete/summations.py"
+      ]
+    }
+  ]
+}

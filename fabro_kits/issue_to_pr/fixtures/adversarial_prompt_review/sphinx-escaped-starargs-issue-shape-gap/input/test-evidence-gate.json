@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "commands_run": [
+    {
+      "command": "pytest tests/test_ext_autodoc.py::test_escaped_starargs",
+      "status": "passed"
+    }
+  ],
+  "coverage_notes": [
+    "No literal escaped-star non-stararg case was claimed."
+  ]
+}

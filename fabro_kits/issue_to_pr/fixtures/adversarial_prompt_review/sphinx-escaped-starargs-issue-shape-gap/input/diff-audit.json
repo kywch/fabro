@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "changed_files": [
+    {
+      "path": "sphinx/ext/autodoc/importer.py",
+      "change_type": "modified",
+      "source": true
+    }
+  ],
+  "summary": "Globally unescapes star characters in rendered signatures."
+}

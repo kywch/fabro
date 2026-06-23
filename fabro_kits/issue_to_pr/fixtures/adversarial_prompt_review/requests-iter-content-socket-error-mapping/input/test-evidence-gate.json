@@ -1,0 +1,77 @@
+{
+  "changed_files": [
+    "HISTORY.rst",
+    "requests/models.py",
+    "test_requests.py"
+  ],
+  "claimed_tests": [
+    "test_requests.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "A `socket.error` raised from an urllib3-style `raw.stream()` while consuming `Response.iter_content()` is wrapped as `requests.exceptions.ConnectionError`.",
+        "path": "test_requests.py",
+        "test_name_or_scope": "RequestsTestCase.test_iter_content_handles_socket_error"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "test_requests.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "test_requests.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "HISTORY.rst",
+      "requests/models.py",
+      "test_requests.py"
+    ],
+    "commands_claimed_count": 2,
+    "commands_reported_passed_count": 2,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "test_requests.py"
+    ],
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "python -m pytest test_requests.py -k iter_content_handles_socket_error",
+        "exit_code": 0,
+        "id": "focused-iter-content-socket-error",
+        "output_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.9.25, pytest-8.4.2, pluggy-1.5.0\nrootdir: /workspace\ncollected 133 items / 132 deselected / 1 selected\n\ntest_requests.py .                                                       [100%]\n\n=============================== warnings summary ===============================\nrequests/packages/urllib3/_collections.py:1\nrequests/packages/urllib3/_collections.py:1\n  /workspace/requests/packages/urllib3/_collections.py:1: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n    from collections import Mapping, MutableMapping\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n================ 1 passed, 132 deselected, 2 warnings in 0.10s =================\n",
+        "validation_command_id": "focused-iter-content-socket-error",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "test_requests.py"
+  ],
+  "warnings": []
+}

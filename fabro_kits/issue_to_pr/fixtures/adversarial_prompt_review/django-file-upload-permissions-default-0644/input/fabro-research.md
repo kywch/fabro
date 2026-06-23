@@ -1,0 +1,1 @@
+This is a broad contract fixture. A good review should notice if the setting/default is changed without updating temp upload paths, collectstatic/staticfiles expectations, or release/docs consistently.

@@ -1,0 +1,28 @@
+{
+  "changed_files": [
+    "django/conf/global_settings.py",
+    "docs/howto/deployment/checklist.txt",
+    "docs/ref/settings.txt",
+    "docs/releases/3.0.txt",
+    "tests/file_storage/tests.py",
+    "tests/staticfiles_tests/test_storage.py",
+    "tests/test_utils/tests.py"
+  ],
+  "diff_stat": [
+    " django/conf/global_settings.py          |  2 +-",
+    " docs/howto/deployment/checklist.txt     | 10 ++++------",
+    " docs/ref/settings.txt                   | 15 +++++++--------",
+    " docs/releases/3.0.txt                   |  8 ++++++++",
+    " tests/file_storage/tests.py             |  8 +++++++-",
+    " tests/staticfiles_tests/test_storage.py | 12 +++++++++++-",
+    " tests/test_utils/tests.py               |  2 +-",
+    " 7 files changed, 39 insertions(+), 18 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "tests/file_storage/tests.py",
+    "tests/staticfiles_tests/test_storage.py",
+    "tests/test_utils/tests.py"
+  ]
+}

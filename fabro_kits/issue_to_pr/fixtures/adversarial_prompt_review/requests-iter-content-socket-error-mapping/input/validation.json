@@ -1,0 +1,11 @@
+{
+  "acceptance_criteria": [
+    "Socket errors from urllib3 raw.stream should become ConnectionError.",
+    "Existing ChunkedEncodingError and ContentDecodingError mappings should remain intact."
+  ],
+  "commands_run": [
+    "python -m pytest test_requests.py -k iter_content"
+  ],
+  "issue": "requests.iter_content should map socket errors raised while streaming response bodies into Requests connection errors.",
+  "schema_version": 1
+}

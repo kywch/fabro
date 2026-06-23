@@ -1,0 +1,93 @@
+{
+  "changed_files": [
+    "doc/whatsnew/2/2.15/index.rst",
+    "pylint/lint/expand_modules.py",
+    "tests/test_self.py"
+  ],
+  "claimed_tests": [
+    "tests/test_self.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "`pylint --recursive=y . --ignore-paths=^ignored_subdirectory/.*$` does not lint an ignored subtree whose discovered path is prefixed with `./`.",
+        "path": "tests/test_self.py",
+        "test_name_or_scope": "TestRunTC.test_ignore_path_recursive_current_dir"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "tests/test_self.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "tests/test_self.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "doc/whatsnew/2/2.15/index.rst",
+      "pylint/lint/expand_modules.py",
+      "tests/test_self.py"
+    ],
+    "commands_claimed_count": 7,
+    "commands_reported_passed_count": 5,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "tests/test_self.py"
+    ],
+    "tests_passed_count": 3,
+    "verified_commands": [
+      {
+        "command": "python -m pytest tests/test_self.py::TestRunTC::test_ignore_path_recursive_current_dir -q",
+        "exit_code": 0,
+        "id": "test-regression",
+        "output_tail": ".                                                                        [100%]\n=============================== warnings summary ===============================\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/astroid/interpreter/_import/util.py:6\n  /opt/miniconda3/envs/testbed/lib/python3.9/site-packages/astroid/interpreter/_import/util.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n    import pkg_resources\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n1 passed, 1 warning in 0.08s\n",
+        "validation_command_id": "test-regression",
+        "zero_test_output": false
+      },
+      {
+        "command": "python -m pytest tests/lint/unittest_lint.py::test_recursive_ignore -q",
+        "exit_code": 0,
+        "id": "test-existing-recursive-ignore",
+        "output_tail": "......                                                                   [100%]\n=============================== warnings summary ===============================\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/astroid/interpreter/_import/util.py:6\n  /opt/miniconda3/envs/testbed/lib/python3.9/site-packages/astroid/interpreter/_import/util.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n    import pkg_resources\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n6 passed, 1 warning in 0.30s\n",
+        "validation_command_id": "test-existing-recursive-ignore",
+        "zero_test_output": false
+      },
+      {
+        "command": "python -m pytest tests/lint/unittest_expand_modules.py -q",
+        "exit_code": 0,
+        "id": "test-expand-modules",
+        "output_tail": ".....                                                                    [100%]\n=============================== warnings summary ===============================\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/astroid/interpreter/_import/util.py:6\n  /opt/miniconda3/envs/testbed/lib/python3.9/site-packages/astroid/interpreter/_import/util.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n    import pkg_resources\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n5 passed, 1 warning in 0.03s\n",
+        "validation_command_id": "test-expand-modules",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "tests/test_self.py"
+  ],
+  "warnings": []
+}

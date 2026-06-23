@@ -1,0 +1,37 @@
+{
+  "case_id": "sympy-vector-pretty-baseline-unicode",
+  "expected_rows": [
+    {
+      "categories": [
+        "code",
+        "tests"
+      ],
+      "id": "sympy-vector-pretty-baseline-unicode",
+      "keyword_groups": [
+        [
+          "BasisDependent",
+          "_print_BasisDependent"
+        ],
+        [
+          "prettyForm",
+          "stringPict.next",
+          "baseline"
+        ],
+        [
+          "unicode",
+          "ASCII"
+        ],
+        [
+          "dyadic",
+          "multiline",
+          "layout"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "sympy/printing/pretty/pretty.py",
+        "sympy/vector/tests/test_printing.py"
+      ]
+    }
+  ]
+}

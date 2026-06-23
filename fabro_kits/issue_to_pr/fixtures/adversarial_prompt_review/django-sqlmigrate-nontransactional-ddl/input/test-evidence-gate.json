@@ -1,0 +1,75 @@
+{
+  "changed_files": [
+    "django/core/management/commands/sqlmigrate.py",
+    "tests/migrations/test_commands.py"
+  ],
+  "claimed_tests": [
+    "tests/migrations/test_commands.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "An atomic migration rendered by sqlmigrate on a connection whose features.can_rollback_ddl is False must not include outer transaction wrapper SQL.",
+        "path": "tests/migrations/test_commands.py",
+        "test_name_or_scope": "MigrateTests.test_sqlmigrate_for_non_transactional_ddl"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "tests/migrations/test_commands.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "tests/migrations/test_commands.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "django/core/management/commands/sqlmigrate.py",
+      "tests/migrations/test_commands.py"
+    ],
+    "commands_claimed_count": 2,
+    "commands_reported_passed_count": 2,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "tests/migrations/test_commands.py"
+    ],
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "python tests/runtests.py migrations.test_commands.MigrateTests.test_sqlmigrate_for_non_transactional_ddl migrations.test_commands.MigrateTests.test_sqlmigrate_for_non_atomic_migration migrations.test_commands.MigrateTests.test_sqlmigrate_forwards migrations.test_commands.MigrateTests.test_sqlmigrate_backwards --settings=test_sqlite --verbosity 1 --parallel 1",
+        "exit_code": 0,
+        "id": "focused-sqlmigrate-transaction-tests",
+        "output_tail": "Creating test database for alias 'default'...\nCreating test database for alias 'other'...\n....\n----------------------------------------------------------------------\nRan 4 tests in 0.117s\n\nOK\nDestroying test database for alias 'default'...\nDestroying test database for alias 'other'...\nTesting against Django installed in '/workspace/django'\nSystem check identified no issues (0 silenced).\n",
+        "validation_command_id": "focused-sqlmigrate-transaction-tests",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "tests/migrations/test_commands.py"
+  ],
+  "warnings": []
+}

@@ -1,0 +1,18 @@
+{
+  "changed_files": [
+    "astropy/io/ascii/rst.py",
+    "astropy/io/ascii/tests/test_rst.py",
+    "docs/changes/io.ascii/0000.feature.rst"
+  ],
+  "diff_stat": [
+    " astropy/io/ascii/rst.py                | 10 ++++++---",
+    " astropy/io/ascii/tests/test_rst.py     | 41 ++++++++++++++++++++++++++++++++++",
+    " docs/changes/io.ascii/0000.feature.rst |  1 +",
+    " 3 files changed, 49 insertions(+), 3 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "astropy/io/ascii/tests/test_rst.py"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "acceptance_criteria": [
+    "Template static/media URL helpers should prepend the active script prefix for root-relative settings.",
+    "FileSystemStorage and StaticFilesStorage URL generation should use the current script prefix dynamically.",
+    "Hashed staticfiles processing should not leave CSS references rooted at /static/ when runtime URLs are script-prefixed."
+  ],
+  "commands_run": [
+    "python tests/runtests.py template_tests.syntax_tests.test_static file_storage.tests.FileStorageTests staticfiles_tests.test_storage.TestStaticFilesStorage --settings=test_sqlite --parallel 1"
+  ],
+  "issue": "STATIC_URL and MEDIA_URL generation should honor dynamic SCRIPT_NAME for root-relative URLs without affecting absolute or protocol-relative URLs.",
+  "schema_version": 1
+}

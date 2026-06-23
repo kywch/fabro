@@ -1,0 +1,131 @@
+{
+  "changed_files": [
+    "django/core/files/storage.py",
+    "django/templatetags/static.py",
+    "django/urls/base.py",
+    "docs/ref/settings.txt",
+    "docs/releases/3.1.txt",
+    "tests/file_storage/tests.py",
+    "tests/staticfiles_tests/test_storage.py",
+    "tests/template_tests/syntax_tests/test_static.py"
+  ],
+  "claimed_tests": [
+    "tests/template_tests/syntax_tests/test_static.py",
+    "tests/file_storage/tests.py",
+    "tests/staticfiles_tests/test_storage.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "Static template prefix tags, the static tag, and django.templatetags.static.static() prepend the active script prefix for root-relative STATIC_URL/MEDIA_URL, URI-escape non-ASCII script prefixes, skip absolute/protocol-relative URLs, and avoid double-prefixing already-prefixed values.",
+        "path": "tests/template_tests/syntax_tests/test_static.py",
+        "test_name_or_scope": "StaticTagTests.test_static_prefixtag_script_prefix, test_static_prefixtag_script_prefix_quoted, test_static_prefixtag_script_prefix_no_double_prefix, test_static_prefixtag_script_prefix_ignored_for_absolute_urls, test_static_statictag_script_prefix, test_static_statictag_script_prefix_quoted, test_static_function_script_prefix"
+      },
+      {
+        "behavior_guarded": "FileSystemStorage.url() prepends the current script prefix dynamically for root-relative base_url values, URI-escapes non-ASCII script prefixes, avoids double-prefixing, and leaves absolute/protocol-relative base URLs unchanged.",
+        "path": "tests/file_storage/tests.py",
+        "test_name_or_scope": "FileStorageTests.test_url_script_prefix, test_url_script_prefix_quoted, test_url_script_prefix_is_not_cached, test_url_script_prefix_no_double_prefix, test_url_script_prefix_ignored_for_absolute_urls"
+      },
+      {
+        "behavior_guarded": "StaticFilesStorage and ManifestStaticFilesStorage URL generation inherits script-prefix behavior through the storage URL path.",
+        "path": "tests/staticfiles_tests/test_storage.py",
+        "test_name_or_scope": "TestStaticFilesStorage.test_url_script_prefix, test_url_script_prefix_with_query_and_fragment, test_manifest_url_script_prefix"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "tests/template_tests/syntax_tests/test_static.py",
+      "tests/file_storage/tests.py",
+      "tests/staticfiles_tests/test_storage.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "tests/template_tests/syntax_tests/test_static.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "tests/file_storage/tests.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "tests/staticfiles_tests/test_storage.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "django/core/files/storage.py",
+      "django/templatetags/static.py",
+      "django/urls/base.py",
+      "docs/ref/settings.txt",
+      "docs/releases/3.1.txt",
+      "tests/file_storage/tests.py",
+      "tests/staticfiles_tests/test_storage.py",
+      "tests/template_tests/syntax_tests/test_static.py"
+    ],
+    "commands_claimed_count": 18,
+    "commands_reported_passed_count": 16,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "tests/file_storage/tests.py",
+      "tests/staticfiles_tests/test_storage.py",
+      "tests/template_tests/syntax_tests/test_static.py"
+    ],
+    "tests_passed_count": 3,
+    "verified_commands": [
+      {
+        "command": "python tests/runtests.py template_tests.syntax_tests.test_static file_storage.tests.FileStorageTests staticfiles_tests.test_storage.TestStaticFilesStorage --settings=test_sqlite --verbosity 1 --parallel 1",
+        "exit_code": 0,
+        "id": "focused-regression-storage-staticfiles",
+        "output_tail": ".................................................\n----------------------------------------------------------------------\nRan 49 tests in 0.119s\n\nOK\nTesting against Django installed in '/workspace/django'\nSystem check identified no issues (0 silenced).\n",
+        "validation_command_id": "focused-regression-storage-staticfiles",
+        "zero_test_output": false
+      },
+      {
+        "command": "python tests/runtests.py template_tests.syntax_tests.test_static file_storage.tests.FileStorageTests staticfiles_tests.test_storage.TestStaticFilesStorage --settings=test_sqlite --verbosity 1 --parallel 1",
+        "exit_code": 0,
+        "id": "focused-regression-final",
+        "output_tail": ".................................................\n----------------------------------------------------------------------\nRan 49 tests in 0.109s\n\nOK\nTesting against Django installed in '/workspace/django'\nSystem check identified no issues (0 silenced).\n",
+        "validation_command_id": "focused-regression-final",
+        "zero_test_output": false
+      },
+      {
+        "command": "python tests/runtests.py template_tests.syntax_tests.test_static file_storage.tests.FileStorageTests staticfiles_tests.test_storage.TestStaticFilesStorage --settings=test_sqlite --verbosity 1 --parallel 1",
+        "exit_code": 0,
+        "id": "focused-regression-final-with-static-function",
+        "output_tail": ".................................................\n----------------------------------------------------------------------\nRan 49 tests in 0.112s\n\nOK\nTesting against Django installed in '/workspace/django'\nSystem check identified no issues (0 silenced).\n",
+        "validation_command_id": "focused-regression-final-with-static-function",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "tests/file_storage/tests.py",
+    "tests/staticfiles_tests/test_storage.py",
+    "tests/template_tests/syntax_tests/test_static.py"
+  ],
+  "warnings": []
+}

@@ -1,0 +1,37 @@
+{
+  "case_id": "overblocking-good-patch-minor-closed-by-evidence",
+  "expected_rows": [
+    {
+      "categories": [
+        "process",
+        "evidence"
+      ],
+      "id": "overblocking-good-patch-minor-closed-by-evidence",
+      "keyword_groups": [
+        [
+          "minor",
+          "closed",
+          "evidence"
+        ],
+        [
+          "overblock",
+          "overblocking"
+        ],
+        [
+          "greeting",
+          "comma"
+        ],
+        [
+          "test",
+          "validation"
+        ]
+      ],
+      "min_severity": "minor",
+      "required_path_tokens": [
+        "review_accountability_gate.json",
+        "test_evidence_gate.json",
+        "patch.diff"
+      ]
+    }
+  ]
+}

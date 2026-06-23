@@ -1,0 +1,12 @@
+{
+  "acceptance_criteria": [
+    "Missing variables should be filled using the requested fill_value.",
+    "Coordinate compatibility and existing-dimension checks should remain meaningful.",
+    "Lazy/dask behavior should not be needlessly materialized."
+  ],
+  "commands_run": [
+    "python -m pytest xarray/tests/test_concat.py -k missing"
+  ],
+  "issue": "xarray.concat should support objects with missing data variables by filling absent variables consistently.",
+  "schema_version": 1
+}

@@ -1,0 +1,30 @@
+{
+  "case_id": "sphinx-escaped-starargs-issue-shape-gap",
+  "expected_rows": [
+    {
+      "id": "sphinx-starargs-shape-gap",
+      "categories": ["code", "tests", "process"],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "sphinx/ext/autodoc/importer.py"
+      ],
+      "keyword_groups": [
+        [
+          "starargs",
+          "*args",
+          "**kwargs"
+        ],
+        [
+          "escaped",
+          "unescape",
+          "literal"
+        ],
+        [
+          "global",
+          "replace",
+          "ordinary"
+        ]
+      ]
+    }
+  ]
+}

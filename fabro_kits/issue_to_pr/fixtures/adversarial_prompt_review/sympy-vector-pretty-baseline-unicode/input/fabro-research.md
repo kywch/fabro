@@ -1,0 +1,1 @@
+This is a formatter-risk fixture distinct from Poly LaTeX. The prompt should ask whether the new prettyForm/stringPict composition handles baseline, ASCII, multiline, and dyadic cases rather than only the reported unicode vector label.

@@ -1,0 +1,21 @@
+{
+  "changed_files": [
+    "changelog/10811.bugfix.rst",
+    "src/_pytest/pathlib.py",
+    "testing/acceptance_test.py",
+    "testing/test_pathlib.py"
+  ],
+  "diff_stat": [
+    " changelog/10811.bugfix.rst |  2 ++",
+    " src/_pytest/pathlib.py     |  2 ++",
+    " testing/acceptance_test.py | 32 ++++++++++++++++++++++++++++++++",
+    " testing/test_pathlib.py    | 27 +++++++++++++++++++--------",
+    " 4 files changed, 55 insertions(+), 8 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "testing/acceptance_test.py",
+    "testing/test_pathlib.py"
+  ]
+}

@@ -1,0 +1,1 @@
+This fixture calibrates optional pandas/DataFrame review. Rows were empty but checked risks were rich: dtype reduction can be misleading for mixed dtypes, warning context can be lost, and pandas should remain optional.

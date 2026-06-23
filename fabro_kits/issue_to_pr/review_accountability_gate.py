@@ -8,7 +8,6 @@ from typing import Any
 
 MAJOR = {"blocker", "critical", "major"}
 STATES = {"open", "closed_by_evidence", "rejected", "downgraded"}
-
 def evaluate_review_accountability(
     *,
     adversarial: dict[str, Any] | None,
@@ -79,6 +78,8 @@ def evaluate_review_accountability(
                 "changed_source_files": source_diff_files,
             }
         )
+    if rows == [] and source_diff_files and plausible_risk_hidden_in_checked_risks(adversarial, source_diff_files):
+        malformed.append({"artifact": "adversarial_review", "field": "checked_risks", "error": "plausible_risk_hidden_in_checked_risks", "changed_source_files": source_diff_files})
     if rows == [] and isinstance(adversarial, dict):
         scope_assessment = adversarial.get("scope_assessment")
         if isinstance(scope_assessment, dict):
@@ -401,7 +402,6 @@ def evaluate_review_accountability(
         else "Proceed to patch extraction.",
     }
 
-
 def load_json_object(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     try:
         obj = json.loads(path.read_text(encoding="utf-8", errors="replace"))
@@ -411,37 +411,29 @@ def load_json_object(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any] 
         return None, {"path": str(path), "error": "expected_json_object"}
     return obj, None
 
-
 def row_id(row: Any) -> str | None:
     value = row.get("id") if isinstance(row, dict) else None
     return None if value in (None, "") else str(value)
 
-
 def as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
-
 
 def nonempty_scope_text(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
-
 def nonempty_scope_list(value: Any) -> bool:
     return isinstance(value, list) and bool(value)
-
 
 def add_unique(values: list[Any], value: Any) -> None:
     if value not in values:
         values.append(value)
 
-
 def clean_path(value: Any) -> str:
     text = str(value).strip()
     return text[len("/workspace/") :] if text.startswith("/workspace/") else text
 
-
 def is_issue_artifact_path(path: str) -> bool:
     return path.startswith(".fabro/issue-to-pr/")
-
 
 def concrete_empty_review_checks(adversarial: Any, source_files: list[str]) -> bool:
     if not isinstance(adversarial, dict):
@@ -451,7 +443,6 @@ def concrete_empty_review_checks(adversarial: Any, source_files: list[str]) -> b
         for key in ("checked_risks", "counterexample_checks")
         for item in as_list(adversarial.get(key))
     )
-
 
 def concrete_checked_risk(item: Any, source_files: list[str]) -> bool:
     if not isinstance(item, dict):
@@ -472,7 +463,20 @@ def concrete_checked_risk(item: Any, source_files: list[str]) -> bool:
         and any(path in text for path in source_files)
     )
 
-
+def plausible_risk_hidden_in_checked_risks(adversarial: Any, source_files: list[str]) -> bool:
+    if not isinstance(adversarial, dict):
+        return False
+    plausible = ("could ", "may ", "might ", "possible ", "plausible ", "unresolved", "regress", "break", "missing")
+    falsified = ("falsified", "fully answered", "covered by", "verified by", "not present", "does not", "cannot", "only changes", "diff only", "unchanged", "preserves")
+    for key in ("checked_risks", "counterexample_checks"):
+        for item in as_list(adversarial.get(key)):
+            values = []
+            for value in item.values() if isinstance(item, dict) else [item]:
+                values.extend(text_values(value))
+            text = " ".join(values).lower()
+            if any(path in text for path in source_files) and any(term in text for term in plausible) and not any(term in text for term in falsified):
+                return True
+    return False
 def nontrivial_source_diff_files(patch_diff: str) -> list[str]:
     paths = []
     old_path = ""
@@ -498,7 +502,6 @@ def nontrivial_source_diff_files(patch_diff: str) -> list[str]:
             paths.append(current_path)
     return paths
 
-
 def is_source_path(path: str) -> bool:
     path = clean_path(path)
     source_exts = (
@@ -511,11 +514,9 @@ def is_source_path(path: str) -> bool:
         and path.endswith(source_exts)
     )
 
-
 def nontrivial_source_line(line: str) -> bool:
     stripped = line.strip()
     return bool(stripped) and not stripped.startswith(("#", "//", "/*", "*", "*/"))
-
 
 def has_evidence(row: Any) -> bool:
     if not isinstance(row, dict):
@@ -528,7 +529,6 @@ def has_evidence(row: Any) -> bool:
             return True
     return bool(row.get("artifact_path") or row.get("artifact_field"))
 
-
 def tests_executed_successfully(gate: Any) -> bool:
     if not isinstance(gate, dict):
         return False
@@ -540,7 +540,6 @@ def tests_executed_successfully(gate: Any) -> bool:
         if type(value) is int and value > 0:
             return True
     return False
-
 
 def score_closure(
     disposition: dict[str, Any],
@@ -590,7 +589,6 @@ def score_closure(
     disposition["closure_score"] = 2
     disposition["closure_score_reason"] = "closure cites concrete artifact evidence"
 
-
 def closure_score_too_low(disposition: dict[str, Any], severe: bool) -> bool:
     score = disposition.get("closure_score")
     if type(score) is not int:
@@ -598,7 +596,6 @@ def closure_score_too_low(disposition: dict[str, Any], severe: bool) -> bool:
     if safe_minor_rejection_without_artifact_evidence(disposition, severe):
         return False
     return score < (3 if severe else 2)
-
 
 def safe_minor_rejection_without_artifact_evidence(
     disposition: dict[str, Any],
@@ -612,14 +609,12 @@ def safe_minor_rejection_without_artifact_evidence(
         and str(disposition.get("row_closure_requires", "")).lower() == "none"
     )
 
-
 def text_values(value: Any) -> list[str]:
     if isinstance(value, str):
         return [value]
     if isinstance(value, list):
         return [str(item) for item in value if str(item).strip()]
     return []
-
 
 def concrete_evidence_present(
     text: str,
@@ -633,7 +628,6 @@ def concrete_evidence_present(
     if mentions_runtime_test(text):
         return True
     return bool(patch_diff and any(token.startswith(("+", "-")) for token in text.split()))
-
 
 def mentions_runtime_test(text: str) -> bool:
     lowered = text.lower()
@@ -650,7 +644,6 @@ def mentions_runtime_test(text: str) -> bool:
             "test command",
         )
     )
-
 
 def detect_negative_coverage_removal(patch_diff: str) -> list[dict[str, str]]:
     removals: list[dict[str, str]] = []
@@ -695,12 +688,10 @@ def detect_negative_coverage_removal(patch_diff: str) -> list[dict[str, str]]:
         if removal["key"] not in added_keys_by_path.get(removal["path"], set())
     ]
 
-
 def is_test_path(path: str) -> bool:
     name = Path(path).name.lower()
     parts = {part.lower() for part in Path(path).parts}
     return "tests" in parts or name.startswith("test_") or name.endswith("_test.py")
-
 
 def is_negative_test_line(line: str) -> bool:
     lowered = line.lower()
@@ -716,7 +707,6 @@ def is_negative_test_line(line: str) -> bool:
         )
     )
 
-
 def following_changed_line(lines: list[str], index: int, prefix: str) -> str:
     for line in lines[index + 1 :]:
         if line.startswith(("diff --git ", "@@ ", "+++ ", "--- ")):
@@ -727,17 +717,14 @@ def following_changed_line(lines: list[str], index: int, prefix: str) -> str:
                 return text
     return ""
 
-
 def negative_test_key(line: str, following_line: str) -> str:
     normalized_following = normalize_negative_test_line(following_line)
     if normalized_following:
         return normalized_following
     return normalize_negative_test_line(line)
 
-
 def normalize_negative_test_line(line: str) -> str:
     return " ".join(line.replace('"', "'").split()).lower()
-
 
 def next_agent_guidance(fixup_required_rows: list[Any]) -> str:
     values = []
@@ -752,7 +739,6 @@ def next_agent_guidance(fixup_required_rows: list[Any]) -> str:
             )
         )
     return "; ".join(values)
-
 
 def build_embedded_accountability_gate_script(
     *,
@@ -804,7 +790,6 @@ raise SystemExit(1 if report["status"] == "failed" else 0)
 PY
 """
 
-
 def _embedded_gate_functions_source() -> str:
     functions = (
         evaluate_review_accountability,
@@ -818,6 +803,7 @@ def _embedded_gate_functions_source() -> str:
         is_issue_artifact_path,
         concrete_empty_review_checks,
         concrete_checked_risk,
+        plausible_risk_hidden_in_checked_risks,
         nontrivial_source_diff_files,
         is_source_path,
         nontrivial_source_line,
@@ -838,7 +824,6 @@ def _embedded_gate_functions_source() -> str:
         next_agent_guidance,
     )
     return "\n\n".join(_python36_source(inspect.getsource(function)) for function in functions)
-
 
 def _python36_source(source: str) -> str:
     class StripAnnotations(ast.NodeTransformer):

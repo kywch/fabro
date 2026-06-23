@@ -1,0 +1,11 @@
+{
+  "acceptance_criteria": [
+    "Handle the reported exp(I*x) style expression.",
+    "Avoid broad simplifications that change unrelated expressions or cause large performance regressions."
+  ],
+  "commands_run": [
+    "python -m pytest sympy/simplify/tests/test_trigsimp.py -k euler"
+  ],
+  "issue": "trigsimp should simplify exponential Euler forms to trig forms without broad unrelated rewrites.",
+  "schema_version": 1
+}

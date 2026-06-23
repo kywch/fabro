@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "commands_run": [
+    {
+      "command": "python -m pytest sympy/printing/tests/test_latex.py -k finite_field_poly",
+      "status": "passed"
+    }
+  ],
+  "coverage_notes": [
+    "Only the finite-field happy path was claimed."
+  ]
+}

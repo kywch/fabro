@@ -1,0 +1,11 @@
+{
+  "acceptance_criteria": [
+    "Drop only synthetic helper coordinates introduced by stacking.",
+    "Do not hide meaningful scalar coordinates or merge conflicts."
+  ],
+  "commands_run": [
+    "python -m pytest xarray/tests/test_dataset.py -k unstacked"
+  ],
+  "issue": "DataArray.to_unstacked_dataset should round-trip data created by to_stacked_array without synthetic coordinate conflicts.",
+  "schema_version": 1
+}

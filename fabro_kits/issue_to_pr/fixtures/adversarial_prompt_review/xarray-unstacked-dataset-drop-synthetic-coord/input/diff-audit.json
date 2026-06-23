@@ -1,0 +1,18 @@
+{
+  "changed_files": [
+    "doc/whats-new.rst",
+    "xarray/core/dataarray.py",
+    "xarray/tests/test_dataset.py"
+  ],
+  "diff_stat": [
+    " doc/whats-new.rst            |  3 +++",
+    " xarray/core/dataarray.py     |  5 ++++-",
+    " xarray/tests/test_dataset.py | 17 +++++++++++++++++",
+    " 3 files changed, 24 insertions(+), 1 deletion(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "xarray/tests/test_dataset.py"
+  ]
+}

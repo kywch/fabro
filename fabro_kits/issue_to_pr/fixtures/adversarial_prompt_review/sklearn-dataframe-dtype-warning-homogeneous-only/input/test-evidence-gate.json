@@ -1,0 +1,77 @@
+{
+  "changed_files": [
+    "doc/whats_new/v0.20.rst",
+    "sklearn/utils/tests/test_validation.py",
+    "sklearn/utils/validation.py"
+  ],
+  "claimed_tests": [
+    "sklearn/utils/tests/test_validation.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "pandas DataFrame inputs with homogeneous object column dtypes emit DataConversionWarning when check_array converts them to float64, including estimator context, and return float64 arrays",
+        "path": "sklearn/utils/tests/test_validation.py",
+        "test_name_or_scope": "test_check_array_pandas_dataframe_dtype_warning"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "sklearn/utils/tests/test_validation.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "sklearn/utils/tests/test_validation.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "doc/whats_new/v0.20.rst",
+      "sklearn/utils/tests/test_validation.py",
+      "sklearn/utils/validation.py"
+    ],
+    "commands_claimed_count": 2,
+    "commands_reported_passed_count": 1,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "sklearn/utils/tests/test_validation.py"
+    ],
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "pytest sklearn/utils/tests/test_validation.py -k \"dtype_warning or pandas_dtype_object_conversion or dataframe\" -q",
+        "exit_code": 0,
+        "id": "focused-validation-dtype-dataframe",
+        "output_tail": ".....                                                                    [100%]\n5 passed, 48 deselected in 1.11s\n",
+        "validation_command_id": "focused-validation-dtype-dataframe",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "sklearn/utils/tests/test_validation.py"
+  ],
+  "warnings": []
+}

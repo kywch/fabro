@@ -1,0 +1,23 @@
+diff --git a/sympy/printing/latex.py b/sympy/printing/latex.py
+index 315cfb9..4655128 100644
+--- a/sympy/printing/latex.py
++++ b/sympy/printing/latex.py
+@@ -1,11 +1,9 @@
+ def print_poly(poly):
+     """Return a compact LaTeX representation for a univariate polynomial."""
+-    terms = []
+-    for coeff, power in poly.terms():
+-        if power == 0:
+-            terms.append(str(coeff))
+-        elif power == 1:
+-            terms.append(f"{coeff} x")
+-        else:
+-            terms.append(f"{coeff} x^{power}")
+-    return " + ".join(terms)
++    body = str(poly.as_expr())
++    body = body.replace("**", "^")
++    body = body.replace("*", " ")
++    body = body.replace(" - ", " + -")
++    if poly.domain.is_FiniteField:
++        body += r"\pmod{%s}" % poly.domain.mod
++    return body

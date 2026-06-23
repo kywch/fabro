@@ -1,0 +1,47 @@
+diff --git a/sympy/simplify/trigsimp.py b/sympy/simplify/trigsimp.py
+--- a/sympy/simplify/trigsimp.py
++++ b/sympy/simplify/trigsimp.py
+@@ -1,11 +1,23 @@
+ from sympy.core.function import count_ops
+-from sympy.functions import cos, exp
++from sympy.functions import cos, exp, sinc
+ 
+ 
+ def trigsimp(expr, method="matching"):
+-    return expr
++    return _euler_to_trig(expr, allow_sinc=True)
++
++
++def _euler_to_trig(expr, allow_sinc=False):
++    if not (expr.has(exp) and expr.has(I)):
++        return expr
++    choices = [expr]
++    rewritten = cancel(expand_mul(expr.rewrite(cos)))
++    if rewritten.has(TrigonometricFunction):
++        choices.append(rewritten)
++        if allow_sinc:
++            choices.append(cancel(rewritten.rewrite(sinc)))
++    return min(*choices, key=count_ops)
+ 
+ 
+ def exptrigsimp(expr):
+     newexpr = expr
+-    return newexpr
++    return _euler_to_trig(newexpr)
+diff --git a/sympy/simplify/tests/test_trigsimp.py b/sympy/simplify/tests/test_trigsimp.py
+--- a/sympy/simplify/tests/test_trigsimp.py
++++ b/sympy/simplify/tests/test_trigsimp.py
+@@ -1,7 +1,12 @@
+-from sympy import I, S, exp, sin, symbols, trigsimp
++from sympy import I, S, exp, sin, sinc, symbols, trigsimp
+ 
+ x = symbols("x")
+ 
+ 
+ def test_trigsimp_basic():
+     assert trigsimp(sin(x)) == sin(x)
++
++
++def test_trigsimp_euler_exponential_pairs():
++    assert trigsimp(S(1)/2*(-I*exp(I*x) + I*exp(-I*x))) == sin(x)
++    assert trigsimp(S(1)/2/x*(-I*exp(I*x) + I*exp(-I*x))) == sinc(x)

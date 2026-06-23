@@ -1,0 +1,13 @@
+{
+  "acceptance_criteria": [
+    "Identity(n)[i, j] should represent symbolic equality without assuming off-diagonal zero.",
+    "Nested sums over Identity(n) entries should evaluate to n for a positive symbolic size.",
+    "Any helper added for KroneckerDelta or Piecewise summation should not change unrelated finite Piecewise sums."
+  ],
+  "commands_run": [
+    "python -m unittest discover -s sympy/concrete/tests -p test_delta.py -q",
+    "python -m unittest discover -s sympy/matrices/expressions/tests -p test_matexpr.py -q"
+  ],
+  "issue": "Identity matrix entries with symbolic indices should preserve the undecidable i == j case so nested sums of identity entries simplify correctly.",
+  "schema_version": 1
+}

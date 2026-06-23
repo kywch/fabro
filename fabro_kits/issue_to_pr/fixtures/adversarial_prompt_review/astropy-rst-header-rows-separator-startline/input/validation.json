@@ -1,0 +1,11 @@
+{
+  "acceptance_criteria": [
+    "Additional header rows should be emitted in the requested order.",
+    "The RST separator and data start line should remain consistent for normal tables."
+  ],
+  "commands_run": [
+    "python -m pytest astropy/io/ascii/tests/test_rst.py -k header_rows"
+  ],
+  "issue": "Astropy RST table writer should support header_rows without corrupting separator placement or data start lines.",
+  "schema_version": 1
+}

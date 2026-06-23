@@ -1,0 +1,137 @@
+diff --git a/django/conf/global_settings.py b/django/conf/global_settings.py
+index 759f2d0..bdeec80 100644
+--- a/django/conf/global_settings.py
++++ b/django/conf/global_settings.py
+@@ -2,7 +2,7 @@ FILE_UPLOAD_TEMP_DIR = None
+ 
+ # The numeric mode to set newly-uploaded files to. The value should be a mode
+ # you'd pass directly to os.chmod; see https://docs.python.org/library/os.html#files-and-directories.
+-FILE_UPLOAD_PERMISSIONS = None
++FILE_UPLOAD_PERMISSIONS = 0o644
+ 
+ # The numeric mode to assign to newly-created directories, when uploading files.
+ FILE_UPLOAD_DIRECTORY_PERMISSIONS = None
+diff --git a/docs/howto/deployment/checklist.txt b/docs/howto/deployment/checklist.txt
+index 7810cf2..24096f7 100644
+--- a/docs/howto/deployment/checklist.txt
++++ b/docs/howto/deployment/checklist.txt
+@@ -1,9 +1,7 @@
+ :setting:`FILE_UPLOAD_PERMISSIONS`
+ ----------------------------------
+ 
+-With the default file upload settings, files smaller than
+-:setting:`FILE_UPLOAD_MAX_MEMORY_SIZE` may be stored with a different mode
+-than larger files as described in :setting:`FILE_UPLOAD_PERMISSIONS`.
+-
+-Setting :setting:`FILE_UPLOAD_PERMISSIONS` ensures all files are uploaded with
+-the same permissions.
++The default :setting:`FILE_UPLOAD_PERMISSIONS` mode is ``0o644``. If this
++setting is changed to ``None``, files smaller than
++:setting:`FILE_UPLOAD_MAX_MEMORY_SIZE` may be stored with a different mode than
++larger files as described in :setting:`FILE_UPLOAD_PERMISSIONS`.
+diff --git a/docs/ref/settings.txt b/docs/ref/settings.txt
+index cb2d8d3..a4c1513 100644
+--- a/docs/ref/settings.txt
++++ b/docs/ref/settings.txt
+@@ -1,16 +1,15 @@
+ ``FILE_UPLOAD_PERMISSIONS``
+ ---------------------------
+ 
+-Default: ``None``
++Default: ``0o644``
+ 
+-The numeric mode (i.e. ``0o644``) to set newly uploaded files to. For
+-more information about what these modes mean, see the documentation for
+-:func:`os.chmod`.
++The numeric mode to set newly uploaded files to. For more information about
++what these modes mean, see the documentation for :func:`os.chmod`.
+ 
+-If this isn't given or is ``None``, you'll get operating-system
+-dependent behavior. On most platforms, temporary files will have a mode
+-of ``0o600``, and files saved from memory will be saved using the
+-system's standard umask.
++To restore the previous behavior and use operating-system dependent
++permissions, set this to ``None``. On most platforms, uploaded files that are
++received as temporary files will have a mode of ``0o600``, and files received
++from memory will be saved using the system's standard umask.
+ 
+ For security reasons, these permissions aren't applied to the temporary files
+ that are stored in :setting:`FILE_UPLOAD_TEMP_DIR`.
+diff --git a/docs/releases/3.0.txt b/docs/releases/3.0.txt
+index b9a1c89..63440f1 100644
+--- a/docs/releases/3.0.txt
++++ b/docs/releases/3.0.txt
+@@ -3,5 +3,13 @@ Dropped support for Oracle 12.1
+ Upstream support for Oracle 12.1 ends in July 2021. Django 2.2 will be
+ supported until April 2022. Django 3.0 officially supports Oracle 12.2 and 18c.
+ 
++``FILE_UPLOAD_PERMISSIONS`` default
++===================================
++
++The default value of the :setting:`FILE_UPLOAD_PERMISSIONS` setting is changed
++from ``None`` to ``0o644`` to avoid inconsistent file permissions for uploaded
++files. Set ``FILE_UPLOAD_PERMISSIONS = None`` to restore the previous
++operating-system dependent behavior.
++
+ Removed private Python 2 compatibility APIs
+ ===========================================
+diff --git a/tests/file_storage/tests.py b/tests/file_storage/tests.py
+index d8f9e57..5c3fa21 100644
+--- a/tests/file_storage/tests.py
++++ b/tests/file_storage/tests.py
+@@ -11,9 +11,15 @@ class FileStoragePermissions(unittest.TestCase):
+         actual_mode = os.stat(self.storage.path(name))[0] & 0o777
+         self.assertEqual(actual_mode, 0o654)
+ 
+-    @override_settings(FILE_UPLOAD_PERMISSIONS=None)
+     def test_file_upload_default_permissions(self):
++        self.storage = FileSystemStorage(self.storage_dir)
++        fname = self.storage.save("some_file", ContentFile("data"))
++        mode = os.stat(self.storage.path(fname))[0] & 0o777
++        self.assertEqual(mode, 0o644)
++
++    @override_settings(FILE_UPLOAD_PERMISSIONS=None)
++    def test_file_upload_permissions_none(self):
+         self.storage = FileSystemStorage(self.storage_dir)
+         fname = self.storage.save("some_file", ContentFile("data"))
+         mode = os.stat(self.storage.path(fname))[0] & 0o777
+         self.assertEqual(mode, 0o666 & ~self.umask)
+diff --git a/tests/staticfiles_tests/test_storage.py b/tests/staticfiles_tests/test_storage.py
+index f597651..615cd36 100644
+--- a/tests/staticfiles_tests/test_storage.py
++++ b/tests/staticfiles_tests/test_storage.py
+@@ -15,11 +15,21 @@ class TestStaticFilePermissions(CollectionTestCase):
+         self.assertEqual(file_mode, 0o655)
+         self.assertEqual(dir_mode, 0o765)
+ 
++    @override_settings(FILE_UPLOAD_DIRECTORY_PERMISSIONS=None)
++    def test_collect_static_files_default_permissions(self):
++        call_command('collectstatic', **self.command_params)
++        test_file = os.path.join(settings.STATIC_ROOT, "test.txt")
++        test_dir = os.path.join(settings.STATIC_ROOT, "subdir")
++        file_mode = os.stat(test_file)[0] & 0o777
++        dir_mode = os.stat(test_dir)[0] & 0o777
++        self.assertEqual(file_mode, 0o644)
++        self.assertEqual(dir_mode, 0o777 & ~self.umask)
++
+     @override_settings(
+         FILE_UPLOAD_PERMISSIONS=None,
+         FILE_UPLOAD_DIRECTORY_PERMISSIONS=None,
+     )
+-    def test_collect_static_files_default_permissions(self):
++    def test_collect_static_files_permissions_none(self):
+         call_command('collectstatic', **self.command_params)
+         test_file = os.path.join(settings.STATIC_ROOT, "test.txt")
+         test_dir = os.path.join(settings.STATIC_ROOT, "subdir")
+diff --git a/tests/test_utils/tests.py b/tests/test_utils/tests.py
+index 998589f..e953eb6 100644
+--- a/tests/test_utils/tests.py
++++ b/tests/test_utils/tests.py
+@@ -8,6 +8,6 @@ class OverrideSettingsTests(SimpleTestCase):
+         the file_permissions_mode attribute of
+         django.core.files.storage.default_storage.
+         """
+-        self.assertIsNone(default_storage.file_permissions_mode)
++        self.assertEqual(default_storage.file_permissions_mode, 0o644)
+         with self.settings(FILE_UPLOAD_PERMISSIONS=0o777):
+             self.assertEqual(default_storage.file_permissions_mode, 0o777)

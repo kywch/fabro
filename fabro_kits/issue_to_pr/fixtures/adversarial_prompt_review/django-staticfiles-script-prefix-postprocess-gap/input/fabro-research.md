@@ -1,0 +1,1 @@
+The saved adversarial review opened a major row: direct template and storage URL paths were covered, but staticfiles CSS post-processing has its own url_converter path. The review should notice whether a CSS url('/static/...') processed under set_script_prefix('/prefix/') can still be emitted as /static/... instead of /prefix/static/... .

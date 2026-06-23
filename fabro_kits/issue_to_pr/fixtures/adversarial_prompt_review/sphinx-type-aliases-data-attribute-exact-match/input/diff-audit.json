@@ -1,0 +1,21 @@
+{
+  "changed_files": [
+    "CHANGES",
+    "sphinx/ext/autodoc/__init__.py",
+    "tests/roots/test-ext-autodoc/target/type_aliases.py",
+    "tests/test_ext_autodoc_configs.py"
+  ],
+  "diff_stat": [
+    " CHANGES                                            |  2 +",
+    " sphinx/ext/autodoc/__init__.py                     | 63 +++++++++++-----------",
+    " .../roots/test-ext-autodoc/target/type_aliases.py  | 16 ++++++",
+    " tests/test_ext_autodoc_configs.py                  | 15 ++++++",
+    " 4 files changed, 66 insertions(+), 30 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "tests/roots/test-ext-autodoc/target/type_aliases.py",
+    "tests/test_ext_autodoc_configs.py"
+  ]
+}

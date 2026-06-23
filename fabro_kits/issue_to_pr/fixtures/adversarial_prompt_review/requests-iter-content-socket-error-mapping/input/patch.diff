@@ -1,0 +1,82 @@
+diff --git a/HISTORY.rst b/HISTORY.rst
+index 351d869..bfc1aa6 100644
+--- a/HISTORY.rst
++++ b/HISTORY.rst
+@@ -1,6 +1,8 @@
+ Release History
+ +++++++++++++++
+ 
+ - Allow copying of PreparedRequests without headers/cookies
++- Wrapped socket errors raised while streaming response bodies in
++  ``requests.exceptions.ConnectionError``.
+ 
+ 2.3.0 (2014-05-16)
+ +++++++++++++++++++
+diff --git a/requests/models.py b/requests/models.py
+index 0e35de0..2ababaf 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -2,6 +2,7 @@
+ 
+ import collections
+ import datetime
++import socket
+ 
+ from io import BytesIO, UnsupportedOperation
+ from .hooks import default_hooks
+@@ -10,7 +11,7 @@ from .packages.urllib3.util import parse_url
+ from .packages.urllib3.exceptions import DecodeError
+ from .exceptions import (
+     HTTPError, RequestException, MissingSchema, InvalidURL,
+-    ChunkedEncodingError, ContentDecodingError)
++    ChunkedEncodingError, ContentDecodingError, ConnectionError)
+ from .utils import (
+     guess_filename, get_auth_from_url, requote_uri,
+     stream_decode_response_unicode, to_key_val_list, parse_header_links,
+@@ -25,6 +26,8 @@ class Response(object):
+                     raise ChunkedEncodingError(e)
+                 except DecodeError as e:
+                     raise ContentDecodingError(e)
++                except socket.error as e:
++                    raise ConnectionError(e)
+             except AttributeError:
+                 while True:
+                     chunk = self.raw.read(chunk_size)
+diff --git a/test_requests.py b/test_requests.py
+index c15e9f0..77b2e2d 100644
+--- a/test_requests.py
++++ b/test_requests.py
+@@ -5,6 +5,7 @@ import collections
+ import json
+ import os
+ import pickle
++import socket
+ import unittest
+ 
+ import requests
+@@ -12,7 +13,7 @@ from requests.auth import HTTPDigestAuth, _basic_auth_str
+ from requests.compat import (
+     Morsel, cookielib, getproxies, str, urljoin, urlparse, is_py3, builtin_str)
+ from requests.cookies import cookiejar_from_dict, morsel_to_cookie
+-from requests.exceptions import InvalidURL, MissingSchema
++from requests.exceptions import ConnectionError, InvalidURL, MissingSchema
+ from requests.models import PreparedRequest
+ from requests.structures import CaseInsensitiveDict
+ from requests.sessions import SessionRedirectMixin
+@@ -23,5 +24,16 @@ class RequestsTestCase(unittest.TestCase):
+         chunks = r.iter_content(decode_unicode=True)
+         assert all(isinstance(chunk, str) for chunk in chunks)
+ 
++    def test_iter_content_handles_socket_error(self):
++        class Raw(object):
++            def stream(self, *args, **kwargs):
++                raise socket.error()
++
++        r = requests.Response()
++        r.raw = Raw()
++
++        with pytest.raises(ConnectionError):
++            list(r.iter_content())
++
+     def test_request_and_response_are_pickleable(self):
+         r = requests.get(httpbin('get'))

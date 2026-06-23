@@ -1,0 +1,34 @@
+{
+  "case_id": "astropy-rst-header-rows-separator-startline",
+  "expected_rows": [
+    {
+      "categories": [
+        "code",
+        "tests"
+      ],
+      "id": "astropy-rst-header-rows-separator-startline",
+      "keyword_groups": [
+        [
+          "header_rows"
+        ],
+        [
+          "position_line",
+          "separator"
+        ],
+        [
+          "data.start_line",
+          "start_line"
+        ],
+        [
+          "RST",
+          "FixedWidth"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "astropy/io/ascii/rst.py",
+        "astropy/io/ascii/tests/test_rst.py"
+      ]
+    }
+  ]
+}

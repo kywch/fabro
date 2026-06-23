@@ -1,0 +1,36 @@
+{
+  "case_id": "xarray-unstacked-dataset-drop-synthetic-coord",
+  "expected_rows": [
+    {
+      "categories": [
+        "code"
+      ],
+      "id": "xarray-unstacked-dataset-drop-synthetic-coord",
+      "keyword_groups": [
+        [
+          "to_unstacked_dataset",
+          "to_stacked_array"
+        ],
+        [
+          "drop_vars",
+          "drop"
+        ],
+        [
+          "scalar coord",
+          "meaningful coord",
+          "MergeError"
+        ],
+        [
+          "dim in data.coords",
+          "dim not in data.dims",
+          "synthetic"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "xarray/core/dataarray.py",
+        "xarray/tests/test_dataset.py"
+      ]
+    }
+  ]
+}

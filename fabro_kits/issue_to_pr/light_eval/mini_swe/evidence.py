@@ -22,10 +22,10 @@ def adversarial_review_for_case(case: MiniSweCase) -> dict[str, Any]:
     elif case_behavior(case).change_source:
         checked_risks.append(
             {
-                "risk": "source behavior change may miss the requested greeting contract",
+                "risk": "source behavior change greeting contract regression",
                 "evidence": ["src/greeting.py"],
                 "counterexample_check": (
-                    "src/greeting.py changes the greeting return value and "
+                    "Fully answered by src/greeting.py return value change and "
                     "public tests exercise the requested behavior"
                 ),
             }

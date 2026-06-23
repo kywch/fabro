@@ -1,0 +1,109 @@
+{
+  "changed_files": [
+    "CHANGES",
+    "sphinx/ext/autodoc/__init__.py",
+    "tests/roots/test-ext-autodoc/target/type_aliases.py",
+    "tests/test_ext_autodoc_configs.py"
+  ],
+  "claimed_tests": [
+    "tests/test_ext_autodoc_configs.py",
+    "tests/roots/test-ext-autodoc/target/type_aliases.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "autodoc_type_aliases maps a String forward annotation to target.type_aliases.MyString for a module data variable, a class attribute, and an analyzer-discovered instance attribute.",
+        "path": "tests/test_ext_autodoc_configs.py",
+        "test_name_or_scope": "test_autodoc_type_aliases_for_variables_and_attributes"
+      },
+      {
+        "behavior_guarded": "Fixture module provides postponed String annotations for module data, class attributes, and instance attributes used by the focused regression test.",
+        "path": "tests/roots/test-ext-autodoc/target/type_aliases.py",
+        "test_name_or_scope": "target.type_aliases fixture"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "tests/test_ext_autodoc_configs.py",
+      "tests/roots/test-ext-autodoc/target/type_aliases.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "tests/test_ext_autodoc_configs.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "tests/roots/test-ext-autodoc/target/type_aliases.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "CHANGES",
+      "sphinx/ext/autodoc/__init__.py",
+      "tests/roots/test-ext-autodoc/target/type_aliases.py",
+      "tests/test_ext_autodoc_configs.py"
+    ],
+    "commands_claimed_count": 4,
+    "commands_reported_passed_count": 4,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "tests/roots/test-ext-autodoc/target/type_aliases.py",
+      "tests/test_ext_autodoc_configs.py"
+    ],
+    "tests_passed_count": 3,
+    "verified_commands": [
+      {
+        "command": "pytest tests/test_ext_autodoc_configs.py::test_autodoc_type_aliases_for_variables_and_attributes -q",
+        "exit_code": 0,
+        "id": "test-focused-final",
+        "output_tail": ".                                                                        [100%]\n=============================== warnings summary ===============================\nsphinx/util/docutils.py:45\n  /workspace/sphinx/util/docutils.py:45: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    __version_info__ = tuple(LooseVersion(docutils.__version__).version)\n\nsphinx/registry.py:22\n  /workspace/sphinx/registry.py:22: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n    from pkg_resources import iter_entry_points\n\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n  /opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('sphinxcontrib')`.\n  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages\n    declare_namespace(pkg)\n\nsphinx/directives/patches.py:14\n  /workspace/sphinx/directives/patches.py:14: DeprecationWarning: The `docutils.parsers.rst.directive.html` module will be removed in Docutils 2.0. Since Docutils 0.18, the \"Meta\" node is defined in `docutils.parsers.rst.directives.misc`.\n    from docutils.parsers.rst.directives import html, images, tables\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n1 passed, 7 warnings in 0.29s\n",
+        "validation_command_id": "test-focused-final",
+        "zero_test_output": false
+      },
+      {
+        "command": "pytest tests/test_ext_autodoc_configs.py::test_autodoc_type_aliases -q",
+        "exit_code": 0,
+        "id": "test-existing-aliases",
+        "output_tail": ".                                                                        [100%]\n=============================== warnings summary ===============================\nsphinx/util/docutils.py:45\n  /workspace/sphinx/util/docutils.py:45: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    __version_info__ = tuple(LooseVersion(docutils.__version__).version)\n\nsphinx/registry.py:22\n  /workspace/sphinx/registry.py:22: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n    from pkg_resources import iter_entry_points\n\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n  /opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('sphinxcontrib')`.\n  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages\n    declare_namespace(pkg)\n\nsphinx/directives/patches.py:14\n  /workspace/sphinx/directives/patches.py:14: DeprecationWarning: The `docutils.parsers.rst.directive.html` module will be removed in Docutils 2.0. Since Docutils 0.18, the \"Meta\" node is defined in `docutils.parsers.rst.directives.misc`.\n    from docutils.parsers.rst.directives import html, images, tables\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n1 passed, 7 warnings in 0.32s\n",
+        "validation_command_id": "test-existing-aliases",
+        "zero_test_output": false
+      },
+      {
+        "command": "pytest tests/test_ext_autodoc.py::test_autodoc_typed_instance_variables -q",
+        "exit_code": 0,
+        "id": "test-nearby-typed-vars",
+        "output_tail": ".                                                                        [100%]\n=============================== warnings summary ===============================\nsphinx/util/docutils.py:45\n  /workspace/sphinx/util/docutils.py:45: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    __version_info__ = tuple(LooseVersion(docutils.__version__).version)\n\nsphinx/registry.py:22\n  /workspace/sphinx/registry.py:22: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n    from pkg_resources import iter_entry_points\n\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n../opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146\n  /opt/miniconda3/envs/testbed/lib/python3.9/site-packages/pkg_resources/__init__.py:3146: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('sphinxcontrib')`.\n  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages\n    declare_namespace(pkg)\n\nsphinx/directives/patches.py:14\n  /workspace/sphinx/directives/patches.py:14: DeprecationWarning: The `docutils.parsers.rst.directive.html` module will be removed in Docutils 2.0. Since Docutils 0.18, the \"Meta\" node is defined in `docutils.parsers.rst.directives.misc`.\n    from docutils.parsers.rst.directives import html, images, tables\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n1 passed, 7 warnings in 0.31s\n",
+        "validation_command_id": "test-nearby-typed-vars",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "tests/roots/test-ext-autodoc/target/type_aliases.py",
+    "tests/test_ext_autodoc_configs.py"
+  ],
+  "warnings": []
+}

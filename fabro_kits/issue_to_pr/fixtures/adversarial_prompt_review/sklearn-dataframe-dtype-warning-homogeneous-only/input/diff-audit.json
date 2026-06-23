@@ -1,0 +1,18 @@
+{
+  "changed_files": [
+    "doc/whats_new/v0.20.rst",
+    "sklearn/utils/tests/test_validation.py",
+    "sklearn/utils/validation.py"
+  ],
+  "diff_stat": [
+    " doc/whats_new/v0.20.rst                |  3 +++",
+    " sklearn/utils/tests/test_validation.py | 22 ++++++++++++++++++++++",
+    " sklearn/utils/validation.py            | 15 +++++++++++++++",
+    " 3 files changed, 40 insertions(+)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "sklearn/utils/tests/test_validation.py"
+  ]
+}

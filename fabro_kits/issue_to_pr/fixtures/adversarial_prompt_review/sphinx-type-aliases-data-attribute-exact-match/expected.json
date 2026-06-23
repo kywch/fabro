@@ -1,0 +1,38 @@
+{
+  "case_id": "sphinx-type-aliases-data-attribute-exact-match",
+  "expected_rows": [
+    {
+      "categories": [
+        "code",
+        "tests"
+      ],
+      "id": "sphinx-type-aliases-data-attribute-exact-match",
+      "keyword_groups": [
+        [
+          "autodoc_type_aliases"
+        ],
+        [
+          "DataDocumenter",
+          "AttributeDocumenter",
+          "attribute"
+        ],
+        [
+          "analyzer",
+          "__annotations__",
+          "get_type_hints"
+        ],
+        [
+          "exact",
+          "compound",
+          "dotted",
+          "String"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "sphinx/ext/autodoc/__init__.py",
+        "tests/test_ext_autodoc_configs.py"
+      ]
+    }
+  ]
+}

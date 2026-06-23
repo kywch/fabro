@@ -1,0 +1,18 @@
+{
+  "changed_files": [
+    "doc/whats-new.rst",
+    "xarray/core/concat.py",
+    "xarray/tests/test_concat.py"
+  ],
+  "diff_stat": [
+    " doc/whats-new.rst           |  4 +++",
+    " xarray/core/concat.py       | 84 ++++++++++++++++++++++++++++++++++++++++-----",
+    " xarray/tests/test_concat.py | 66 ++++++++++++++++++++++++++++++++---",
+    " 3 files changed, 140 insertions(+), 14 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "xarray/tests/test_concat.py"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "case_id": "django-staticfiles-script-prefix-postprocess-gap",
+  "expected_rows": [
+    {
+      "categories": [
+        "code",
+        "tests"
+      ],
+      "id": "django-staticfiles-script-prefix-postprocess-gap",
+      "keyword_groups": [
+        [
+          "url_converter",
+          "post_process",
+          "CSS"
+        ],
+        [
+          "SCRIPT_NAME",
+          "script prefix",
+          "prefix"
+        ],
+        [
+          "STATIC_URL",
+          "/static/"
+        ],
+        [
+          "unprefixed",
+          "rooted",
+          "missing prefix"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "django/contrib/staticfiles/storage.py",
+        "tests/staticfiles_tests/test_storage.py"
+      ]
+    }
+  ]
+}

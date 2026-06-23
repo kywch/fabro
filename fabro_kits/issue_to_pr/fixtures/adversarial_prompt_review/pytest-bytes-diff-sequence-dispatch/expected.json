@@ -1,0 +1,36 @@
+{
+  "case_id": "pytest-bytes-diff-sequence-dispatch",
+  "expected_rows": [
+    {
+      "categories": [
+        "code",
+        "tests"
+      ],
+      "id": "pytest-bytes-diff-sequence-dispatch",
+      "keyword_groups": [
+        [
+          "bytes",
+          "isbytes"
+        ],
+        [
+          "_diff_text"
+        ],
+        [
+          "sequence",
+          "issequence",
+          "Right contains",
+          "At index"
+        ],
+        [
+          "repr",
+          "readable diff"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "src/_pytest/assertion/util.py",
+        "testing/test_assertion.py"
+      ]
+    }
+  ]
+}

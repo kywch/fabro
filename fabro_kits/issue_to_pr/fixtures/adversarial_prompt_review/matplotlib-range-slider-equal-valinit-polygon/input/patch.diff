@@ -1,0 +1,68 @@
+diff --git a/lib/matplotlib/tests/test_widgets.py b/lib/matplotlib/tests/test_widgets.py
+index a19770e3b0..61a0b33125 100644
+--- a/lib/matplotlib/tests/test_widgets.py
++++ b/lib/matplotlib/tests/test_widgets.py
+@@ -1120,6 +1120,25 @@ def test_range_slider(orientation):
+     assert_allclose(slider.val, [0.1, 0.34])
+ 
+ 
++@pytest.mark.parametrize("orientation", ["horizontal", "vertical"])
++def test_range_slider_same_init_values(orientation):
++    fig, ax = plt.subplots()
++
++    slider = widgets.RangeSlider(
++        ax=ax, label="", valmin=0.0, valmax=1.0, orientation=orientation,
++        valinit=[0.0, 0.0]
++    )
++
++    assert_allclose(slider.val, (0.0, 0.0))
++    assert slider.poly.xy.shape == (5, 2)
++    if orientation == "vertical":
++        assert_allclose(slider.poly.xy, [
++            [.25, 0], [.25, 0], [.75, 0], [.75, 0], [.25, 0]])
++    else:
++        assert_allclose(slider.poly.xy, [
++            [0, .25], [0, .75], [0, .75], [0, .25], [0, .25]])
++
++
+ def check_polygon_selector(event_sequence, expected_result, selections_count,
+                            **kwargs):
+     """
+diff --git a/lib/matplotlib/widgets.py b/lib/matplotlib/widgets.py
+index da5b40a5ef..a1527a4b62 100644
+--- a/lib/matplotlib/widgets.py
++++ b/lib/matplotlib/widgets.py
+@@ -897,19 +897,22 @@ class RangeSlider(SliderBase):
+         _api.check_shape((2,), val=val)
+         val[0] = self._min_in_bounds(val[0])
+         val[1] = self._max_in_bounds(val[1])
+-        xy = self.poly.xy
+         if self.orientation == "vertical":
+-            xy[0] = .25, val[0]
+-            xy[1] = .25, val[1]
+-            xy[2] = .75, val[1]
+-            xy[3] = .75, val[0]
+-            xy[4] = .25, val[0]
++            xy = np.array([
++                [.25, val[0]],
++                [.25, val[1]],
++                [.75, val[1]],
++                [.75, val[0]],
++                [.25, val[0]],
++            ])
+         else:
+-            xy[0] = val[0], .25
+-            xy[1] = val[0], .75
+-            xy[2] = val[1], .75
+-            xy[3] = val[1], .25
+-            xy[4] = val[0], .25
++            xy = np.array([
++                [val[0], .25],
++                [val[0], .75],
++                [val[1], .75],
++                [val[1], .25],
++                [val[0], .25],
++            ])
+         self.poly.xy = xy
+         self.valtext.set_text(self._format(val))
+         if self.drawon:

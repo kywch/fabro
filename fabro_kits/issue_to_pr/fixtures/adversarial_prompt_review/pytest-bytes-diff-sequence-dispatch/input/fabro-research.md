@@ -1,0 +1,1 @@
+The saved critical review found a subtle assertion-diff dispatch risk. Treating bytes like text routes bytes equality through _diff_text, but bytes are also sequences of ints; the review should verify this does not regress sequence-style comparisons for other objects and that repr handling is intentional for byte literals, not an accidental quote/escape artifact.

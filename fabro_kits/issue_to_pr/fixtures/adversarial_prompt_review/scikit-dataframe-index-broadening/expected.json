@@ -1,0 +1,27 @@
+{
+  "case_id": "scikit-dataframe-index-broadening",
+  "expected_rows": [
+    {
+      "id": "scikit-dataframe-index-broadening",
+      "categories": ["code", "scope"],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "sklearn/utils/validation.py"
+      ],
+      "keyword_groups": [
+        [
+          "DataFrame",
+          "pandas"
+        ],
+        [
+          "index"
+        ],
+        [
+          "broaden",
+          "non-opt-in",
+          "accept_dataframe"
+        ]
+      ]
+    }
+  ]
+}

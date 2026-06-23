@@ -1,0 +1,1 @@
+The patch drops a coord named like the stacked dimension. The prompt should consider whether that drop is too broad and can hide a real scalar coordinate or MergeError rather than only checking the round-trip case.

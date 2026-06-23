@@ -1,0 +1,1 @@
+This round had empty adversarial rows but rich checked risks. A useful prompt should ask whether placeholder construction handles integer/NaN promotion, coordinate checks, existing dimensions, and dask laziness rather than only the happy path.

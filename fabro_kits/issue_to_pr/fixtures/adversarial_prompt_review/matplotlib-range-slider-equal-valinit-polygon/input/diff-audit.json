@@ -1,0 +1,16 @@
+{
+  "changed_files": [
+    "lib/matplotlib/tests/test_widgets.py",
+    "lib/matplotlib/widgets.py"
+  ],
+  "diff_stat": [
+    " lib/matplotlib/tests/test_widgets.py | 19 +++++++++++++++++++",
+    " lib/matplotlib/widgets.py            | 25 ++++++++++++++-----------",
+    " 2 files changed, 33 insertions(+), 11 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "lib/matplotlib/tests/test_widgets.py"
+  ]
+}

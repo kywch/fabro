@@ -1,0 +1,240 @@
+diff --git a/doc/whats-new.rst b/doc/whats-new.rst
+index e97e2d73..8bb38385 100644
+--- a/doc/whats-new.rst
++++ b/doc/whats-new.rst
+@@ -65,6 +65,10 @@ New functions/methods
+ Enhancements
+ ~~~~~~~~~~~~
+ 
++- :py:func:`concat` now supports concatenating :py:class:`Dataset` objects with
++  data variables missing from some inputs. The result includes the union of data
++  variables and fills absent values with ``fill_value``.
++
+ - :py:class:`~xarray.core.GroupBy` enhancements. By `Deepak Cherian <https://github.com/dcherian>`_.
+ 
+   - Added a repr. Example::
+diff --git a/xarray/core/concat.py b/xarray/core/concat.py
+index ecae2566..9f9d662e 100644
+--- a/xarray/core/concat.py
++++ b/xarray/core/concat.py
+@@ -1,8 +1,10 @@
++import numpy as np
+ import pandas as pd
+ 
+ from . import dtypes, utils
+ from .alignment import align
+ from .merge import _VALID_COMPAT, unique_variable
++from .pycompat import dask_array_type
+ from .variable import IndexVariable, Variable, as_variable
+ from .variable import concat as concat_vars
+ 
+@@ -187,8 +189,18 @@ def _calc_concat_over(datasets, dim, dim_names, data_vars, coords, compat):
+                         % subset
+                     )
+                 # all nonindexes that are not the same in each dataset
+-                for k in getattr(datasets[0], subset):
++                if subset == "data_vars":
++                    variables = set()
++                    for ds in datasets:
++                        variables.update(ds.data_vars)
++                else:
++                    variables = getattr(datasets[0], subset)
++                for k in variables:
+                     if k not in concat_over:
++                        if k not in datasets[0].variables:
++                            concat_over.add(k)
++                            equals[k] = False
++                            continue
+                         # Compare the variable of all datasets vs. the one
+                         # of the first dataset. Perform the minimum amount of
+                         # loads in order to avoid multiple loads from disk
+@@ -197,6 +209,10 @@ def _calc_concat_over(datasets, dim, dim_names, data_vars, coords, compat):
+                         # We'll need to know later on if variables are equal.
+                         computed = []
+                         for ds_rhs in datasets[1:]:
++                            if k not in ds_rhs.variables:
++                                concat_over.add(k)
++                                equals[k] = False
++                                break
+                             v_rhs = ds_rhs.variables[k].compute()
+                             computed.append(v_rhs)
+                             if not getattr(v_lhs, compat)(v_rhs):
+@@ -211,9 +227,14 @@ def _calc_concat_over(datasets, dim, dim_names, data_vars, coords, compat):
+                             equals[k] = True
+ 
+             elif opt == "all":
+-                concat_over.update(
+-                    set(getattr(datasets[0], subset)) - set(datasets[0].dims)
+-                )
++                if subset == "data_vars":
++                    concat_over.update(
++                        k for ds in datasets for k in ds.data_vars if k not in ds.dims
++                    )
++                else:
++                    concat_over.update(
++                        set(getattr(datasets[0], subset)) - set(datasets[0].dims)
++                    )
+             elif opt == "minimal":
+                 pass
+             else:
+@@ -260,6 +281,40 @@ def _parse_datasets(datasets):
+     return dim_coords, dims_sizes, all_coord_names, data_vars
+ 
+ 
++def _calc_concat_ordered_names(datasets):
++    ordered = []
++    seen = set()
++    for ds in datasets:
++        for name in ds.variables:
++            if name not in seen:
++                ordered.append(name)
++                seen.add(name)
++    return ordered
++
++
++def _missing_concat_var(template, dim, dim_len, fill_value):
++    dims = template.dims
++    shape = []
++    for d, size in zip(template.dims, template.shape):
++        shape.append(dim_len if d == dim else size)
++
++    if fill_value is dtypes.NA:
++        dtype, fill_value = dtypes.maybe_promote(template.dtype)
++    else:
++        dtype = dtypes.result_type(template.dtype, fill_value)
++
++    if isinstance(template.data, dask_array_type):
++        import dask.array
++
++        chunks = []
++        for d, chunk in zip(template.dims, template.data.chunks):
++            chunks.append((dim_len,) if d == dim else chunk)
++        data = dask.array.full(shape, fill_value, dtype=dtype, chunks=tuple(chunks))
++    else:
++        data = np.full(shape, fill_value, dtype=dtype)
++    return Variable(dims, data, attrs=template.attrs, encoding=template.encoding)
++
++
+ def _dataset_concat(
+     datasets,
+     dim,
+@@ -356,12 +411,23 @@ def _dataset_concat(
+ 
+     # stack up each variable to fill-out the dataset (in order)
+     # n.b. this loop preserves variable order, needed for groupby.
+-    for k in datasets[0].variables:
++    for k in _calc_concat_ordered_names(datasets):
+         if k in concat_over:
+-            try:
+-                vars = ensure_common_dims([ds.variables[k] for ds in datasets])
+-            except KeyError:
+-                raise ValueError("%r is not present in all datasets." % k)
++            present_vars = [ds.variables[k] for ds in datasets if k in ds.variables]
++            if k in coord_names and len(present_vars) != len(datasets):
++                raise ValueError(
++                    "Variables %r are coordinates in some datasets but not others."
++                    % {k}
++                )
++            vars = [
++                ds.variables[k]
++                if k in ds.variables
++                else _missing_concat_var(
++                    present_vars[0], dim, concat_dim_lengths[n], fill_value
++                )
++                for n, ds in enumerate(datasets)
++            ]
++            vars = ensure_common_dims(vars)
+             combined = concat_vars(vars, dim, positions)
+             assert isinstance(combined, Variable)
+             result_vars[k] = combined
+diff --git a/xarray/tests/test_concat.py b/xarray/tests/test_concat.py
+index c7af0fc9..710cfa35 100644
+--- a/xarray/tests/test_concat.py
++++ b/xarray/tests/test_concat.py
+@@ -44,7 +44,7 @@ def test_concat_compat():
+ 
+     with raises_regex(ValueError, "coordinates in some datasets but not others"):
+         concat([ds1, ds2], dim="q")
+-    with raises_regex(ValueError, "'q' is not present in all datasets"):
++    with raises_regex(ValueError, "coordinates in some datasets but not others"):
+         concat([ds2, ds1], dim="q")
+ 
+ 
+@@ -190,10 +190,12 @@ class TestConcatDataset:
+             concat([data0, data1], "dim1", compat="identical")
+         assert_identical(data, concat([data0, data1], "dim1", compat="equals"))
+ 
+-        with raises_regex(ValueError, "present in some datasets"):
+-            data0, data1 = deepcopy(split_data)
+-            data1["foo"] = ("bar", np.random.randn(10))
+-            concat([data0, data1], "dim1")
++        data0, data1 = deepcopy(split_data)
++        data1["foo"] = ("bar", np.random.randn(10))
++        actual = concat([data0, data1], "dim1")
++        assert actual.foo.dims == ("dim1", "bar")
++        assert_array_equal(actual.foo[:3], np.full((3, 10), np.nan))
++        assert_array_equal(actual.foo[3:], np.tile(data1.foo.values, (5, 1)))
+ 
+         with raises_regex(ValueError, "compat.* invalid"):
+             concat(split_data, "dim1", compat="foobar")
+@@ -327,6 +329,60 @@ class TestConcatDataset:
+         actual = concat(datasets, dim="t", fill_value=fill_value)
+         assert_identical(actual, expected)
+ 
++    def test_concat_missing_data_vars_new_dim(self):
++        datasets = [Dataset({"a": 1}), Dataset({"b": 2})]
++        expected = Dataset(
++            {"a": ("t", [1, np.nan]), "b": ("t", [np.nan, 2])}
++        )
++        actual = concat(datasets, dim="t")
++        assert_identical(actual, expected)
++
++    def test_concat_missing_data_vars_existing_dim(self):
++        datasets = [
++            Dataset({"a": ("x", [1, 2])}, coords={"x": [0, 1]}),
++            Dataset({"b": ("x", [3, 4])}, coords={"x": [2, 3]}),
++        ]
++        expected = Dataset(
++            {"a": ("x", [1, 2, np.nan, np.nan]), "b": ("x", [np.nan, np.nan, 3, 4])},
++            coords={"x": [0, 1, 2, 3]},
++        )
++        actual = concat(datasets, dim="x")
++        assert_identical(actual, expected)
++
++    def test_concat_missing_data_vars_fill_value(self):
++        datasets = [Dataset({"a": 1}), Dataset({"b": 2})]
++        expected = Dataset({"a": ("t", [1, -1]), "b": ("t", [-1, 2])})
++        actual = concat(datasets, dim="t", fill_value=-1)
++        assert_identical(actual, expected)
++
++    def test_concat_missing_data_vars_explicit_nan_fill_value(self):
++        datasets = [Dataset({"a": 1}), Dataset({"b": 2})]
++        expected = Dataset(
++            {"a": ("t", [1, np.nan]), "b": ("t", [np.nan, 2])}
++        )
++        actual = concat(datasets, dim="t", fill_value=np.nan)
++        assert_identical(actual, expected)
++
++    def test_concat_missing_data_vars_different(self):
++        datasets = [Dataset({"a": 1}), Dataset({"b": 2})]
++        expected = Dataset(
++            {"a": ("t", [1, np.nan]), "b": ("t", [np.nan, 2])}
++        )
++        actual = concat(datasets, dim="t", data_vars="different")
++        assert_identical(actual, expected)
++
++    @requires_dask
++    def test_concat_missing_data_vars_lazy(self):
++        import dask.array as da
++
++        datasets = [
++            Dataset({"a": ("x", da.from_array(InaccessibleArray(np.arange(2)), 2))}),
++            Dataset({"b": ("x", da.from_array(InaccessibleArray(np.arange(2, 4)), 2))}),
++        ]
++        actual = concat(datasets, dim="t")
++        assert actual.a.shape == (2, 2)
++        assert actual.b.shape == (2, 2)
++
+ 
+ class TestConcatDataArray:
+     def test_concat(self):

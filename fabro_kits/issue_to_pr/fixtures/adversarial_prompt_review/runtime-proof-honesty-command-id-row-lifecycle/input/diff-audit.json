@@ -1,0 +1,16 @@
+{
+  "changed_files": [
+    "src/greeting.py",
+    "tests/test_greeting.py"
+  ],
+  "diff_stat": [
+    " src/greeting.py        | 2 +-",
+    " tests/test_greeting.py | 2 +-",
+    " 2 files changed, 2 insertions(+), 2 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "tests/test_greeting.py"
+  ]
+}

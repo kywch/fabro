@@ -1,0 +1,16 @@
+{
+  "changed_files": [
+    "src/_pytest/assertion/util.py",
+    "testing/test_assertion.py"
+  ],
+  "diff_stat": [
+    " src/_pytest/assertion/util.py | 13 +++++++++----",
+    " testing/test_assertion.py     | 12 ++++++++++++",
+    " 2 files changed, 21 insertions(+), 4 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "testing/test_assertion.py"
+  ]
+}

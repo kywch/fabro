@@ -1,0 +1,37 @@
+{
+  "case_id": "sklearn-dataframe-dtype-warning-homogeneous-only",
+  "expected_rows": [
+    {
+      "categories": [
+        "code",
+        "tests"
+      ],
+      "id": "sklearn-dataframe-dtype-warning-homogeneous-only",
+      "keyword_groups": [
+        [
+          "DataFrame",
+          "pandas"
+        ],
+        [
+          "dtype_orig",
+          "dtypes_orig",
+          "dtype"
+        ],
+        [
+          "DataConversionWarning",
+          "warning"
+        ],
+        [
+          "mixed",
+          "homogeneous",
+          "optional dependency"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "sklearn/utils/validation.py",
+        "sklearn/utils/tests/test_validation.py"
+      ]
+    }
+  ]
+}

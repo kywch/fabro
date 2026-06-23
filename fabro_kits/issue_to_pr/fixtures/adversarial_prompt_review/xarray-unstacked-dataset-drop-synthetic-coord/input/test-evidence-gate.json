@@ -1,0 +1,89 @@
+{
+  "changed_files": [
+    "doc/whats-new.rst",
+    "xarray/core/dataarray.py",
+    "xarray/tests/test_dataset.py"
+  ],
+  "claimed_tests": [
+    "xarray/tests/test_dataset.py",
+    "xarray/tests/test_dataset.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "The reported MCVE with two variables whose only dimension is the sample dimension roundtrips identically through to_stacked_array/to_unstacked_dataset.",
+        "path": "xarray/tests/test_dataset.py",
+        "test_name_or_scope": "TestDataset.test_to_stacked_array_to_unstacked_dataset_single_dimension"
+      },
+      {
+        "behavior_guarded": "Scalar variables with sample_dims=[] also roundtrip identically without conflicting synthetic stacked-dimension coordinates.",
+        "path": "xarray/tests/test_dataset.py",
+        "test_name_or_scope": "TestDataset.test_to_stacked_array_to_unstacked_dataset_scalar_variables"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "xarray/tests/test_dataset.py",
+      "xarray/tests/test_dataset.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "xarray/tests/test_dataset.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "xarray/tests/test_dataset.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "doc/whats-new.rst",
+      "xarray/core/dataarray.py",
+      "xarray/tests/test_dataset.py"
+    ],
+    "commands_claimed_count": 2,
+    "commands_reported_passed_count": 2,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "xarray/tests/test_dataset.py"
+    ],
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "python -m pytest xarray/tests/test_dataset.py::TestDataset::test_to_stacked_array_to_unstacked_dataset xarray/tests/test_dataset.py::TestDataset::test_to_stacked_array_to_unstacked_dataset_different_dimension xarray/tests/test_dataset.py::TestDataset::test_to_stacked_array_to_unstacked_dataset_single_dimension xarray/tests/test_dataset.py::TestDataset::test_to_stacked_array_to_unstacked_dataset_scalar_variables -q",
+        "exit_code": 0,
+        "id": "focused-stacked-array-roundtrip-pytest",
+        "output_tail": "==========================\n../opt/miniconda3/envs/testbed/lib/python3.10/site-packages/_pytest/config/__init__.py:1373\n  /opt/miniconda3/envs/testbed/lib/python3.10/site-packages/_pytest/config/__init__.py:1373: PytestConfigWarning: Unknown config option: env\n  \n    self._warn_or_fail_if_strict(f\"Unknown config option: {key}\\n\")\n\nxarray/__init__.py:1\n  /workspace/xarray/__init__.py:1: DeprecationWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html\n    import pkg_resources\n\nxarray/core/dask_array_compat.py:16\nxarray/core/dask_array_compat.py:16\n  /workspace/xarray/core/dask_array_compat.py:16: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    if LooseVersion(dask_version) >= LooseVersion(\"2.0.0\"):\n\nxarray/core/dask_array_compat.py:149\nxarray/core/dask_array_compat.py:149\n  /workspace/xarray/core/dask_array_compat.py:149: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    if LooseVersion(dask_version) >= LooseVersion(\"2.8.1\"):\n\nxarray/core/dask_array_compat.py:186\nxarray/core/dask_array_compat.py:186\n  /workspace/xarray/core/dask_array_compat.py:186: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    if LooseVersion(dask_version) > LooseVersion(\"2.9.0\"):\n\nxarray/core/pdcompat.py:45\n  /workspace/xarray/core/pdcompat.py:45: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    if LooseVersion(pd.__version__) < \"0.25.0\":\n\n../opt/miniconda3/envs/testbed/lib/python3.10/site-packages/setuptools/_distutils/version.py:345\n  /opt/miniconda3/envs/testbed/lib/python3.10/site-packages/setuptools/_distutils/version.py:345: DeprecationWarning: distutils Version classes are deprecated. Use packaging.version instead.\n    other = LooseVersion(other)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n4 passed, 10 warnings in 1.32s\n",
+        "validation_command_id": "focused-stacked-array-roundtrip-pytest",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "xarray/tests/test_dataset.py"
+  ],
+  "warnings": []
+}

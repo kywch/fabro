@@ -1,0 +1,115 @@
+{
+  "changed_files": [
+    "sympy/functions/elementary/exponential.py",
+    "sympy/functions/elementary/tests/test_trigonometric.py",
+    "sympy/functions/elementary/trigonometric.py",
+    "sympy/simplify/tests/test_trigsimp.py",
+    "sympy/simplify/trigsimp.py"
+  ],
+  "claimed_tests": [
+    "sympy/functions/elementary/tests/test_trigonometric.py",
+    "sympy/simplify/tests/test_trigsimp.py",
+    "sympy/simplify/tests/test_trigsimp.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "Explicit rewrite(sinc) converts sin(x) to x*sinc(x), and sine-over-argument ratios including sin(pi*x)/(pi*x) simplify to sinc.",
+        "path": "sympy/functions/elementary/tests/test_trigonometric.py",
+        "test_name_or_scope": "test_sinc"
+      },
+      {
+        "behavior_guarded": "exptrigsimp recognizes the Euler sine exponential pair and returns sin(x).",
+        "path": "sympy/simplify/tests/test_trigsimp.py",
+        "test_name_or_scope": "test_exptrigsimp"
+      },
+      {
+        "behavior_guarded": "trigsimp returns sin(x) or sinc(x) for the requested exponential Euler pairs, and the Fourier integral rewrite(sinc).simplify() branch becomes sinc(pi*k).",
+        "path": "sympy/simplify/tests/test_trigsimp.py",
+        "test_name_or_scope": "test_trigsimp_euler_exponential_pairs"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "sympy/functions/elementary/tests/test_trigonometric.py",
+      "sympy/simplify/tests/test_trigsimp.py",
+      "sympy/simplify/tests/test_trigsimp.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "sympy/functions/elementary/tests/test_trigonometric.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "sympy/simplify/tests/test_trigsimp.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "sympy/simplify/tests/test_trigsimp.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "sympy/functions/elementary/exponential.py",
+      "sympy/functions/elementary/tests/test_trigonometric.py",
+      "sympy/functions/elementary/trigonometric.py",
+      "sympy/simplify/tests/test_trigsimp.py",
+      "sympy/simplify/trigsimp.py"
+    ],
+    "commands_claimed_count": 6,
+    "commands_reported_passed_count": 3,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "sympy/functions/elementary/tests/test_trigonometric.py",
+      "sympy/simplify/tests/test_trigsimp.py"
+    ],
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "pytest sympy/functions/elementary/tests/test_trigonometric.py::test_sinc sympy/simplify/tests/test_trigsimp.py::test_exptrigsimp sympy/simplify/tests/test_trigsimp.py::test_trigsimp_euler_exponential_pairs -q",
+        "exit_code": 0,
+        "id": "pytest-focused-regressions",
+        "output_tail": "...                                                                      [100%]\n=============================== warnings summary ===============================\nsympy/core/basic.py:3\n  /workspace/sympy/core/basic.py:3: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n    from collections import Mapping, defaultdict\n\nsympy/core/containers.py:271\n  /workspace/sympy/core/containers.py:271: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n    class OrderedSet(collections.MutableSet):\n\nsympy/plotting/plot.py:28\n  /workspace/sympy/plotting/plot.py:28: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n    from collections import Callable\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n3 passed, 3 warnings in 1.04s\n",
+        "validation_command_id": "pytest-focused-regressions",
+        "zero_test_output": false
+      },
+      {
+        "command": "git diff --check -- . ':(exclude).fabro/issue-to-pr/**'",
+        "exit_code": 0,
+        "id": "diff-check-nonmetadata",
+        "output_tail": "",
+        "validation_command_id": "diff-check-nonmetadata",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "sympy/functions/elementary/tests/test_trigonometric.py",
+    "sympy/simplify/tests/test_trigsimp.py"
+  ],
+  "warnings": []
+}

@@ -1,0 +1,87 @@
+{
+  "changed_files": [
+    "sympy/printing/pretty/pretty.py",
+    "sympy/vector/tests/test_printing.py"
+  ],
+  "claimed_tests": [
+    "sympy/vector/tests/test_printing.py",
+    "sympy/vector/tests/test_printing.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "x/y*e.j places e_j on the fraction baseline; ((x/y)**t)*e.j renders e_j exactly once on the centered baseline.",
+        "path": "sympy/vector/tests/test_printing.py",
+        "test_name_or_scope": "test_vector_pretty_print_multiline_scalar_baseline"
+      },
+      {
+        "behavior_guarded": "Existing vector and dyadic unicode pretty-printing with multiline scalar coefficients remains aligned under the new baseline-aware composition.",
+        "path": "sympy/vector/tests/test_printing.py",
+        "test_name_or_scope": "test_pretty_print_unicode expectations for v[8], v[11], d[7]"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "sympy/vector/tests/test_printing.py",
+      "sympy/vector/tests/test_printing.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "sympy/vector/tests/test_printing.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "sympy/vector/tests/test_printing.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "sympy/printing/pretty/pretty.py",
+      "sympy/vector/tests/test_printing.py"
+    ],
+    "commands_claimed_count": 4,
+    "commands_reported_passed_count": 2,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "sympy/vector/tests/test_printing.py"
+    ],
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "python -m pytest sympy/vector/tests/test_printing.py -q -k 'not ascii'",
+        "exit_code": 0,
+        "id": "pytest-vector-printing-unicode",
+        "output_tail": ".....                                                                    [100%]\n=============================== warnings summary ===============================\nsympy/core/basic.py:3\n  /workspace/sympy/core/basic.py:3: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n    from collections import Mapping, defaultdict\n\nsympy/core/expr.py:12\n  /workspace/sympy/core/expr.py:12: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n    from collections import defaultdict, Iterable\n\nsympy/core/containers.py:271\n  /workspace/sympy/core/containers.py:271: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n    class OrderedSet(collections.MutableSet):\n\nsympy/plotting/plot.py:28\n  /workspace/sympy/plotting/plot.py:28: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n    from collections import Callable\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n5 passed, 1 deselected, 4 warnings in 0.45s\n",
+        "validation_command_id": "pytest-vector-printing-unicode",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "sympy/vector/tests/test_printing.py"
+  ],
+  "warnings": []
+}

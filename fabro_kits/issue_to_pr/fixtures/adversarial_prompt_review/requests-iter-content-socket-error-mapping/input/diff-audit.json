@@ -1,0 +1,18 @@
+{
+  "changed_files": [
+    "HISTORY.rst",
+    "requests/models.py",
+    "test_requests.py"
+  ],
+  "diff_stat": [
+    " HISTORY.rst        |  2 ++",
+    " requests/models.py |  5 ++++-",
+    " test_requests.py   | 14 +++++++++++++-",
+    " 3 files changed, 19 insertions(+), 2 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "test_requests.py"
+  ]
+}

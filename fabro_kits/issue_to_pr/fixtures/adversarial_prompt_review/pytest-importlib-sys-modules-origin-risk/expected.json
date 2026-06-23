@@ -1,0 +1,36 @@
+{
+  "case_id": "pytest-importlib-sys-modules-origin-risk",
+  "expected_rows": [
+    {
+      "categories": [
+        "code",
+        "process",
+        "scope"
+      ],
+      "id": "pytest-importlib-sys-modules-origin-risk",
+      "keyword_groups": [
+        [
+          "sys.modules"
+        ],
+        [
+          "origin",
+          "path",
+          "stale",
+          "wrong module"
+        ],
+        [
+          "module_name_from_path",
+          "module name"
+        ],
+        [
+          "importlib"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "src/_pytest/pathlib.py",
+        "testing/acceptance_test.py"
+      ]
+    }
+  ]
+}

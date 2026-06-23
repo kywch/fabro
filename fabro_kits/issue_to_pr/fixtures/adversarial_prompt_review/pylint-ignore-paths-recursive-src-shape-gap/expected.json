@@ -1,0 +1,36 @@
+{
+  "case_id": "pylint-ignore-paths-recursive-src-shape-gap",
+  "expected_rows": [
+    {
+      "categories": [
+        "tests",
+        "process"
+      ],
+      "id": "pylint-ignore-paths-recursive-src-shape-gap",
+      "keyword_groups": [
+        [
+          "ignore-paths"
+        ],
+        [
+          "recursive"
+        ],
+        [
+          "src/gen",
+          "^src",
+          "anchored"
+        ],
+        [
+          "./",
+          "current directory",
+          "issue shape",
+          "reported shape"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "pylint/lint/expand_modules.py",
+        "tests/test_self.py"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "changed_files": [
+    "sympy/concrete/delta.py",
+    "sympy/concrete/summations.py",
+    "sympy/concrete/tests/test_delta.py",
+    "sympy/matrices/expressions/matexpr.py",
+    "sympy/matrices/expressions/tests/test_matexpr.py"
+  ],
+  "diff_stat": [
+    " sympy/concrete/delta.py                          | 49 ++++++++++++++++++++++++",
+    " sympy/concrete/summations.py                     |  6 ++-",
+    " sympy/concrete/tests/test_delta.py               |  5 +++",
+    " sympy/matrices/expressions/matexpr.py            |  6 +--",
+    " sympy/matrices/expressions/tests/test_matexpr.py | 34 +++++++++++++++-",
+    " 5 files changed, 94 insertions(+), 6 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "sympy/concrete/tests/test_delta.py",
+    "sympy/matrices/expressions/tests/test_matexpr.py"
+  ]
+}

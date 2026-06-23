@@ -1,0 +1,75 @@
+{
+  "changed_files": [
+    "src/_pytest/assertion/util.py",
+    "testing/test_assertion.py"
+  ],
+  "claimed_tests": [
+    "testing/test_assertion.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "Bytes equality failures show readable byte-literal diff lines and do not emit ordinal sequence messages for length or same-length differences.",
+        "path": "testing/test_assertion.py",
+        "test_name_or_scope": "TestAssert_reprcompare.test_bytes_diff"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "testing/test_assertion.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "testing/test_assertion.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "src/_pytest/assertion/util.py",
+      "testing/test_assertion.py"
+    ],
+    "commands_claimed_count": 1,
+    "commands_reported_passed_count": 1,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "testing/test_assertion.py"
+    ],
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "python -m pytest testing/test_assertion.py::TestAssert_reprcompare -q",
+        "exit_code": 0,
+        "id": "focused-assertreprcompare",
+        "output_tail": "..............................                                           [100%]\n30 passed in 0.14 seconds\n",
+        "validation_command_id": "focused-assertreprcompare",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "testing/test_assertion.py"
+  ],
+  "warnings": []
+}

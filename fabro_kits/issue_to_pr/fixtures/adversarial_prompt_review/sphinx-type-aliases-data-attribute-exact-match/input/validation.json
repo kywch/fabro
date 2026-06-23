@@ -1,0 +1,12 @@
+{
+  "acceptance_criteria": [
+    "Aliases should apply for data and attribute documenters.",
+    "Analyzer-discovered annotations and direct __annotations__ should remain consistent.",
+    "Compound or dotted type hints should not be accidentally skipped."
+  ],
+  "commands_run": [
+    "python -m pytest tests/test_ext_autodoc_configs.py -k type_aliases"
+  ],
+  "issue": "autodoc_type_aliases should apply to variable and attribute annotations rendered by autodoc.",
+  "schema_version": 1
+}

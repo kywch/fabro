@@ -1,0 +1,83 @@
+{
+  "changed_files": [
+    "lib/matplotlib/tests/test_widgets.py",
+    "lib/matplotlib/widgets.py"
+  ],
+  "claimed_tests": [
+    "lib/matplotlib/tests/test_widgets.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "RangeSlider initializes with equal valinit values in both horizontal and vertical orientations, preserves the equal slider value, and keeps a closed 5-vertex selected-range polygon.",
+        "path": "lib/matplotlib/tests/test_widgets.py",
+        "test_name_or_scope": "test_range_slider_same_init_values"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "lib/matplotlib/tests/test_widgets.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "lib/matplotlib/tests/test_widgets.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "lib/matplotlib/tests/test_widgets.py",
+      "lib/matplotlib/widgets.py"
+    ],
+    "commands_claimed_count": 4,
+    "commands_reported_passed_count": 3,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "lib/matplotlib/tests/test_widgets.py"
+    ],
+    "tests_passed_count": 2,
+    "verified_commands": [
+      {
+        "command": "python -m pytest lib/matplotlib/tests/test_widgets.py -k 'range_slider'",
+        "exit_code": 0,
+        "id": "pytest-range-slider",
+        "output_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0\nrootdir: /workspace\nconfigfile: pytest.ini\ncollected 98 items / 94 deselected / 4 selected\n\nlib/matplotlib/tests/test_widgets.py ....                                [100%]\n\n=============================== warnings summary ===============================\n../opt/miniconda3/envs/testbed/lib/python3.11/site-packages/pyparsing.py:108\n  /opt/miniconda3/envs/testbed/lib/python3.11/site-packages/pyparsing.py:108: DeprecationWarning: module 'sre_constants' is deprecated\n    import sre_constants\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n================= 4 passed, 94 deselected, 1 warning in 1.12s ==================\n",
+        "validation_command_id": "pytest-range-slider",
+        "zero_test_output": false
+      },
+      {
+        "command": "python -m pytest lib/matplotlib/tests/test_widgets.py -k 'range_slider'",
+        "exit_code": 0,
+        "id": "pytest-range-slider-final",
+        "output_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0\nrootdir: /workspace\nconfigfile: pytest.ini\ncollected 98 items / 94 deselected / 4 selected\n\nlib/matplotlib/tests/test_widgets.py ....                                [100%]\n\n=============================== warnings summary ===============================\n../opt/miniconda3/envs/testbed/lib/python3.11/site-packages/pyparsing.py:108\n  /opt/miniconda3/envs/testbed/lib/python3.11/site-packages/pyparsing.py:108: DeprecationWarning: module 'sre_constants' is deprecated\n    import sre_constants\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n================= 4 passed, 94 deselected, 1 warning in 1.15s ==================\n",
+        "validation_command_id": "pytest-range-slider-final",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "lib/matplotlib/tests/test_widgets.py"
+  ],
+  "warnings": []
+}

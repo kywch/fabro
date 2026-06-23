@@ -1,0 +1,8 @@
+Dropped support for Oracle 12.1
+===============================
+
+Upstream support for Oracle 12.1 ends in July 2021. Django 2.2 will be
+supported until April 2022. Django 3.0 officially supports Oracle 12.2 and 18c.
+
+Removed private Python 2 compatibility APIs
+===========================================

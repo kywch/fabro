@@ -1,0 +1,13 @@
+{
+  "acceptance_criteria": [
+    "The importlib path should avoid duplicate module execution for the same resolved module.",
+    "The fix should preserve import_path behavior when the requested path does not correspond to the existing module object.",
+    "Regression coverage should exercise doctest collection plus normal imports."
+  ],
+  "commands_run": [
+    "python -m pytest testing/acceptance_test.py -k doctest_and_normal_imports_with_importlib",
+    "python -m pytest testing/test_pathlib.py -k importmode"
+  ],
+  "issue": "Under --import-mode=importlib with --doctest-modules, the same package module can be imported twice and side effects become split across module objects.",
+  "schema_version": 1
+}

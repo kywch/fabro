@@ -1,0 +1,18 @@
+{
+  "changed_files": [
+    "doc/whatsnew/2/2.15/index.rst",
+    "pylint/lint/expand_modules.py",
+    "tests/test_self.py"
+  ],
+  "diff_stat": [
+    " doc/whatsnew/2/2.15/index.rst |  4 ++++",
+    " pylint/lint/expand_modules.py |  7 ++++---",
+    " tests/test_self.py            | 21 +++++++++++++++++++++",
+    " 3 files changed, 29 insertions(+), 3 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "tests/test_self.py"
+  ]
+}

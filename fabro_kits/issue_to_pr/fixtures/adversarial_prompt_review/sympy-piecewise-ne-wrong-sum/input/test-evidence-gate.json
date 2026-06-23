@@ -1,0 +1,106 @@
+{
+  "changed_files": [
+    "sympy/concrete/delta.py",
+    "sympy/concrete/summations.py",
+    "sympy/concrete/tests/test_delta.py",
+    "sympy/matrices/expressions/matexpr.py",
+    "sympy/matrices/expressions/tests/test_matexpr.py"
+  ],
+  "claimed_tests": [
+    "sympy/matrices/expressions/tests/test_matexpr.py",
+    "sympy/matrices/expressions/tests/test_matexpr.py",
+    "sympy/concrete/tests/test_delta.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "Identity(n) keeps undecidable symbolic entries as KroneckerDelta while preserving concrete diagonal/off-diagonal entries and symbolic first-row/first-column sums.",
+        "path": "sympy/matrices/expressions/tests/test_matexpr.py",
+        "test_name_or_scope": "test_Identity_symbolic_entries"
+      },
+      {
+        "behavior_guarded": "The original refine((M.T*M).doit()) under Q.orthogonal(M) path now gives the exact symbolic total element sum n.",
+        "path": "sympy/matrices/expressions/tests/test_matexpr.py",
+        "test_name_or_scope": "test_Identity_symbolic_sum_after_refine_orthogonal"
+      },
+      {
+        "behavior_guarded": "Nested finite KroneckerDelta sums over a positive symbolic range simplify directly to n instead of remaining as an outer Sum(Piecewise(...)).",
+        "path": "sympy/concrete/tests/test_delta.py",
+        "test_name_or_scope": "test_nested_deltasummation_symbolic_range"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "sympy/matrices/expressions/tests/test_matexpr.py",
+      "sympy/matrices/expressions/tests/test_matexpr.py",
+      "sympy/concrete/tests/test_delta.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "sympy/matrices/expressions/tests/test_matexpr.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "sympy/matrices/expressions/tests/test_matexpr.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "sympy/concrete/tests/test_delta.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "sympy/concrete/delta.py",
+      "sympy/concrete/summations.py",
+      "sympy/concrete/tests/test_delta.py",
+      "sympy/matrices/expressions/matexpr.py",
+      "sympy/matrices/expressions/tests/test_matexpr.py"
+    ],
+    "commands_claimed_count": 3,
+    "commands_reported_passed_count": 3,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "sympy/concrete/tests/test_delta.py",
+      "sympy/matrices/expressions/tests/test_matexpr.py"
+    ],
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "python -m unittest discover -s sympy/concrete/tests -p 'test_delta.py' -q && python -m unittest discover -s sympy/matrices/expressions/tests -p 'test_matexpr.py' -q && python bin/test sympy/concrete/tests/test_delta.py sympy/matrices/expressions/tests/test_matexpr.py",
+        "exit_code": 0,
+        "id": "evidence_gate_recognized_focused_tests",
+        "output_tail": "nd in 3.10 it will stop working\n  from collections import Mapping\n/workspace/sympy/plotting/plot.py:28: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n  from collections import Callable\n----------------------------------------------------------------------\nRan 0 tests in 0.000s\n\nOK\n/workspace/sympy/core/basic.py:3: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n  from collections import Mapping\n/workspace/sympy/plotting/plot.py:28: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n  from collections import Callable\n/workspace/sympy/core/basic.py:3: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n  from collections import Mapping\n/workspace/sympy/plotting/plot.py:28: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working\n  from collections import Callable\n============================= test process starts ==============================\nexecutable:         /opt/miniconda3/envs/testbed/bin/python  (3.9.25-final-0) [CPython]\narchitecture:       64-bit\ncache:              yes\nground types:       python \nrandom seed:        3799920\nhash randomization: on (PYTHONHASHSEED=762485950)\n\nsympy/concrete/tests/test_delta.py[27] ...........................          [OK]\nsympy/matrices/expressions/tests/test_matexpr.py[29] ...........................\n..                                                                          [OK]\n\n================== tests finished: 56 passed, in 5.10 seconds ==================\n",
+        "validation_command_id": "evidence_gate_recognized_focused_tests"
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "sympy/concrete/tests/test_delta.py",
+    "sympy/matrices/expressions/tests/test_matexpr.py"
+  ],
+  "warnings": []
+}

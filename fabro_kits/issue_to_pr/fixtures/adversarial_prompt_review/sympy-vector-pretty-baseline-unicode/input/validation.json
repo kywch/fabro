@@ -1,0 +1,11 @@
+{
+  "acceptance_criteria": [
+    "Unicode vector labels should be composed correctly.",
+    "ASCII mode and dyadic/multiline baseline behavior should be preserved."
+  ],
+  "commands_run": [
+    "python -m pytest sympy/vector/tests/test_printing.py -k pretty"
+  ],
+  "issue": "Pretty printing vector basis expressions should render unicode unit vectors correctly without breaking existing vector and dyadic layouts.",
+  "schema_version": 1
+}

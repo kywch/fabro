@@ -1,0 +1,1 @@
+The saved review opened a row that the fallback rewrites any expression containing exp and I through rewrite(cos), expand_mul, and cancel. This is useful for calibrating whether the prompt spots broad symbolic rewrites outside the reported Euler pair.

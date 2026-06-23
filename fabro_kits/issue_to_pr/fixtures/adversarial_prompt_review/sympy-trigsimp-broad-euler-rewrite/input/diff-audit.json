@@ -1,0 +1,23 @@
+{
+  "changed_files": [
+    "sympy/functions/elementary/exponential.py",
+    "sympy/functions/elementary/tests/test_trigonometric.py",
+    "sympy/functions/elementary/trigonometric.py",
+    "sympy/simplify/tests/test_trigsimp.py",
+    "sympy/simplify/trigsimp.py"
+  ],
+  "diff_stat": [
+    " sympy/functions/elementary/exponential.py             |  4 ++++",
+    " .../functions/elementary/tests/test_trigonometric.py  |  3 +++",
+    " sympy/functions/elementary/trigonometric.py           |  3 +++",
+    " sympy/simplify/tests/test_trigsimp.py                 | 15 ++++++++++++++-",
+    " sympy/simplify/trigsimp.py                            | 19 ++++++++++++++++---",
+    " 5 files changed, 40 insertions(+), 4 deletions(-)"
+  ],
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "test_files_changed": [
+    "sympy/functions/elementary/tests/test_trigonometric.py",
+    "sympy/simplify/tests/test_trigsimp.py"
+  ]
+}

@@ -1,0 +1,13 @@
+diff --git a/sklearn/utils/validation.py b/sklearn/utils/validation.py
+index 2b8f2e4..de71a52 100644
+--- a/sklearn/utils/validation.py
++++ b/sklearn/utils/validation.py
+@@ -1,6 +1,7 @@
+ def check_array(array, *, accept_dataframe=False):
+     if hasattr(array, "to_numpy"):
+-        if not accept_dataframe:
++        index = getattr(array, "index", None)
++        if not accept_dataframe and index is None:
+             raise TypeError("DataFrame input is not accepted here")
+         return array.to_numpy()
+     return array

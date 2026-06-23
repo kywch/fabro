@@ -1,0 +1,89 @@
+{
+  "changed_files": [
+    "astropy/io/ascii/rst.py",
+    "astropy/io/ascii/tests/test_rst.py",
+    "docs/changes/io.ascii/0000.feature.rst"
+  ],
+  "claimed_tests": [
+    "astropy/io/ascii/tests/test_rst.py",
+    "astropy/io/ascii/tests/test_rst.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "RST writer accepts header_rows=[\"name\", \"unit\"], emits both header rows, and repeats the correct separator as top/middle/bottom borders.",
+        "path": "astropy/io/ascii/tests/test_rst.py",
+        "test_name_or_scope": "test_write_header_rows"
+      },
+      {
+        "behavior_guarded": "RST reader with multi-row headers skips the header separator before data and preserves column names/units.",
+        "path": "astropy/io/ascii/tests/test_rst.py",
+        "test_name_or_scope": "test_read_header_rows"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "astropy/io/ascii/tests/test_rst.py",
+      "astropy/io/ascii/tests/test_rst.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "astropy/io/ascii/tests/test_rst.py",
+        "source": "path"
+      },
+      {
+        "description": "",
+        "path": "astropy/io/ascii/tests/test_rst.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "astropy/io/ascii/rst.py",
+      "astropy/io/ascii/tests/test_rst.py",
+      "docs/changes/io.ascii/0000.feature.rst"
+    ],
+    "commands_claimed_count": 1,
+    "commands_reported_passed_count": 1,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "astropy/io/ascii/tests/test_rst.py"
+    ],
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "python -m pytest astropy/io/ascii/tests/test_rst.py -q",
+        "exit_code": 0,
+        "id": "focused-rst-tests",
+        "output_tail": "<frozen importlib._bootstrap>:228: RuntimeWarning: numpy.ndarray size changed, may indicate binary incompatibility. Expected 80 from C header, got 96 from PyObject\nInternet access disabled\n\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m.\u001b[0m\u001b[32m                                                              [100%]\u001b[0m\n\u001b[32m\u001b[32m\u001b[1m11 passed\u001b[0m\u001b[32m in 0.04s\u001b[0m\u001b[0m\n",
+        "validation_command_id": "focused-rst-tests",
+        "zero_test_output": false
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "astropy/io/ascii/tests/test_rst.py"
+  ],
+  "warnings": []
+}

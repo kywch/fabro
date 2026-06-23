@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "changed_files": [
+    {
+      "path": "sympy/printing/latex.py",
+      "change_type": "modified",
+      "source": true
+    }
+  ],
+  "summary": "Replaces structured Poly term formatting with a manual string formatter based on str(poly.as_expr())."
+}

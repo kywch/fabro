@@ -1,0 +1,11 @@
+{
+  "acceptance_criteria": [
+    "DataFrame dtype warnings should reflect mixed dtypes and estimator context.",
+    "Optional pandas handling should not become a hard dependency."
+  ],
+  "commands_run": [
+    "python -m pytest sklearn/utils/tests/test_validation.py -k dataframe"
+  ],
+  "issue": "Validation warnings for pandas DataFrame dtype conversion should be accurate and avoid misleading homogeneous dtype claims.",
+  "schema_version": 1
+}

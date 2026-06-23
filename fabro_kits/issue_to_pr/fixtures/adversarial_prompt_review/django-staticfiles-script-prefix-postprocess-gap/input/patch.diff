@@ -1,0 +1,61 @@
+diff --git a/django/core/files/storage.py b/django/core/files/storage.py
+--- a/django/core/files/storage.py
++++ b/django/core/files/storage.py
+@@ -1,6 +1,8 @@
++from django.urls.base import _prefix_script_name
++
+ class FileSystemStorage:
+     def __init__(self, base_url="/media/"):
+         self.base_url = base_url
+ 
+     def url(self, name):
+-        return self.base_url + name
++        return _prefix_script_name(self.base_url) + name
+diff --git a/django/urls/base.py b/django/urls/base.py
+--- a/django/urls/base.py
++++ b/django/urls/base.py
+@@ -7,3 +7,10 @@ def set_script_prefix(prefix):
+ 
+ def get_script_prefix():
+     return _prefix
++
++def _prefix_script_name(url):
++    prefix = get_script_prefix()
++    if not url.startswith("/") or url.startswith("//"):
++        return url
++    if url.startswith(prefix):
++        return url
++    return prefix.rstrip("/") + url
+diff --git a/tests/file_storage/tests.py b/tests/file_storage/tests.py
+--- a/tests/file_storage/tests.py
++++ b/tests/file_storage/tests.py
+@@ -1,6 +1,14 @@
+ from django.core.files.storage import FileSystemStorage
++from django.urls.base import set_script_prefix
+ 
+ 
+ class FileStorageTests:
+     def test_url(self):
+         assert FileSystemStorage(base_url="/media/").url("file.txt") == "/media/file.txt"
++
++    def test_url_script_prefix(self):
++        set_script_prefix("/prefix/")
++        try:
++            assert FileSystemStorage(base_url="/media/").url("file.txt") == "/prefix/media/file.txt"
++        finally:
++            set_script_prefix("/")
+diff --git a/tests/staticfiles_tests/test_storage.py b/tests/staticfiles_tests/test_storage.py
+--- a/tests/staticfiles_tests/test_storage.py
++++ b/tests/staticfiles_tests/test_storage.py
+@@ -1,3 +1,11 @@
++from django.core.files.storage import FileSystemStorage
++from django.urls.base import set_script_prefix
++
++
+ class TestStaticFilesStorage:
+     def test_url(self):
+         assert True
++
++    def test_manifest_url_script_prefix(self):
++        set_script_prefix("/prefix/")
++        assert FileSystemStorage(base_url="/static/").url("file.txt") == "/prefix/static/file.txt"

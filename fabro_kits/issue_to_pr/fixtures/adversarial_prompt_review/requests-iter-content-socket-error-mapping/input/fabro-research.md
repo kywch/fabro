@@ -1,0 +1,1 @@
+The review target is exception mapping around iter_content. A good prompt should check that catching socket.error is placed narrowly enough not to disturb existing urllib3 protocol error and decode error mappings.

@@ -1,0 +1,11 @@
+{
+  "acceptance_criteria": [
+    "The FILE_UPLOAD_PERMISSIONS default should be documented and applied consistently.",
+    "Temporary upload and staticfiles behavior should not retain stale permission expectations."
+  ],
+  "commands_run": [
+    "python tests/runtests.py file_storage staticfiles_tests --settings=test_sqlite"
+  ],
+  "issue": "Django uploaded files should use a default file permission mode consistently across storage and upload paths.",
+  "schema_version": 1
+}

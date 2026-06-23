@@ -493,6 +493,35 @@ class ReviewAccountabilityGateTest(unittest.TestCase):
                 self.assertEqual(report["adversarial_row_count"], 0)
                 self.assertEqual(report["moderator_disposition_count"], 0)
 
+    def test_empty_rows_fail_when_plausible_risk_hidden_in_checked_risks(self):
+        report = evaluate_review_accountability(
+            adversarial=_adversarial(
+                rows=[],
+                checked_risks=[
+                    {
+                        "risk": "src/parser.py could regress empty input handling",
+                        "evidence": ["src/parser.py"],
+                        "counterexample_check": "possible issue remains unresolved",
+                    }
+                ],
+            ),
+            moderator=_moderator(dispositions=[]),
+            test_gate=_test_gate(changed_files=["src/parser.py"]),
+            materialization=_materialization([], []),
+            patch_diff=(
+                "diff --git a/src/parser.py b/src/parser.py\n"
+                "--- a/src/parser.py\n"
+                "+++ b/src/parser.py\n"
+                "@@ -1,2 +1,2 @@\n"
+                "-    return None\n"
+                "+    return value\n"
+            ),
+        )
+
+        self.assertEqual(report["route_decision"], "fixup")
+        self.assertIn("review_artifact_missing_or_malformed", report["process_failures"])
+        self.assertEqual(report["malformed_artifacts"][0]["error"], "plausible_risk_hidden_in_checked_risks")
+
     def test_empty_rows_broad_semantic_change_requires_option_matrix(self):
         report = _empty_review_with_scope(
             {

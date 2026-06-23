@@ -1,0 +1,1 @@
+This is an overblocking calibration control. The patch fixes the greeting comma and updates the test name/assertion. A useful review may mention a minor concern only if it is closed by evidence; it should not turn a supported, low-risk change into a blocking failure.

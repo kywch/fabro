@@ -1,0 +1,72 @@
+{
+  "changed_files": [
+    "src/greeting.py",
+    "tests/test_greeting.py"
+  ],
+  "claimed_tests": [
+    "tests/test_greeting.py"
+  ],
+  "claims": {
+    "claimed_tests_raw": [
+      {
+        "behavior_guarded": "greeting('Ada') returns 'hello, Ada' with the comma in the greeting.",
+        "path": "tests/test_greeting.py",
+        "test_name_or_scope": "GreetingTest.test_greeting_uses_comma"
+      }
+    ]
+  },
+  "contradictions": [],
+  "derived": {
+    "claimed_test_paths_normalized": [
+      "tests/test_greeting.py"
+    ],
+    "claimed_tests_normalized": [
+      {
+        "description": "",
+        "path": "tests/test_greeting.py",
+        "source": "path"
+      }
+    ]
+  },
+  "failure_reason": null,
+  "judgment": {
+    "cannot_prove": [
+      "patch_semantically_fixes_issue",
+      "changed_tests_are_meaningful_regressions",
+      "no_new_test_is_acceptable",
+      "hidden_or_official_tests_would_pass"
+    ],
+    "fixup_guidance": null,
+    "hard_failures": [],
+    "route_decision": "review",
+    "warnings": []
+  },
+  "mode": "test-evidence",
+  "observed": {
+    "changed_files": [
+      "src/greeting.py",
+      "tests/test_greeting.py"
+    ],
+    "commands_claimed_count": 1,
+    "commands_reported_passed_count": 1,
+    "patch_nonempty": true,
+    "test_files_changed": [
+      "tests/test_greeting.py"
+    ],
+    "tests_passed_count": 1,
+    "verified_commands": [
+      {
+        "command": "python3 -m unittest tests.test_greeting",
+        "exit_code": 0,
+        "output_tail": ".\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n"
+      }
+    ]
+  },
+  "patch_nonempty": true,
+  "schema_version": 1,
+  "status": "passed",
+  "test_files_changed": [
+    "tests/test_greeting.py"
+  ],
+  "warnings": []
+}

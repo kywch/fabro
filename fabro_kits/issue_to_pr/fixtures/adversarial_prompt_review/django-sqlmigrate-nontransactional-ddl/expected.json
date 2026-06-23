@@ -1,0 +1,35 @@
+{
+  "case_id": "django-sqlmigrate-nontransactional-ddl",
+  "expected_rows": [
+    {
+      "categories": [
+        "code",
+        "tests"
+      ],
+      "id": "django-sqlmigrate-nontransactional-ddl",
+      "keyword_groups": [
+        [
+          "sqlmigrate",
+          "output_transaction"
+        ],
+        [
+          "migration.atomic"
+        ],
+        [
+          "can_rollback_ddl",
+          "transactional DDL"
+        ],
+        [
+          "transaction wrappers",
+          "BEGIN",
+          "COMMIT"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "django/core/management/commands/sqlmigrate.py",
+        "tests/migrations/test_commands.py"
+      ]
+    }
+  ]
+}
