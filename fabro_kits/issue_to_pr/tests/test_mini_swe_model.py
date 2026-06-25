@@ -17,6 +17,7 @@ from fabro_kits.issue_to_pr.light_eval.mini_swe.artifacts import (
 from fabro_kits.issue_to_pr.light_eval.mini_swe.credentials import (
     bridge_model_credentials,
     credential_preflight_report,
+    default_auth_storage_dir,
     storage_vault_path,
 )
 from fabro_kits.issue_to_pr.light_eval.mini_swe.evidence import (
@@ -303,6 +304,48 @@ class MiniSweModelTest(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(storage_vault_path(target).stat().st_mode), 0o600)
             self.assertNotIn("api-key", json.dumps(report))
             self.assertNotIn("secret-refresh", json.dumps(report))
+
+    def test_mini_swe_codex_bridge_auto_discovers_env_auth_storage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            target = root / "target"
+            source_vault = storage_vault_path(source)
+            source_vault.parent.mkdir(parents=True)
+            source_vault.write_text(
+                json.dumps(
+                    {
+                        "OPENAI_CODEX": {
+                            "value": "codex-oauth-json",
+                            "type": "oauth",
+                            "created_at": "2026-06-19T00:00:00Z",
+                            "updated_at": "2026-06-19T00:00:01Z",
+                        }
+                    }
+                )
+            )
+
+            with patch.dict(os.environ, {"FABRO_AUTH_STORAGE_DIR": str(source)}):
+                report = bridge_model_credentials(
+                    bridge="openai-codex",
+                    source_storage_dir=None,
+                    target_storage_dir=target,
+                )
+
+            copied = json.loads(storage_vault_path(target).read_text())
+            self.assertEqual(report["status"], "copied")
+            self.assertEqual(report["source_storage_dir_discovery"], "auto")
+            self.assertEqual(report["source_storage_dir"], str(source))
+            self.assertEqual(sorted(copied), ["OPENAI_CODEX"])
+
+    def test_default_auth_storage_dir_ignores_env_without_vault(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"FABRO_AUTH_STORAGE_DIR": str(Path(tmp) / "missing")}):
+                with patch(
+                    "fabro_kits.issue_to_pr.light_eval.mini_swe.credentials.DEFAULT_AUTH_STORAGE_CANDIDATES",
+                    (),
+                ):
+                    self.assertIsNone(default_auth_storage_dir())
 
     def test_mini_swe_codex_bridge_does_not_copy_unrelated_source_secrets(self):
         with tempfile.TemporaryDirectory() as tmp:

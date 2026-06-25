@@ -162,6 +162,8 @@ class WorkflowGeneratorTest(unittest.TestCase):
         self.assertIn("checked_risks", workflow)
         self.assertIn("counterexample_checks", workflow)
         self.assertIn("Generate plausible issue-scoped findings as rows first", workflow)
+        self.assertIn("Prefer root-cause rows over symptom rows", workflow)
+        self.assertIn("issue-contract boundary", workflow)
         self.assertIn("Do not hide plausible unresolved findings in checked_risks", workflow)
         self.assertIn("expected_review_rows cannot be satisfied via checked_risks", workflow)
         self.assertIn("checked_risks or counterexample_checks must cite exact changed source paths", workflow)

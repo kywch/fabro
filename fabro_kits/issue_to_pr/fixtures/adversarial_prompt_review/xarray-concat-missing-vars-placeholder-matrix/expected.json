@@ -6,27 +6,123 @@
         "code",
         "scope"
       ],
-      "id": "xarray-concat-missing-vars-placeholder-matrix",
+      "id": "xarray-concat-non-opt-in-broadening",
       "keyword_groups": [
         [
-          "missing variables",
-          "allow_missing_vars",
-          "_missing_concat_var"
+          "non-opt-in",
+          "default",
+          "unconditional"
+        ],
+        [
+          "missing data variables",
+          "missing vars",
+          "data_vars"
+        ],
+        [
+          "union",
+          "all datasets",
+          "_calc_concat_over"
+        ],
+        [
+          "test_concat_missing_data_vars_new_dim",
+          "test_concat_missing_data_vars_different"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "xarray/core/concat.py",
+        "xarray/tests/test_concat.py"
+      ]
+    },
+    {
+      "categories": [
+        "code"
+      ],
+      "id": "xarray-concat-fill-dtype-placeholder",
+      "keyword_groups": [
+        [
+          "_missing_concat_var",
+          "placeholder",
+          "absent values"
         ],
         [
           "fill_value",
           "maybe_promote",
-          "NaN"
+          "result_type"
         ],
         [
-          "coords",
-          "existing dim",
-          "coordinate"
+          "dtype",
+          "NaN",
+          "promotion"
         ],
+        [
+          "test_concat_missing_data_vars_fill_value",
+          "test_concat_missing_data_vars_explicit_nan_fill_value"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "xarray/core/concat.py",
+        "xarray/tests/test_concat.py"
+      ]
+    },
+    {
+      "categories": [
+        "code",
+        "scope"
+      ],
+      "id": "xarray-concat-coordinate-compatibility",
+      "keyword_groups": [
+        [
+          "coords",
+          "coordinates",
+          "coord_names"
+        ],
+        [
+          "existing dim",
+          "existing dimension",
+          "dim=\"x\""
+        ],
+        [
+          "coordinate compatibility",
+          "coordinates in some datasets",
+          "not others"
+        ],
+        [
+          "test_concat_missing_data_vars_existing_dim",
+          "test_concat_compat"
+        ]
+      ],
+      "min_severity": "major",
+      "required_path_tokens": [
+        "xarray/core/concat.py",
+        "xarray/tests/test_concat.py"
+      ]
+    },
+    {
+      "categories": [
+        "tests",
+        "code"
+      ],
+      "id": "xarray-concat-dask-laziness-gap",
+      "keyword_groups": [
         [
           "dask",
           "lazy",
-          "materialize"
+          "chunks"
+        ],
+        [
+          "materialize",
+          "compute",
+          "InaccessibleArray"
+        ],
+        [
+          "shape only",
+          "does not verify",
+          "preserve chunking"
+        ],
+        [
+          "test_concat_missing_data_vars_lazy"
         ]
       ],
       "min_severity": "major",

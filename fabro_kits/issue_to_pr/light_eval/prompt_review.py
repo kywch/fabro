@@ -7,15 +7,18 @@ import shutil
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
+from fcntl import LOCK_EX, LOCK_UN, flock
 from pathlib import Path
 from typing import Any
 
 from ..workflow_generator import (
     ADVERSARIAL_REVIEW_PATH,
     DIFF_AUDIT_PATH,
+    MODERATOR_FILTER_PATH,
     TEST_EVIDENCE_GATE_PATH,
     VALIDATION_CONTRACT_PATH,
     _adversarial_review_prompt,
+    _moderator_filter_prompt,
     dot_escape,
 )
 from .mini_swe.credentials import bridge_model_credentials, credential_preflight_report
@@ -33,6 +36,7 @@ PROMPT_REVIEW_FIXTURE_ROOT = (
     Path(__file__).resolve().parents[1] / "fixtures" / "adversarial_prompt_review"
 )
 TMP_RESEARCH_PATH = Path("/tmp/fabro-research.md")
+TMP_RESEARCH_LOCK_PATH = Path("/tmp/fabro-research.md.lock")
 PROCESS_FAILURE_KINDS = {
     "credential_bridge_failed",
     "credential_preflight_failed",
@@ -42,6 +46,9 @@ PROCESS_FAILURE_KINDS = {
 }
 REQUIRED_ROW_FIELDS = ("failure_mode", "falsifiable_check", "why_it_matters", "evidence")
 SEMANTIC_ROW_FIELDS = ("failure_mode", "falsifiable_check", "why_it_matters")
+PROMPT_REVIEW_MODES = ("adversarial", "moderated")
+MODERATOR_DISPOSITION_STATES = {"open", "closed_by_evidence", "rejected", "downgraded"}
+MODERATOR_EXPECTED_OPEN_STATES = {"open"}
 
 
 @dataclass(frozen=True)
@@ -75,7 +82,10 @@ def run_prompt_review(
     credential_bridge: str = "off",
     auth_storage_dir: Path | None = None,
     credential_preflight: bool = False,
+    review_mode: str = "adversarial",
 ) -> dict[str, Any]:
+    if review_mode not in PROMPT_REVIEW_MODES:
+        raise ValueError(f"unsupported prompt-review mode: {review_mode}")
     case_dirs = list_prompt_review_cases(case)
     if output_dir is None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -88,6 +98,7 @@ def run_prompt_review(
                 credential_bridge=credential_bridge,
                 auth_storage_dir=auth_storage_dir,
                 credential_preflight=credential_preflight,
+                review_mode=review_mode,
             )
     output_dir.mkdir(parents=True, exist_ok=True)
     return _run_prompt_review_to_dir(
@@ -99,6 +110,7 @@ def run_prompt_review(
         credential_bridge=credential_bridge,
         auth_storage_dir=auth_storage_dir,
         credential_preflight=credential_preflight,
+        review_mode=review_mode,
     )
 
 
@@ -112,6 +124,7 @@ def _run_prompt_review_to_dir(
     credential_bridge: str,
     auth_storage_dir: Path | None,
     credential_preflight: bool,
+    review_mode: str,
 ) -> dict[str, Any]:
     results = []
     failures = []
@@ -125,6 +138,7 @@ def _run_prompt_review_to_dir(
             credential_bridge=credential_bridge,
             auth_storage_dir=auth_storage_dir,
             credential_preflight=credential_preflight,
+            review_mode=review_mode,
         )
         results.append(result)
         failures.extend(result["failures"])
@@ -147,6 +161,7 @@ def run_prompt_review_case(
     credential_bridge: str,
     auth_storage_dir: Path | None,
     credential_preflight: bool,
+    review_mode: str,
 ) -> dict[str, Any]:
     case = load_prompt_review_case(case_dir)
     case_out = output_dir / case.case_id
@@ -160,6 +175,7 @@ def run_prompt_review_case(
     output_artifacts.mkdir()
 
     failures = []
+    include_moderator = review_mode == "moderated"
     effective_provider = provider or ("openai" if credential_bridge == "openai-codex" else None)
     prepare_prompt_review_workspace(case_dir, repo_dir)
     patch = git_capture(repo_dir, "diff")
@@ -179,15 +195,37 @@ def run_prompt_review_case(
             case.expected,
             not_applicable_reason="process_failed",
         )
-        _write_case_outputs(case_out, output_artifacts, score, failures, None)
-        return _case_result(case, score, failures, run_id=None, run_transcript="")
+        moderator_score = score_moderator_filter(
+            None,
+            None,
+            case.expected,
+            not_applicable_reason="process_failed",
+        )
+        _write_case_outputs(
+            case_out,
+            output_artifacts,
+            score,
+            failures,
+            None,
+            moderator_score=moderator_score,
+            moderator=None,
+        )
+        return _case_result(
+            case,
+            score,
+            failures,
+            run_id=None,
+            run_transcript="",
+            moderator_score=moderator_score,
+            review_mode=review_mode,
+        )
 
     storage_dir = run_dir / "storage"
     config_path = run_dir / "settings.toml"
     workflow_path = run_dir / "workflow.fabro"
     write_workflow_smoke_config(storage_dir=storage_dir, config_path=config_path)
     append_working_dir_config(config_path, repo_dir)
-    write_prompt_review_workflow(workflow_path)
+    write_prompt_review_workflow(workflow_path, include_moderator=include_moderator)
 
     credential_bridge_report = bridge_model_credentials(
         bridge=credential_bridge,
@@ -271,25 +309,78 @@ def run_prompt_review_case(
         (output_artifacts / "adversarial_review.json").write_text(
             json.dumps(review, indent=2, sort_keys=True) + "\n"
         )
+    moderator, moderator_artifact_status = read_optional_json_artifact(
+        repo_dir / MODERATOR_FILTER_PATH
+    )
+    if moderator is not None:
+        (output_artifacts / "moderator_filter.json").write_text(
+            json.dumps(moderator, indent=2, sort_keys=True) + "\n"
+        )
     score = score_adversarial_review(
         review,
         case.expected,
         not_applicable_reason="process_failed" if process_failed else None,
+    )
+    moderator_score = score_moderator_filter(
+        review,
+        moderator,
+        case.expected,
+        not_applicable_reason="process_failed"
+        if process_failed
+        else (
+            "adversarial_review_failed"
+            if not score["passed"]
+            else (None if include_moderator else "moderator_disabled")
+        ),
     )
     if not process_failed and not score["passed"]:
         if artifact_status != "present":
             failures.append({"kind": artifact_status, "case_id": case.case_id, "score": score})
         else:
             failures.append({"kind": "prompt_miss", "case_id": case.case_id, "score": score})
-    _write_case_outputs(case_out, output_artifacts, score, failures, review)
-    return _case_result(case, score, failures, run_id=run_id or None, run_transcript=run_transcript)
+    if include_moderator and not process_failed and score["passed"] and not moderator_score["passed"]:
+        if moderator_artifact_status != "present":
+            failures.append(
+                {
+                    "kind": f"moderator_{moderator_artifact_status}",
+                    "case_id": case.case_id,
+                    "score": moderator_score,
+                }
+            )
+        else:
+            failures.append(
+                {
+                    "kind": "moderator_prompt_miss",
+                    "case_id": case.case_id,
+                    "score": moderator_score,
+                }
+            )
+    _write_case_outputs(
+        case_out,
+        output_artifacts,
+        score,
+        failures,
+        review,
+        moderator_score=moderator_score,
+        moderator=moderator,
+    )
+    return _case_result(
+        case,
+        score,
+        failures,
+        run_id=run_id or None,
+        run_transcript=run_transcript,
+        moderator_score=moderator_score,
+        review_mode=review_mode,
+    )
 
 
 def load_prompt_review_case(case_dir: Path) -> PromptReviewCase:
     validation = read_json_object(case_dir / "input" / "validation.json")
     expected = read_json_object(case_dir / "expected.json")
     expected_rows = expected.get("expected_rows")
-    if not isinstance(expected_rows, list) or not expected_rows:
+    expected_no_findings = expected.get("expected_no_findings") is True
+    if not isinstance(expected_rows, list) or (not expected_rows and not expected_no_findings):
         raise ValueError(f"prompt-review case needs expected_rows: {case_dir}")
     return PromptReviewCase(
         case_id=str(expected.get("case_id") or case_dir.name),
@@ -329,13 +420,28 @@ def prepare_prompt_review_workspace(case_dir: Path, repo_dir: Path) -> None:
 
 @contextmanager
 def prompt_review_tmp_research(case_dir: Path) -> Any:
+    TMP_RESEARCH_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with TMP_RESEARCH_LOCK_PATH.open("a+") as lock_handle:
+        flock(lock_handle, LOCK_EX)
+        try:
+            with _locked_prompt_review_tmp_research(case_dir):
+                yield
+        finally:
+            flock(lock_handle, LOCK_UN)
+
+
+@contextmanager
+def _locked_prompt_review_tmp_research(case_dir: Path) -> Any:
     research = case_dir / "input" / "fabro-research.md"
-    if not research.exists():
-        yield
-        return
 
     old_bytes = TMP_RESEARCH_PATH.read_bytes() if TMP_RESEARCH_PATH.exists() else None
-    TMP_RESEARCH_PATH.write_text(research.read_text())
+    if research.exists():
+        TMP_RESEARCH_PATH.write_text(research.read_text())
+    else:
+        try:
+            TMP_RESEARCH_PATH.unlink()
+        except FileNotFoundError:
+            pass
     try:
         yield
     finally:
@@ -348,14 +454,23 @@ def prompt_review_tmp_research(case_dir: Path) -> Any:
             TMP_RESEARCH_PATH.write_bytes(old_bytes)
 
 
-def write_prompt_review_workflow(workflow_path: Path) -> None:
+def write_prompt_review_workflow(workflow_path: Path, *, include_moderator: bool = False) -> None:
+    moderator_node = ""
+    review_edges = "  start -> adversarial_review -> exit\n"
+    if include_moderator:
+        moderator_node = (
+            f"  moderator_filter [label=\"Moderator Filter\", "
+            f"prompt=\"{dot_escape(_moderator_filter_prompt())}\"]\n"
+        )
+        review_edges = "  start -> adversarial_review -> moderator_filter -> exit\n"
     workflow_path.write_text(
         "digraph AdversarialPromptReview {\n"
         "  graph [goal=\"issue-to-pr adversarial prompt recall review\"]\n"
         "  start [shape=Mdiamond, label=\"Start\"]\n"
         "  exit [shape=Msquare, label=\"Exit\"]\n"
         f"  adversarial_review [label=\"Adversarial Review\", prompt=\"{dot_escape(_adversarial_review_prompt())}\"]\n"
-        "  start -> adversarial_review -> exit\n"
+        f"{moderator_node}"
+        f"{review_edges}"
         "}\n"
     )
 
@@ -376,12 +491,27 @@ def score_adversarial_review(
             matched_ids.append(expected_row.get("id"))
         elif risk_hidden(review, expected_row):
             hidden_ids.append(expected_row.get("id"))
+    near_miss_ids = [
+        expected_row.get("id")
+        for expected_row in expected_rows
+        if expected_row.get("id") not in matched_ids
+        and expected_row.get("id") not in hidden_ids
+        and any(
+            row_semantically_mentions_expected(row, expected_row)
+            for row in rows
+            if isinstance(row, dict)
+        )
+    ]
     extra_rows = [
         row
         for row in rows
         if isinstance(row, dict)
         and not any(row_matches_expected(row, expected_row) for expected_row in expected_rows)
     ]
+    severity_failures = unexpected_severity_failures(
+        extra_rows,
+        str(expected.get("expected_max_severity") or ""),
+    )
     row_recall = len(matched_ids) / len(expected_rows) if expected_rows else 1.0
     precision = len(matched_ids) / len(rows) if rows else (1.0 if not expected_rows else 0.0)
     not_hidden = not hidden_ids
@@ -393,11 +523,13 @@ def score_adversarial_review(
         and row_recall == 1.0
         and not_hidden
         and precision_pass
+        and not severity_failures
     )
     return {
         "artifact_valid": artifact_valid,
         "matched_expected_ids": matched_ids,
         "hidden_expected_ids": hidden_ids,
+        "near_miss_expected_ids": near_miss_ids,
         "missing_expected_ids": [
             expected_row.get("id")
             for expected_row in expected_rows
@@ -412,7 +544,132 @@ def score_adversarial_review(
         "precision": precision,
         "precision_failures": precision_failures(extra_rows),
         "row_recall": row_recall,
+        "unexpected_severity_failures": severity_failures,
     }
+
+
+def score_moderator_filter(
+    review: dict[str, Any] | None,
+    moderator: dict[str, Any] | None,
+    expected: dict[str, Any],
+    *,
+    not_applicable_reason: str | None = None,
+) -> dict[str, Any]:
+    review_rows = review.get("rows", []) if isinstance(review, dict) else []
+    artifact_valid = (
+        isinstance(moderator, dict)
+        and isinstance(moderator.get("dispositions"), list)
+        and isinstance(review_rows, list)
+    )
+    dispositions = moderator.get("dispositions", []) if artifact_valid else []
+    rows = [row for row in review_rows if isinstance(row, dict)] if artifact_valid else []
+    row_ids = [str(row.get("id")) for row in rows if row.get("id") is not None]
+    disposition_ids = [
+        str(disposition.get("id"))
+        for disposition in dispositions
+        if isinstance(disposition, dict) and disposition.get("id") is not None
+    ]
+    duplicate_disposition_ids = sorted(
+        {
+            disposition_id
+            for disposition_id in disposition_ids
+            if disposition_ids.count(disposition_id) > 1
+        }
+    )
+    orphan_disposition_ids = sorted(set(disposition_ids) - set(row_ids))
+    missing_disposition_ids = sorted(set(row_ids) - set(disposition_ids))
+    invalid_dispositions = [
+        {
+            "id": disposition.get("id"),
+            "reason": "invalid_disposition",
+        }
+        for disposition in dispositions
+        if not valid_moderator_disposition(disposition)
+    ]
+
+    matched_expected_ids = []
+    expected_non_open_ids = []
+    missing_expected_disposition_ids = []
+    for expected_row in expected.get("expected_rows", []):
+        matched_row = next(
+            (row for row in rows if row_matches_expected(row, expected_row)),
+            None,
+        )
+        if matched_row is None:
+            continue
+        expected_id = expected_row.get("id")
+        matched_expected_ids.append(expected_id)
+        disposition = disposition_for_row(dispositions, matched_row)
+        if disposition is None:
+            missing_expected_disposition_ids.append(expected_id)
+        elif str(disposition.get("state", "")).lower() not in MODERATOR_EXPECTED_OPEN_STATES:
+            expected_non_open_ids.append(expected_id)
+
+    not_applicable = not_applicable_reason is not None
+    rows_accounted = (
+        not duplicate_disposition_ids
+        and not orphan_disposition_ids
+        and not missing_disposition_ids
+        and not missing_expected_disposition_ids
+    )
+    expected_open_recall = (
+        (
+            len(matched_expected_ids)
+            - len(expected_non_open_ids)
+            - len(missing_expected_disposition_ids)
+        )
+        / len(matched_expected_ids)
+        if matched_expected_ids
+        else 0.0
+    )
+    passed = (
+        not not_applicable
+        and artifact_valid
+        and rows_accounted
+        and not invalid_dispositions
+        and expected_open_recall == 1.0
+    )
+    return {
+        "artifact_valid": artifact_valid,
+        "duplicate_disposition_ids": duplicate_disposition_ids,
+        "expected_non_open_ids": expected_non_open_ids,
+        "expected_open_recall": expected_open_recall,
+        "invalid_dispositions": invalid_dispositions,
+        "matched_expected_ids": matched_expected_ids,
+        "missing_disposition_ids": missing_disposition_ids,
+        "missing_expected_disposition_ids": missing_expected_disposition_ids,
+        "not_applicable": not_applicable,
+        "not_applicable_reason": not_applicable_reason,
+        "orphan_disposition_ids": orphan_disposition_ids,
+        "passed": passed,
+        "rows_accounted": rows_accounted,
+    }
+
+
+def disposition_for_row(
+    dispositions: list[Any],
+    row: dict[str, Any],
+) -> dict[str, Any] | None:
+    row_id = row.get("id")
+    for disposition in dispositions:
+        if isinstance(disposition, dict) and disposition.get("id") == row_id:
+            return disposition
+    return None
+
+
+def valid_moderator_disposition(disposition: Any) -> bool:
+    if not isinstance(disposition, dict):
+        return False
+    state = str(disposition.get("state", "")).lower()
+    if state not in MODERATOR_DISPOSITION_STATES:
+        return False
+    if not row_field_nonempty(disposition.get("id")):
+        return False
+    if not row_field_nonempty(disposition.get("reason")):
+        return False
+    if state != "open" and not row_field_nonempty(disposition.get("closure_check")):
+        return False
+    return True
 
 
 def row_matches_expected(row: dict[str, Any], expected: dict[str, Any]) -> bool:
@@ -434,6 +691,17 @@ def row_matches_expected(row: dict[str, Any], expected: dict[str, Any]) -> bool:
     return True
 
 
+def row_semantically_mentions_expected(row: dict[str, Any], expected: dict[str, Any]) -> bool:
+    keyword_groups = expected.get("keyword_groups", [])
+    if not keyword_groups:
+        return False
+    semantic_haystack = row_text({field: row.get(field) for field in SEMANTIC_ROW_FIELDS})
+    return all(
+        any(str(keyword).lower() in semantic_haystack for keyword in group)
+        for group in keyword_groups
+    )
+
+
 def required_row_fields_present(row: dict[str, Any]) -> bool:
     return all(row_field_nonempty(row.get(field)) for field in REQUIRED_ROW_FIELDS)
 
@@ -449,8 +717,12 @@ def row_field_nonempty(value: Any) -> bool:
 def severity_at_least(actual: str, minimum: str) -> bool:
     if not minimum:
         return True
+    return severity_level(actual, default=-1) >= severity_level(minimum, default=99)
+
+
+def severity_level(severity: str, *, default: int) -> int:
     levels = {"info": 0, "minor": 1, "major": 2, "blocker": 3, "critical": 3}
-    return levels.get(actual.lower(), -1) >= levels.get(minimum.lower(), 99)
+    return levels.get(severity.lower(), default)
 
 
 def precision_failures(extra_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -464,6 +736,28 @@ def precision_failures(extra_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
                 {
                     "id": row.get("id"),
                     "reason": "invented_release_or_changelog_requirement",
+                }
+            )
+    return failures
+
+
+def unexpected_severity_failures(
+    extra_rows: list[dict[str, Any]],
+    max_severity: str,
+) -> list[dict[str, Any]]:
+    if not max_severity:
+        return []
+    maximum = severity_level(max_severity, default=99)
+    failures = []
+    for row in extra_rows:
+        actual = str(row.get("severity", ""))
+        if severity_level(actual, default=99) > maximum:
+            failures.append(
+                {
+                    "id": row.get("id"),
+                    "reason": "unexpected_severity_above_fixture_max",
+                    "severity": actual,
+                    "expected_max_severity": max_severity,
                 }
             )
     return failures
@@ -490,9 +784,16 @@ def row_text(value: Any) -> str:
 def prompt_review_summary(results: list[dict[str, Any]], failures: list[dict[str, Any]]) -> dict[str, Any]:
     total = len(results)
     failure_case_ids = {failure.get("case_id") for failure in failures if failure.get("case_id")}
+    applicable_moderator_scores = [
+        result["moderator_score"]
+        for result in results
+        if not result["moderator_score"]["not_applicable"]
+    ]
+    review_modes = sorted({str(result.get("review_mode", "adversarial")) for result in results})
     return {
         "schema_version": 1,
         "mode": "prompt-review",
+        "review_mode": review_modes[0] if len(review_modes) == 1 else "mixed",
         "total": total,
         "failed": len(failure_case_ids),
         "failures": failures,
@@ -524,6 +825,14 @@ def prompt_review_summary(results: list[dict[str, Any]], failures: list[dict[str
                 if failure.get("case_id") and failure.get("kind") == "prompt_miss"
             }
         ),
+        "moderator_prompt_miss": len(
+            {
+                failure.get("case_id")
+                for failure in failures
+                if failure.get("case_id")
+                and failure.get("kind") == "moderator_prompt_miss"
+            }
+        ),
         "artifact_valid": sum(1 for result in results if result["score"]["artifact_valid"]),
         "row_recall": (
             sum(result["score"]["row_recall"] for result in results) / total if total else 0.0
@@ -531,6 +840,18 @@ def prompt_review_summary(results: list[dict[str, Any]], failures: list[dict[str
         "not_hidden": sum(1 for result in results if result["score"]["not_hidden"]),
         "precision": (
             sum(result["score"]["precision"] for result in results) / total if total else 0.0
+        ),
+        "moderator_artifact_valid": sum(
+            1 for score in applicable_moderator_scores if score["artifact_valid"]
+        ),
+        "moderator_rows_accounted": sum(
+            1 for score in applicable_moderator_scores if score["rows_accounted"]
+        ),
+        "moderator_expected_open_recall": (
+            sum(score["expected_open_recall"] for score in applicable_moderator_scores)
+            / len(applicable_moderator_scores)
+            if applicable_moderator_scores
+            else 0.0
         ),
     }
 
@@ -596,10 +917,18 @@ def _write_case_outputs(
     score: dict[str, Any],
     failures: list[dict[str, Any]],
     review: dict[str, Any] | None,
+    *,
+    moderator_score: dict[str, Any],
+    moderator: dict[str, Any] | None,
 ) -> None:
     (case_out / "score.json").write_text(json.dumps(score, indent=2, sort_keys=True) + "\n")
+    (case_out / "moderator-score.json").write_text(
+        json.dumps(moderator_score, indent=2, sort_keys=True) + "\n"
+    )
     if review is None and not (output_artifacts / "adversarial_review.json").exists():
         (output_artifacts / "adversarial_review.json").write_text("{}\n")
+    if moderator is None and not (output_artifacts / "moderator_filter.json").exists():
+        (output_artifacts / "moderator_filter.json").write_text("{}\n")
     (case_out / "failures.json").write_text(json.dumps(failures, indent=2, sort_keys=True) + "\n")
 
 
@@ -610,11 +939,15 @@ def _case_result(
     *,
     run_id: str | None,
     run_transcript: str,
+    moderator_score: dict[str, Any],
+    review_mode: str,
 ) -> dict[str, Any]:
     return {
         "case_id": case.case_id,
+        "review_mode": review_mode,
         "status": "passed" if not failures else "failed",
         "score": score,
+        "moderator_score": moderator_score,
         "failures": failures,
         "fabro_run_id": run_id,
         "run_transcript_tail": run_transcript[-2000:],

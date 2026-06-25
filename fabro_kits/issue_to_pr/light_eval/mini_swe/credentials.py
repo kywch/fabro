@@ -10,6 +10,12 @@ from typing import Any
 from ..workflow_common import run_fabro_command
 
 
+DEFAULT_AUTH_STORAGE_CANDIDATES = (
+    Path("tmp/issue-to-pr-auth-storage"),
+    Path("tmp/iter-workflow-v4/auth-storage"),
+)
+
+
 def bridge_model_credentials(
     *,
     bridge: str,
@@ -33,9 +39,17 @@ def bridge_model_credentials(
         report["status"] = "unsupported"
         return report
     if source_storage_dir is None:
-        report["status"] = "missing_source_storage_dir"
-        report["missing_secret_names"] = ["OPENAI_CODEX"]
-        return report
+        source_storage_dir = default_auth_storage_dir()
+        if source_storage_dir is not None:
+            report["source_storage_dir"] = str(source_storage_dir)
+            report["source_storage_dir_discovery"] = "auto"
+        else:
+            report["status"] = "missing_source_storage_dir"
+            report["missing_secret_names"] = ["OPENAI_CODEX"]
+            return report
+    else:
+        report["source_storage_dir"] = str(source_storage_dir)
+        report["source_storage_dir_discovery"] = "explicit"
 
     source_vault_path = storage_vault_path(source_storage_dir)
     target_vault_path = storage_vault_path(target_storage_dir)
@@ -74,6 +88,18 @@ def bridge_model_credentials(
     report["status"] = "copied"
     report["copied_secret_names"] = ["OPENAI_CODEX"]
     return report
+
+
+def default_auth_storage_dir() -> Path | None:
+    env_path = os.environ.get("FABRO_AUTH_STORAGE_DIR")
+    if env_path:
+        path = Path(env_path)
+        if storage_vault_path(path).is_file():
+            return path
+    for path in DEFAULT_AUTH_STORAGE_CANDIDATES:
+        if storage_vault_path(path).is_file():
+            return path
+    return None
 
 
 def credential_preflight_report(

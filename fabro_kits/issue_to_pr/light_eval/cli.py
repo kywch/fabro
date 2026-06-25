@@ -87,6 +87,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Run `fabro model test` before prompt-review model execution.",
     )
+    prompt_review.add_argument(
+        "--review-mode",
+        choices=("adversarial", "moderated"),
+        default="adversarial",
+        help="Run only adversarial recall, or also run moderator-filter calibration.",
+    )
     prompt_review.add_argument("--format", choices=("json", "text"), default="json")
 
     workflow_smoke = subparsers.add_parser("workflow-smoke")
@@ -150,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
                 credential_bridge=args.credential_bridge,
                 auth_storage_dir=args.auth_storage_dir,
                 credential_preflight=args.credential_preflight,
+                review_mode=args.review_mode,
             )
         except SystemExit as exc:
             prompt_review.error(str(exc))
@@ -201,7 +208,11 @@ def _print_prompt_review_report(report: dict, *, output_format: str = "json") ->
             f"artifact_valid={report.get('artifact_valid', 0)} "
             f"row_recall={report.get('row_recall', 0):.3f} "
             f"not_hidden={report.get('not_hidden', 0)} "
-            f"precision={report.get('precision', 0):.3f}"
+            f"precision={report.get('precision', 0):.3f} "
+            f"moderator_prompt_miss={report.get('moderator_prompt_miss', 0)} "
+            f"moderator_artifact_valid={report.get('moderator_artifact_valid', 0)} "
+            "moderator_expected_open_recall="
+            f"{report.get('moderator_expected_open_recall', 0):.3f}"
         )
         failures = report.get("failures")
         if failures:

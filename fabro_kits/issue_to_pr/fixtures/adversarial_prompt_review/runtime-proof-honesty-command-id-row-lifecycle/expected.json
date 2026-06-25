@@ -1,37 +1,6 @@
 {
   "case_id": "runtime-proof-honesty-command-id-row-lifecycle",
-  "expected_rows": [
-    {
-      "categories": [
-        "process",
-        "evidence"
-      ],
-      "id": "runtime-proof-honesty-command-id-row-lifecycle",
-      "keyword_groups": [
-        [
-          "command",
-          "commands_run"
-        ],
-        [
-          "runtime proof",
-          "proof",
-          "evidence"
-        ],
-        [
-          "pytest",
-          "python -m unittest"
-        ],
-        [
-          "claim",
-          "validation"
-        ]
-      ],
-      "min_severity": "major",
-      "required_path_tokens": [
-        "commands_run.json",
-        "validation_contract.json",
-        "test_evidence_gate.json"
-      ]
-    }
-  ]
+  "expected_max_severity": "minor",
+  "expected_no_findings": true,
+  "expected_rows": []
 }

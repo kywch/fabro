@@ -3,7 +3,9 @@
   "expected_rows": [
     {
       "id": "sympy-poly-manual-format",
-      "category": "code",
+      "categories": [
+        "code"
+      ],
       "min_severity": "major",
       "required_path_tokens": [
         "sympy/printing/latex.py"

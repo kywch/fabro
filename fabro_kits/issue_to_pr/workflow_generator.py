@@ -263,7 +263,7 @@ Review only the current issue and current patch. Other repository files are cont
 Do not open a row merely because a focused issue-scoped test is narrower than all conceivable project coverage; name a concrete missing behavior, required file, or contract clause.
 Use the issue, /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH},
 {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, git diff, and touched files.
-Generate plausible issue-scoped findings as rows first. Do not hide plausible unresolved findings in checked_risks or counterexample_checks; those fields are only for risks directly falsified or fully answered by concrete evidence.
+Generate plausible issue-scoped findings as rows first. Prefer root-cause rows over symptom rows: name the changed implementation path and issue-contract boundary when required behavior is missing, bypassed, or over-broadened. Only make a tests row when no stronger code or scope row describes the same concrete gap. Do not hide plausible unresolved findings in checked_risks or counterexample_checks; those fields are only for risks directly falsified or fully answered by concrete evidence.
 If validation_contract.expected_review_rows exists, include those rows with the same ids unless current evidence explicitly falsifies them. expected_review_rows cannot be satisfied via checked_risks except for directly falsified risks.
 
 Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON object:

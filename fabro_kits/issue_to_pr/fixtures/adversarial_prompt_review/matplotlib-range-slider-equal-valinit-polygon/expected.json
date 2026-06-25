@@ -1,35 +1,6 @@
 {
   "case_id": "matplotlib-range-slider-equal-valinit-polygon",
-  "expected_rows": [
-    {
-      "categories": [
-        "code",
-        "tests"
-      ],
-      "id": "matplotlib-range-slider-equal-valinit-polygon",
-      "keyword_groups": [
-        [
-          "RangeSlider"
-        ],
-        [
-          "valinit",
-          "same init",
-          "equal"
-        ],
-        [
-          "poly.xy",
-          "polygon"
-        ],
-        [
-          "vertical",
-          "horizontal"
-        ]
-      ],
-      "min_severity": "major",
-      "required_path_tokens": [
-        "lib/matplotlib/widgets.py",
-        "lib/matplotlib/tests/test_widgets.py"
-      ]
-    }
-  ]
+  "expected_max_severity": "minor",
+  "expected_no_findings": true,
+  "expected_rows": []
 }
