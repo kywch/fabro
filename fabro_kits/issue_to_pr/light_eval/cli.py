@@ -46,6 +46,12 @@ def main(argv: list[str] | None = None) -> int:
     mini_swe.add_argument("--model")
     mini_swe.add_argument("--provider")
     mini_swe.add_argument(
+        "--workflow-timeout-seconds",
+        type=int,
+        default=600,
+        help="Timeout for each mini-SWE model workflow run.",
+    )
+    mini_swe.add_argument(
         "--credential-bridge",
         choices=("off", "openai-codex"),
         default="off",
@@ -135,6 +141,7 @@ def main(argv: list[str] | None = None) -> int:
                 docker_image=args.docker_image,
                 model=args.model,
                 provider=args.provider,
+                workflow_timeout_seconds=args.workflow_timeout_seconds,
                 credential_bridge=args.credential_bridge,
                 auth_storage_dir=args.auth_storage_dir,
                 credential_preflight=args.credential_preflight,

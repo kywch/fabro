@@ -12,6 +12,9 @@ from fabro_kits.issue_to_pr.light_eval.prompt_review import (
     list_prompt_review_cases,
     load_prompt_review_case,
     prepare_prompt_review_workspace,
+    prompt_review_summary,
+    row_match_failure_reasons,
+    row_matches_expected,
     prompt_review_tmp_research,
     run_prompt_review,
     score_adversarial_review,
@@ -94,6 +97,583 @@ class PromptReviewEvalTest(unittest.TestCase):
         self.assertTrue(score["passed"])
         self.assertTrue(score["precision_pass"])
 
+    def test_near_miss_can_use_evidence_without_granting_exact_match(self):
+        expected = {
+            "expected_rows": [
+                {
+                    "id": "manual-format-risk",
+                    "categories": ["code"],
+                    "min_severity": "major",
+                    "required_path_tokens": ["sympy/printing/latex.py"],
+                    "keyword_groups": [
+                        ["manual", "str(poly.as_expr", "replace"],
+                        ["Poly", "polynomial"],
+                        ["latex", "printer", "format"],
+                    ],
+                }
+            ]
+        }
+        review = {
+            "schema_version": 1,
+            "stage": "adversarial_review",
+            "summary": "Manual formatting risk.",
+            "checked_risks": [],
+            "counterexample_checks": [],
+            "rows": [
+                {
+                    "id": "A1",
+                    "category": "code",
+                    "severity": "major",
+                    "failure_mode": "Poly output can bypass printer semantics.",
+                    "evidence": [
+                        "sympy/printing/latex.py",
+                        "body = str(poly.as_expr())",
+                        "manual textual replacements",
+                    ],
+                    "falsifiable_check": "Compare a Poly with LaTeX-specific coefficient rendering.",
+                    "why_it_matters": "Existing polynomial formatting can regress.",
+                }
+            ],
+            "overall_risk": "medium",
+        }
+
+        score = score_adversarial_review(review, expected)
+
+        self.assertEqual(score["matched_expected_ids"], [])
+        self.assertEqual(score["near_miss_expected_ids"], ["manual-format-risk"])
+        self.assertFalse(score["passed"])
+
+    def test_exact_match_failure_reasons_are_empty_for_matching_row(self):
+        expected_row = {
+            "id": "dataframe-index-risk",
+            "categories": ["scope"],
+            "min_severity": "major",
+            "required_path_tokens": ["sklearn/utils/validation.py"],
+            "keyword_groups": [
+                ["DataFrame"],
+                ["index"],
+                ["non-opt-in", "accept_dataframe"],
+            ],
+        }
+        row = {
+            "id": "A1",
+            "category": "scope",
+            "severity": "major",
+            "failure_mode": "DataFrame index handling now bypasses non-opt-in validation.",
+            "evidence": ["sklearn/utils/validation.py"],
+            "falsifiable_check": "Pass a DataFrame with accept_dataframe=False.",
+            "why_it_matters": "The DataFrame index path can broaden accepted inputs.",
+        }
+
+        self.assertEqual(row_match_failure_reasons(row, expected_row), [])
+
+    def test_exact_match_failure_reasons_explain_miss_without_changing_score(self):
+        expected = {
+            "expected_rows": [
+                {
+                    "id": "upload-permissions-risk",
+                    "categories": ["code"],
+                    "min_severity": "major",
+                    "required_path_tokens": [
+                        "django/conf/global_settings.py",
+                        "docs/ref/settings.txt",
+                    ],
+                    "keyword_groups": [
+                        ["FILE_UPLOAD_PERMISSIONS"],
+                        ["0o644", "permissions"],
+                    ],
+                }
+            ]
+        }
+        review = {
+            "schema_version": 1,
+            "stage": "adversarial_review",
+            "summary": "A lower-severity docs-only row.",
+            "checked_risks": [],
+            "counterexample_checks": [],
+            "rows": [
+                {
+                    "id": "A1",
+                    "category": "tests",
+                    "severity": "minor",
+                    "failure_mode": "Docs mention upload permissions.",
+                    "evidence": ["docs/ref/settings.txt"],
+                    "falsifiable_check": "Inspect docs.",
+                    "why_it_matters": "Readers may miss the default.",
+                }
+            ],
+            "overall_risk": "low",
+        }
+
+        score = score_adversarial_review(review, expected)
+
+        self.assertEqual(score["matched_expected_ids"], [])
+        self.assertEqual(score["row_recall"], 0.0)
+        self.assertFalse(score["passed"])
+        self.assertEqual(
+            score["exact_match_failures"],
+            [
+                {
+                    "expected_id": "upload-permissions-risk",
+                    "best_row_id": "A1",
+                    "reasons": [
+                        {
+                            "reason": "category_mismatch",
+                            "actual": "tests",
+                            "expected": ["code"],
+                        },
+                        {
+                            "reason": "severity_below_minimum",
+                            "actual": "minor",
+                            "expected_minimum": "major",
+                        },
+                        {
+                            "reason": "missing_path_tokens",
+                            "tokens": ["django/conf/global_settings.py"],
+                        },
+                        {
+                            "reason": "missing_keyword_groups",
+                            "groups": [["FILE_UPLOAD_PERMISSIONS"]],
+                        },
+                    ],
+                }
+            ],
+        )
+
+    def test_exact_match_failure_reasons_report_no_candidate_rows(self):
+        expected = {
+            "expected_rows": [
+                {
+                    "id": "hidden-risk",
+                    "categories": ["code"],
+                    "keyword_groups": [["bytes"], ["dispatch"]],
+                }
+            ]
+        }
+        review = {
+            "schema_version": 1,
+            "stage": "adversarial_review",
+            "summary": "No rows.",
+            "checked_risks": [],
+            "counterexample_checks": [],
+            "rows": [],
+            "overall_risk": "low",
+        }
+
+        score = score_adversarial_review(review, expected)
+
+        self.assertEqual(
+            score["exact_match_failures"],
+            [
+                {
+                    "expected_id": "hidden-risk",
+                    "best_row_id": None,
+                    "reasons": [{"reason": "no_candidate_rows"}],
+                }
+            ],
+        )
+        self.assertEqual(score["row_recall"], 0.0)
+        self.assertFalse(score["passed"])
+
+    def test_exact_match_failure_reasons_include_missing_required_fields(self):
+        expected = {
+            "expected_rows": [
+                {
+                    "id": "dataframe-index-risk",
+                    "categories": ["scope"],
+                    "min_severity": "major",
+                    "required_path_tokens": ["sklearn/utils/validation.py"],
+                    "keyword_groups": [["DataFrame"], ["index"]],
+                }
+            ]
+        }
+        review = {
+            "schema_version": 1,
+            "stage": "adversarial_review",
+            "summary": "Missing falsifiable check.",
+            "checked_risks": [],
+            "counterexample_checks": [],
+            "rows": [
+                {
+                    "id": "A1",
+                    "category": "scope",
+                    "severity": "major",
+                    "failure_mode": "DataFrame index behavior is broadened.",
+                    "evidence": ["sklearn/utils/validation.py"],
+                    "why_it_matters": "Non-opt-in validation can change.",
+                }
+            ],
+            "overall_risk": "medium",
+        }
+
+        score = score_adversarial_review(review, expected)
+
+        self.assertEqual(score["row_recall"], 0.0)
+        self.assertFalse(score["passed"])
+        self.assertEqual(
+            score["exact_match_failures"][0]["reasons"],
+            [{"reason": "missing_required_fields", "fields": ["falsifiable_check"]}],
+        )
+
+    def test_exact_match_allows_diagnostic_missing_test_path_when_source_path_present(self):
+        expected_row = {
+            "id": "importlib-origin-risk",
+            "categories": ["code"],
+            "min_severity": "major",
+            "required_path_tokens": [
+                "src/_pytest/pathlib.py",
+                "testing/acceptance_test.py",
+            ],
+            "keyword_groups": [
+                ["sys.modules"],
+                ["origin", "path", "wrong module"],
+                ["module name"],
+                ["importlib"],
+            ],
+        }
+        row = {
+            "id": "A1",
+            "category": "code",
+            "severity": "major",
+            "failure_mode": (
+                "import_path(..., mode='importlib') can return a wrong module "
+                "when sys.modules contains the computed module name for another path."
+            ),
+            "evidence": ["src/_pytest/pathlib.py"],
+            "falsifiable_check": "Compare the cached module __spec__.origin.",
+            "why_it_matters": "The importlib mode can mask the wrong file origin.",
+        }
+
+        self.assertTrue(row_matches_expected(row, expected_row))
+        self.assertEqual(row_match_failure_reasons(row, expected_row), [])
+
+    def test_exact_match_allows_one_missing_keyword_group_from_evidence(self):
+        expected_row = {
+            "id": "bytes-diff-risk",
+            "categories": ["code"],
+            "min_severity": "major",
+            "required_path_tokens": ["src/_pytest/assertion/util.py"],
+            "keyword_groups": [
+                ["str", "string"],
+                ["repr", "quotes"],
+                ["_diff_text"],
+            ],
+        }
+        row = {
+            "id": "A1",
+            "category": "code",
+            "severity": "major",
+            "failure_mode": "Ordinary string assertion diffs can gain repr quotes.",
+            "evidence": ["src/_pytest/assertion/util.py: str/str comparisons still use _diff_text"],
+            "falsifiable_check": "Compare a focused string assertion diff.",
+            "why_it_matters": "String diffs may become harder to read.",
+        }
+
+        self.assertTrue(row_matches_expected(row, expected_row))
+        self.assertEqual(row_match_failure_reasons(row, expected_row), [])
+
+    def test_exact_match_rejects_multiple_keyword_groups_only_in_evidence(self):
+        expected_row = {
+            "id": "stuffing-risk",
+            "categories": ["code"],
+            "min_severity": "major",
+            "required_path_tokens": ["src/_pytest/assertion/util.py"],
+            "keyword_groups": [
+                ["bytes"],
+                ["dispatch"],
+                ["_diff_text"],
+            ],
+        }
+        row = {
+            "id": "A1",
+            "category": "code",
+            "severity": "major",
+            "failure_mode": "A nearby assertion diff concern may regress.",
+            "evidence": ["src/_pytest/assertion/util.py bytes dispatch _diff_text"],
+            "falsifiable_check": "Inspect the diff.",
+            "why_it_matters": "Output readability can regress.",
+        }
+
+        self.assertFalse(row_matches_expected(row, expected_row))
+
+    def test_near_miss_normalizes_identifier_separators(self):
+        expected = {
+            "expected_rows": [
+                {
+                    "id": "importlib-origin-risk",
+                    "categories": ["code"],
+                    "min_severity": "major",
+                    "required_path_tokens": [
+                        "src/_pytest/pathlib.py",
+                        "testing/acceptance_test.py",
+                    ],
+                    "keyword_groups": [
+                        ["sys.modules"],
+                        ["origin", "path", "wrong module"],
+                        ["module name"],
+                        ["importlib"],
+                    ],
+                }
+            ]
+        }
+        review = {
+            "schema_version": 1,
+            "stage": "adversarial_review",
+            "summary": "Cached module origin risk.",
+            "checked_risks": [],
+            "counterexample_checks": [],
+            "rows": [
+                {
+                    "id": "A1",
+                    "category": "code",
+                    "severity": "major",
+                    "failure_mode": (
+                        "import_path(..., mode=\"importlib\") can return an unrelated cached module "
+                        "when sys.modules already contains the computed module_name for a different file."
+                    ),
+                    "evidence": ["src/_pytest/pathlib.py"],
+                    "falsifiable_check": "Compare the cached module __spec__.origin to the requested path.",
+                    "why_it_matters": "A wrong module can mask the file pytest is trying to import.",
+                }
+            ],
+            "overall_risk": "medium",
+        }
+
+        score = score_adversarial_review(review, expected)
+
+        self.assertEqual(score["matched_expected_ids"], [])
+        self.assertEqual(score["near_miss_expected_ids"], ["importlib-origin-risk"])
+        self.assertFalse(score["passed"])
+
+    def test_near_miss_takes_precedence_when_row_mentions_expected_risk(self):
+        expected = {
+            "expected_rows": [
+                {
+                    "id": "bytes-dispatch-risk",
+                    "categories": ["code"],
+                    "keyword_groups": [
+                        ["bytes"],
+                        ["dispatch"],
+                    ],
+                }
+            ]
+        }
+        review = {
+            "schema_version": 1,
+            "stage": "adversarial_review",
+            "summary": "Bytes dispatch checked.",
+            "checked_risks": [
+                {
+                    "risk": "Bytes could still use the wrong dispatch path.",
+                    "evidence": ["pytest_assertrepr_compare"],
+                    "counterexample_check": "The focused test passed.",
+                }
+            ],
+            "counterexample_checks": [],
+            "rows": [
+                {
+                    "id": "A1",
+                    "category": "code",
+                    "severity": "major",
+                    "failure_mode": "Adjacent string diff dispatch can regress.",
+                    "evidence": ["bytes dispatch implementation is nearby"],
+                    "falsifiable_check": "Compare string output.",
+                    "why_it_matters": "Diff readability can regress.",
+                }
+            ],
+            "overall_risk": "medium",
+        }
+
+        score = score_adversarial_review(review, expected)
+
+        self.assertEqual(score["hidden_expected_ids"], [])
+        self.assertEqual(score["near_miss_expected_ids"], ["bytes-dispatch-risk"])
+
+    def test_visible_issue_shaped_row_reports_row_shape_miss(self):
+        expected = {
+            "expected_rows": [
+                {
+                    "id": "django-upload-permissions",
+                    "categories": ["code", "tests"],
+                    "min_severity": "major",
+                    "required_path_tokens": [
+                        "django/conf/global_settings.py",
+                        "docs/ref/settings.txt",
+                    ],
+                    "keyword_groups": [
+                        ["FILE_UPLOAD_PERMISSIONS"],
+                        ["0o644", "permissions"],
+                        ["TemporaryUploadedFile", "temporary upload"],
+                        ["docs", "settings"],
+                    ],
+                }
+            ]
+        }
+        review = {
+            "schema_version": 1,
+            "stage": "adversarial_review",
+            "summary": "Temporary upload gap.",
+            "checked_risks": [
+                {
+                    "risk": "Docs and settings are updated.",
+                    "evidence": ["docs/ref/settings.txt", "django/conf/global_settings.py"],
+                    "counterexample_check": "The docs name FILE_UPLOAD_PERMISSIONS.",
+                }
+            ],
+            "counterexample_checks": [],
+            "rows": [
+                {
+                    "id": "A1",
+                    "category": "tests",
+                    "severity": "major",
+                    "failure_mode": (
+                        "The TemporaryUploadedFile path is not covered under the new 0o644 "
+                        "default permissions behavior."
+                    ),
+                    "evidence": ["tests/file_storage/tests.py"],
+                    "falsifiable_check": "Exercise a temporary upload under a restrictive umask.",
+                    "why_it_matters": "Large uploads could keep stale permissions.",
+                }
+            ],
+            "overall_risk": "medium",
+        }
+
+        score = score_adversarial_review(review, expected)
+
+        self.assertEqual(score["matched_expected_ids"], [])
+        self.assertEqual(score["near_miss_expected_ids"], [])
+        self.assertEqual(score["hidden_expected_ids"], [])
+        self.assertEqual(
+            score["visible_issue_shaped_expected_ids"],
+            ["django-upload-permissions"],
+        )
+        self.assertEqual(score["row_shape_miss_expected_ids"], ["django-upload-permissions"])
+        self.assertFalse(score["passed"])
+
+    def test_checked_risk_only_expected_ids_remain_hidden(self):
+        expected = {
+            "expected_rows": [
+                {
+                    "id": "hidden-risk",
+                    "categories": ["code"],
+                    "keyword_groups": [
+                        ["bytes"],
+                        ["dispatch"],
+                    ],
+                }
+            ]
+        }
+        review = {
+            "schema_version": 1,
+            "stage": "adversarial_review",
+            "summary": "No rows.",
+            "checked_risks": [
+                {
+                    "risk": "Bytes dispatch could still be wrong.",
+                    "evidence": ["Focused test passed."],
+                    "counterexample_check": "Trust the focused test.",
+                }
+            ],
+            "counterexample_checks": [],
+            "rows": [],
+            "overall_risk": "low",
+        }
+
+        score = score_adversarial_review(review, expected)
+
+        self.assertEqual(score["hidden_expected_ids"], ["hidden-risk"])
+        self.assertEqual(score["checked_risk_only_expected_ids"], ["hidden-risk"])
+        self.assertEqual(score["visible_issue_shaped_expected_ids"], [])
+        self.assertFalse(score["passed"])
+
+    def test_visible_row_shape_miss_does_not_mask_hidden_risk(self):
+        expected = {
+            "expected_rows": [
+                {
+                    "id": "split-risk",
+                    "categories": ["code"],
+                    "keyword_groups": [
+                        ["temporary upload"],
+                        ["0o644"],
+                        ["settings"],
+                    ],
+                }
+            ]
+        }
+        review = {
+            "schema_version": 1,
+            "stage": "adversarial_review",
+            "summary": "Split evidence.",
+            "checked_risks": [
+                {
+                    "risk": "temporary upload could miss 0o644 settings behavior",
+                    "evidence": ["Focused test passed."],
+                    "counterexample_check": "Trust the focused test.",
+                }
+            ],
+            "counterexample_checks": [],
+            "rows": [
+                {
+                    "id": "A1",
+                    "category": "code",
+                    "severity": "major",
+                    "failure_mode": "The temporary upload path is not covered for 0o644 behavior.",
+                    "evidence": ["tests/file_storage/tests.py"],
+                    "falsifiable_check": "Exercise a temporary upload.",
+                    "why_it_matters": "Large uploads can differ.",
+                }
+            ],
+            "overall_risk": "medium",
+        }
+
+        score = score_adversarial_review(review, expected)
+
+        self.assertEqual(score["hidden_expected_ids"], ["split-risk"])
+        self.assertEqual(score["visible_issue_shaped_expected_ids"], ["split-risk"])
+        self.assertEqual(score["row_shape_miss_expected_ids"], ["split-risk"])
+        self.assertEqual(score["checked_risk_only_expected_ids"], [])
+        self.assertFalse(score["passed"])
+
+    def test_artifact_blocker_expected_ids_are_diagnostic_only(self):
+        expected = {
+            "expected_rows": [
+                {
+                    "id": "semantic-risk",
+                    "categories": ["code"],
+                    "keyword_groups": [
+                        ["dask"],
+                        ["lazy"],
+                    ],
+                }
+            ]
+        }
+        review = {
+            "schema_version": 1,
+            "stage": "adversarial_review",
+            "summary": "Syntax blocker.",
+            "checked_risks": [],
+            "counterexample_checks": [],
+            "rows": [
+                {
+                    "id": "A1",
+                    "category": "code",
+                    "severity": "blocker",
+                    "failure_mode": "xarray/core/concat.py raises SyntaxError before import.",
+                    "evidence": ["python3 -m py_compile xarray/core/concat.py"],
+                    "falsifiable_check": "Run py_compile.",
+                    "why_it_matters": "The semantic behavior cannot be exercised.",
+                }
+            ],
+            "overall_risk": "high",
+        }
+
+        score = score_adversarial_review(review, expected)
+
+        self.assertEqual(score["artifact_blocker_expected_ids"], ["semantic-risk"])
+        self.assertEqual(score["visible_issue_shaped_expected_ids"], [])
+        self.assertEqual(score["row_recall"], 0.0)
+        self.assertFalse(score["passed"])
+
     def test_scorer_accepts_quiet_control_fixture(self):
         case = load_prompt_review_case(
             PROMPT_REVIEW_FIXTURE_ROOT / "django-sqlmigrate-nontransactional-ddl"
@@ -114,6 +694,45 @@ class PromptReviewEvalTest(unittest.TestCase):
         self.assertEqual(score["unexpected_severity_failures"], [])
         self.assertEqual(score["near_miss_expected_ids"], [])
         self.assertTrue(score["passed"])
+
+    def test_prompt_review_summary_counts_diagnostic_metrics(self):
+        results = [
+            {
+                "review_mode": "adversarial",
+                "moderator_score": {"not_applicable": True},
+                "score": {
+                    "artifact_valid": True,
+                    "row_recall": 0.0,
+                    "not_hidden": True,
+                    "precision": 0.0,
+                    "visible_issue_shaped_expected_ids": ["A"],
+                    "row_shape_miss_expected_ids": ["A"],
+                    "checked_risk_only_expected_ids": [],
+                    "artifact_blocker_expected_ids": ["B"],
+                },
+            },
+            {
+                "review_mode": "adversarial",
+                "moderator_score": {"not_applicable": True},
+                "score": {
+                    "artifact_valid": True,
+                    "row_recall": 1.0,
+                    "not_hidden": False,
+                    "precision": 1.0,
+                    "visible_issue_shaped_expected_ids": [],
+                    "row_shape_miss_expected_ids": [],
+                    "checked_risk_only_expected_ids": ["C"],
+                    "artifact_blocker_expected_ids": [],
+                },
+            },
+        ]
+
+        summary = prompt_review_summary(results, [])
+
+        self.assertEqual(summary["visible_issue_shaped"], 1)
+        self.assertEqual(summary["row_shape_miss"], 1)
+        self.assertEqual(summary["checked_risk_only"], 1)
+        self.assertEqual(summary["artifact_blocker"], 1)
 
     def test_scorer_rejects_overblocking_control_fixture(self):
         case = load_prompt_review_case(
@@ -234,6 +853,31 @@ class PromptReviewEvalTest(unittest.TestCase):
 
         self.assertEqual(score["expected_non_open_ids"], ["scikit-dataframe-index-broadening"])
         self.assertFalse(score["passed"])
+
+    def test_moderator_scorer_accepts_quiet_control_with_no_rows(self):
+        case = load_prompt_review_case(
+            PROMPT_REVIEW_FIXTURE_ROOT / "django-sqlmigrate-nontransactional-ddl"
+        )
+        review = {
+            "schema_version": 1,
+            "stage": "adversarial_review",
+            "rows": [],
+        }
+        moderator = {
+            "schema_version": 1,
+            "stage": "moderator_filter",
+            "dispositions": [],
+            "readiness_tier": "ready_verified",
+            "do_not_repeat": [],
+            "next_agent_guidance": "Proceed.",
+        }
+
+        score = score_moderator_filter(review, moderator, case.expected)
+
+        self.assertTrue(score["artifact_valid"])
+        self.assertTrue(score["rows_accounted"])
+        self.assertEqual(score["expected_open_recall"], 1.0)
+        self.assertTrue(score["passed"])
 
     def test_prompt_review_workflow_defaults_to_adversarial_only(self):
         with tempfile.TemporaryDirectory() as tmp:

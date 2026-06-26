@@ -126,6 +126,7 @@ class ModelWorkflowRunner:
         fabro_bin: Path,
         model: str | None,
         provider: str | None,
+        workflow_timeout_seconds: int = 600,
         credential_bridge: str = "off",
         auth_storage_dir: Path | None = None,
         credential_preflight: bool = False,
@@ -134,6 +135,7 @@ class ModelWorkflowRunner:
         self.fabro_bin = fabro_bin
         self.model = model
         self.provider = provider
+        self.workflow_timeout_seconds = workflow_timeout_seconds
         self.credential_bridge = credential_bridge
         self.auth_storage_dir = auth_storage_dir
         self.credential_preflight = credential_preflight
@@ -365,7 +367,7 @@ class ModelWorkflowRunner:
             context.fabro_bin,
             args,
             env=env,
-            timeout=600,
+            timeout=self.workflow_timeout_seconds,
             cwd=context.command_cwd,
         )
         return run_proc

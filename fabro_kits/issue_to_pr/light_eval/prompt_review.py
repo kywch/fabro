@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import tempfile
 from contextlib import contextmanager
@@ -486,27 +487,55 @@ def score_adversarial_review(
     expected_rows = expected.get("expected_rows", [])
     matched_ids = []
     hidden_ids = []
+    near_miss_ids = []
+    visible_issue_shaped_ids = []
+    row_shape_miss_ids = []
+    checked_risk_only_ids = []
+    artifact_blocker_ids = []
     for expected_row in expected_rows:
-        if any(row_matches_expected(row, expected_row) for row in rows if isinstance(row, dict)):
-            matched_ids.append(expected_row.get("id"))
-        elif risk_hidden(review, expected_row):
-            hidden_ids.append(expected_row.get("id"))
-    near_miss_ids = [
-        expected_row.get("id")
-        for expected_row in expected_rows
-        if expected_row.get("id") not in matched_ids
-        and expected_row.get("id") not in hidden_ids
-        and any(
+        expected_id = expected_row.get("id")
+        row_mentions_expected = any(
             row_semantically_mentions_expected(row, expected_row)
             for row in rows
             if isinstance(row, dict)
         )
-    ]
+        row_visibly_mentions_expected = any(
+            row_visibly_mentions_expected_risk(row, expected_row)
+            for row in rows
+            if isinstance(row, dict)
+        )
+        hidden_in_checked_risks = risk_hidden(review, expected_row)
+        artifact_blocked = any(
+            row_is_artifact_blocker(row)
+            for row in rows
+            if isinstance(row, dict)
+        )
+        if any(row_matches_expected(row, expected_row) for row in rows if isinstance(row, dict)):
+            matched_ids.append(expected_id)
+            visible_issue_shaped_ids.append(expected_id)
+        elif row_mentions_expected:
+            near_miss_ids.append(expected_id)
+            visible_issue_shaped_ids.append(expected_id)
+        else:
+            if row_visibly_mentions_expected:
+                visible_issue_shaped_ids.append(expected_id)
+                row_shape_miss_ids.append(expected_id)
+            if hidden_in_checked_risks:
+                hidden_ids.append(expected_id)
+                if not row_visibly_mentions_expected:
+                    checked_risk_only_ids.append(expected_id)
+            if artifact_blocked:
+                artifact_blocker_ids.append(expected_id)
     extra_rows = [
         row
         for row in rows
         if isinstance(row, dict)
         and not any(row_matches_expected(row, expected_row) for expected_row in expected_rows)
+    ]
+    exact_match_failures = [
+        best_row_match_failure(expected_row, rows)
+        for expected_row in expected_rows
+        if expected_row.get("id") not in matched_ids
     ]
     severity_failures = unexpected_severity_failures(
         extra_rows,
@@ -530,6 +559,11 @@ def score_adversarial_review(
         "matched_expected_ids": matched_ids,
         "hidden_expected_ids": hidden_ids,
         "near_miss_expected_ids": near_miss_ids,
+        "visible_issue_shaped_expected_ids": visible_issue_shaped_ids,
+        "row_shape_miss_expected_ids": row_shape_miss_ids,
+        "checked_risk_only_expected_ids": checked_risk_only_ids,
+        "artifact_blocker_expected_ids": artifact_blocker_ids,
+        "exact_match_failures": exact_match_failures,
         "missing_expected_ids": [
             expected_row.get("id")
             for expected_row in expected_rows
@@ -620,7 +654,7 @@ def score_moderator_filter(
         )
         / len(matched_expected_ids)
         if matched_expected_ids
-        else 0.0
+        else 1.0
     )
     passed = (
         not not_applicable
@@ -684,22 +718,232 @@ def row_matches_expected(row: dict[str, Any], expected: dict[str, Any]) -> bool:
     semantic_haystack = row_text({field: row.get(field) for field in SEMANTIC_ROW_FIELDS})
     for token in expected.get("required_path_tokens", []):
         if str(token).lower() not in haystack:
-            return False
-    for group in expected.get("keyword_groups", []):
-        if not any(str(keyword).lower() in semantic_haystack for keyword in group):
-            return False
+            if not path_token_gap_is_diagnostic(row, expected, str(token)):
+                return False
+    if not keyword_groups_match(row, expected, semantic_haystack):
+        return False
     return True
+
+
+def path_token_gap_is_diagnostic(
+    row: dict[str, Any],
+    expected: dict[str, Any],
+    missing_token: str,
+) -> bool:
+    if not path_token_is_test_path(missing_token):
+        return False
+    haystack = row_text(row)
+    required_tokens = [str(token) for token in expected.get("required_path_tokens", [])]
+    missing_tokens = [token for token in required_tokens if token.lower() not in haystack]
+    if any(not path_token_is_test_path(token) for token in missing_tokens):
+        return False
+    return any(
+        not path_token_is_test_path(token) and token.lower() in haystack
+        for token in required_tokens
+    )
+
+
+def path_token_is_test_path(token: str) -> bool:
+    lowered = token.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "/test",
+            "tests/",
+            "testing/",
+            "test_",
+        )
+    )
+
+
+def keyword_groups_match(
+    row: dict[str, Any],
+    expected: dict[str, Any],
+    semantic_haystack: str,
+) -> bool:
+    missing_groups = [
+        group
+        for group in expected.get("keyword_groups", [])
+        if not any(str(keyword).lower() in semantic_haystack for keyword in group)
+    ]
+    if not missing_groups:
+        return True
+    if len(missing_groups) > 1:
+        return False
+    if not keyword_group_can_match_evidence(missing_groups[0]):
+        return False
+    evidence_haystack = row_text({"evidence": row.get("evidence")})
+    return any(str(keyword).lower() in evidence_haystack for keyword in missing_groups[0])
+
+
+def keyword_group_can_match_evidence(group: list[Any]) -> bool:
+    return len(group) == 1 and keyword_is_code_symbol(str(group[0]))
+
+
+def keyword_is_code_symbol(keyword: str) -> bool:
+    return any(marker in keyword for marker in ("_", ".", "(", ")", "::"))
+
+
+def best_row_match_failure(expected: dict[str, Any], rows: list[Any]) -> dict[str, Any]:
+    candidates = [
+        (row, row_match_failure_reasons(row, expected))
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    if not candidates:
+        return {
+            "expected_id": expected.get("id"),
+            "best_row_id": None,
+            "reasons": [{"reason": "no_candidate_rows"}],
+        }
+
+    best_row, reasons = min(
+        candidates,
+        key=lambda candidate: (
+            row_match_diagnostic_rank(candidate[0], expected),
+            len(candidate[1]),
+        ),
+    )
+    return {
+        "expected_id": expected.get("id"),
+        "best_row_id": best_row.get("id"),
+        "reasons": reasons,
+    }
+
+
+def row_match_diagnostic_rank(row: dict[str, Any], expected: dict[str, Any]) -> int:
+    if row_semantically_mentions_expected(row, expected):
+        return 0
+    if row_visibly_mentions_expected_risk(row, expected):
+        return 1
+    return 2
+
+
+def row_match_failure_reasons(row: dict[str, Any], expected: dict[str, Any]) -> list[dict[str, Any]]:
+    reasons: list[dict[str, Any]] = []
+    missing_required_fields = [
+        field for field in REQUIRED_ROW_FIELDS if not row_field_nonempty(row.get(field))
+    ]
+    if missing_required_fields:
+        reasons.append(
+            {
+                "reason": "missing_required_fields",
+                "fields": missing_required_fields,
+            }
+        )
+
+    categories = expected.get("categories") or [expected.get("category")]
+    if categories != [None] and row.get("category") not in categories:
+        reasons.append(
+            {
+                "reason": "category_mismatch",
+                "actual": row.get("category"),
+                "expected": categories,
+            }
+        )
+
+    expected_severity = str(expected.get("min_severity") or expected.get("severity") or "")
+    actual_severity = str(row.get("severity") or "")
+    if not severity_at_least(actual_severity, expected_severity):
+        reasons.append(
+            {
+                "reason": "severity_below_minimum",
+                "actual": actual_severity,
+                "expected_minimum": expected_severity,
+            }
+        )
+
+    haystack = row_text(row)
+    missing_path_tokens = [
+        str(token)
+        for token in expected.get("required_path_tokens", [])
+        if str(token).lower() not in haystack
+        and not path_token_gap_is_diagnostic(row, expected, str(token))
+    ]
+    if missing_path_tokens:
+        reasons.append(
+            {
+                "reason": "missing_path_tokens",
+                "tokens": missing_path_tokens,
+            }
+        )
+
+    semantic_haystack = row_text({field: row.get(field) for field in SEMANTIC_ROW_FIELDS})
+    missing_keyword_groups = [
+        [str(keyword) for keyword in group]
+        for group in expected.get("keyword_groups", [])
+        if not any(str(keyword).lower() in semantic_haystack for keyword in group)
+    ]
+    if len(missing_keyword_groups) == 1:
+        evidence_haystack = row_text({"evidence": row.get("evidence")})
+        if keyword_group_can_match_evidence(missing_keyword_groups[0]) and any(
+            keyword.lower() in evidence_haystack for keyword in missing_keyword_groups[0]
+        ):
+            missing_keyword_groups = []
+    if missing_keyword_groups:
+        reasons.append(
+            {
+                "reason": "missing_keyword_groups",
+                "groups": missing_keyword_groups,
+            }
+        )
+    return reasons
 
 
 def row_semantically_mentions_expected(row: dict[str, Any], expected: dict[str, Any]) -> bool:
     keyword_groups = expected.get("keyword_groups", [])
     if not keyword_groups:
         return False
-    semantic_haystack = row_text({field: row.get(field) for field in SEMANTIC_ROW_FIELDS})
+    semantic_haystack = row_text(row)
+    normalized_haystack = normalized_keyword_text(semantic_haystack)
     return all(
-        any(str(keyword).lower() in semantic_haystack for keyword in group)
+        any(keyword_mentions(semantic_haystack, normalized_haystack, str(keyword)) for keyword in group)
         for group in keyword_groups
     )
+
+
+def row_visibly_mentions_expected_risk(row: dict[str, Any], expected: dict[str, Any]) -> bool:
+    keyword_groups = expected.get("keyword_groups", [])
+    if not keyword_groups:
+        return False
+    haystack = row_text(row)
+    normalized_haystack = normalized_keyword_text(haystack)
+    mentioned_groups = sum(
+        1
+        for group in keyword_groups
+        if any(keyword_mentions(haystack, normalized_haystack, str(keyword)) for keyword in group)
+    )
+    required_path_tokens = expected.get("required_path_tokens", [])
+    mentioned_paths = sum(1 for token in required_path_tokens if str(token).lower() in haystack)
+    if len(keyword_groups) == 1:
+        return mentioned_groups == 1
+    return mentioned_groups >= 2 or (mentioned_groups >= 1 and mentioned_paths >= 1)
+
+
+def keyword_mentions(haystack: str, normalized_haystack: str, keyword: str) -> bool:
+    lowered = keyword.lower()
+    return lowered in haystack or normalized_keyword_text(lowered) in normalized_haystack
+
+
+def normalized_keyword_text(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def row_is_artifact_blocker(row: dict[str, Any]) -> bool:
+    text = row_text(row)
+    blocker_tokens = (
+        "syntaxerror",
+        "indentationerror",
+        "py_compile",
+        "does not parse",
+        "do not parse",
+        "cannot be imported",
+        "not importable",
+        "syntax error",
+        "unbound name",
+        "nameerror",
+    )
+    return any(token in text for token in blocker_tokens)
 
 
 def required_row_fields_present(row: dict[str, Any]) -> bool:
@@ -840,6 +1084,22 @@ def prompt_review_summary(results: list[dict[str, Any]], failures: list[dict[str
         "not_hidden": sum(1 for result in results if result["score"]["not_hidden"]),
         "precision": (
             sum(result["score"]["precision"] for result in results) / total if total else 0.0
+        ),
+        "visible_issue_shaped": sum(
+            len(result["score"].get("visible_issue_shaped_expected_ids", []))
+            for result in results
+        ),
+        "row_shape_miss": sum(
+            len(result["score"].get("row_shape_miss_expected_ids", []))
+            for result in results
+        ),
+        "checked_risk_only": sum(
+            len(result["score"].get("checked_risk_only_expected_ids", []))
+            for result in results
+        ),
+        "artifact_blocker": sum(
+            len(result["score"].get("artifact_blocker_expected_ids", []))
+            for result in results
         ),
         "moderator_artifact_valid": sum(
             1 for score in applicable_moderator_scores if score["artifact_valid"]
