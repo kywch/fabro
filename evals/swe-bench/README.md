@@ -30,6 +30,14 @@ python run_eval.py \
 - `--fabro-bin` — Fabro CLI binary to execute (default: `fabro`)
 - `--max-workers` — max concurrent sandboxes (default: 75)
 - `--timeout` — per-instance timeout in seconds (default: 1200)
+- `--continuation-timeout` — optional second wait for runs that timed out
+  while a workflow stage was still incomplete
+- `--min-free-gb` — minimum free GiB required on the output filesystem before
+  starting (default: 20)
+- `--credential-bridge openai-codex` — copy an existing `OPENAI_CODEX` vault
+  credential into isolated SWE-bench Fabro storage
+- `--auth-storage-dir` — source Fabro storage root for the credential bridge
+- `--credential-preflight` — run `fabro model test` before launching tasks
 - `--instance-ids` — run only specific instances (e.g. `--instance-ids django__django-11099`)
 
 ### Local Docker + Codex smoke
@@ -45,6 +53,9 @@ Fabro's server vault:
     --fabro-bin ../../target/debug/fabro \
     --max-workers 1 \
     --instance-ids django__django-11099 \
+    --credential-bridge openai-codex \
+    --auth-storage-dir ../../tmp/issue-to-pr-auth-storage \
+    --credential-preflight \
     --output-dir ../../tmp/swebench-results/gpt54-mini-django-11099
 ```
 

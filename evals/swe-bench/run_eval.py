@@ -12,6 +12,7 @@ Usage:
 import argparse
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -31,6 +32,7 @@ from fabro_kits.issue_to_pr.artifacts import (
     DEFAULT_ATTEMPT_ID,
     build_candidate_record,
     build_prediction_record,
+    is_export_eligible,
     load_or_init_manifest,
     run_id_for_task,
     update_manifest_for_run,
@@ -50,6 +52,14 @@ from fabro_kits.issue_to_pr.run_attempt import (
     parse_run_id_json,
     write_events_jsonl,
     write_trajectory_from_events,
+)
+from fabro_kits.issue_to_pr.light_eval.mini_swe.credentials import (
+    bridge_model_credentials,
+    credential_preflight_report,
+)
+from fabro_kits.issue_to_pr.light_eval.workflow_common import (
+    workflow_smoke_dev_token,
+    workflow_smoke_session_secret,
 )
 from fabro_kits.issue_to_pr.workflow_generator import (
     SIMPLE_PROFILE,
@@ -72,6 +82,7 @@ STRUCTURED_WORKFLOW_PROFILES = {
     STRUCTURED_MODERATED_PROFILE,
 }
 GATED_WORKFLOW_PROFILES = {STRUCTURED_GATED_PROFILE, STRUCTURED_MODERATED_PROFILE}
+SUPPORTED_CREDENTIAL_BRIDGES = ("off", "openai-codex")
 
 # ---------------------------------------------------------------------------
 # Logging — dual output: file (DEBUG) + terminal (INFO)
@@ -97,6 +108,98 @@ def setup_logging(output_dir: Path):
     ch.setLevel(logging.INFO)
     ch.setFormatter(fmt)
     log.addHandler(ch)
+
+
+def prepare_fabro_env(
+    *,
+    output_dir: Path,
+    fabro_bin: str,
+    credential_bridge: str,
+    auth_storage_dir: Path | None,
+    credential_preflight: bool,
+    provider: str | None,
+    model: str | None,
+) -> dict[str, str] | None:
+    if credential_bridge == "off":
+        return None
+    if credential_bridge not in SUPPORTED_CREDENTIAL_BRIDGES:
+        raise SystemExit(f"unsupported credential bridge: {credential_bridge}")
+
+    storage_dir = output_dir / "fabro-storage"
+    config_path = output_dir / "fabro-settings.toml"
+    write_swebench_server_config(storage_dir=storage_dir, config_path=config_path)
+
+    report = bridge_model_credentials(
+        bridge=credential_bridge,
+        source_storage_dir=auth_storage_dir,
+        target_storage_dir=storage_dir,
+    )
+    (output_dir / "credential_bridge.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n"
+    )
+    if credential_bridge == "openai-codex" and report.get("status") != "copied":
+        raise SystemExit(f"credential bridge failed: {report.get('status')}")
+
+    env = dict(os.environ)
+    env.update(
+        {
+            "FABRO_CONFIG": str(config_path.resolve()),
+            "FABRO_STORAGE_DIR": str(storage_dir.resolve()),
+            "FABRO_SERVER": str((storage_dir / "fabro.sock").resolve()),
+            "FABRO_NO_UPGRADE_CHECK": "true",
+            "FABRO_DEV_TOKEN": workflow_smoke_dev_token(),
+            "SESSION_SECRET": workflow_smoke_session_secret(),
+        }
+    )
+    if credential_bridge == "openai-codex":
+        env.pop("OPENAI_API_KEY", None)
+        report["scrubbed_env_secret_names"] = ["OPENAI_API_KEY"]
+        (output_dir / "credential_bridge.json").write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n"
+        )
+
+    preflight = credential_preflight_report(
+        fabro_bin=Path(fabro_bin),
+        env=env,
+        enabled=credential_preflight,
+        provider=provider or ("openai" if credential_bridge == "openai-codex" else None),
+        model=model,
+    )
+    (output_dir / "credential_preflight.json").write_text(
+        json.dumps(preflight, indent=2, sort_keys=True) + "\n"
+    )
+    if credential_preflight and preflight.get("status") == "failed":
+        raise SystemExit(
+            f"credential preflight failed: fabro model test exited with {preflight.get('returncode')}"
+        )
+    return env
+
+
+def write_swebench_server_config(*, storage_dir: Path, config_path: Path) -> None:
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        "_version = 1\n"
+        "\n"
+        "[server.storage]\n"
+        f"root = {json.dumps(str(storage_dir.resolve()))}\n"
+        "\n"
+        "[server.auth]\n"
+        "methods = [\"dev-token\"]\n"
+        "\n"
+        "[server.sandbox.providers.local]\n"
+        "enabled = false\n"
+        "\n"
+        "[server.sandbox.providers.docker]\n"
+        "enabled = true\n"
+        "\n"
+        "[server.sandbox.providers.daytona]\n"
+        "enabled = true\n"
+    )
+    (storage_dir / "server.dev-token").write_text(workflow_smoke_dev_token() + "\n")
+    (storage_dir / "server.env").write_text(
+        f"FABRO_DEV_TOKEN={workflow_smoke_dev_token()}\n"
+        f"SESSION_SECRET={workflow_smoke_session_secret()}\n"
+    )
 
 
 def load_completed_results(output_dir: Path) -> list[dict]:
@@ -134,6 +237,7 @@ def write_root_exports(
     counters = {key: 0 for key in ("completed", "no_patch", "verify_failed", "failed", "timeout", "error")}
     failed_with_patch = 0
     continuation_candidates = 0
+    process_metrics = summarize_process_metrics(results)
     for result in results:
         counters[result["status"]] = counters.get(result["status"], 0) + 1
         candidate = result.get("candidate") if isinstance(result.get("candidate"), dict) else {}
@@ -150,10 +254,126 @@ def write_root_exports(
         **counters,
         "failed_with_patch": failed_with_patch,
         "continuation_candidates": continuation_candidates,
+        **process_metrics,
         "total_duration_s": total_duration_s,
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     return summary
+
+
+def summarize_process_metrics(results: list[dict]) -> dict:
+    metrics = {
+        "bad_export_count": 0,
+        "false_export_count": 0,
+        "nonempty_exports_with_failed_gates": 0,
+        "raw_patch_blocked_from_export_count": 0,
+        "prediction_patch_consistency": 1.0,
+        "artifact_parse_success_rate": 1.0,
+        "review_incomplete_after_fixup_count": 0,
+        "review_incomplete_stage_counts": {},
+        "wait_timeout_with_incomplete_stage_count": 0,
+        "latest_incomplete_stage_counts": {},
+        "stale_review_artifact_pairing_count": 0,
+        "current_open_review_block_count": 0,
+        "workflow_continued_after_wait_timeout_count": 0,
+        "continuation_wait_attempt_count": 0,
+        "continuation_wait_completed_count": 0,
+        "continuation_wait_timeout_count": 0,
+        "continuation_recovered_count": 0,
+        "continuation_cleared_incomplete_review_count": 0,
+        "review_incomplete_after_continuation_count": 0,
+    }
+    if not results:
+        return metrics
+    consistent_predictions = 0
+    parsed_artifacts = 0
+    for result in results:
+        prediction = build_prediction_record(result)
+        exported_patch = prediction.get("model_patch", "")
+        exported_patch = exported_patch if isinstance(exported_patch, str) else ""
+        has_export = bool(exported_patch.strip())
+        eligible = is_export_eligible(result)
+        has_raw_patch = bool(
+            result.get("model_patch", "").strip()
+            if isinstance(result.get("model_patch"), str)
+            else ""
+        )
+        if has_export and not eligible:
+            metrics["bad_export_count"] += 1
+            metrics["nonempty_exports_with_failed_gates"] += 1
+        if has_export and result.get("status") != "completed":
+            metrics["false_export_count"] += 1
+        if has_raw_patch and not eligible:
+            metrics["raw_patch_blocked_from_export_count"] += 1
+        expected_patch = result.get("model_patch", "") if eligible else ""
+        if exported_patch == (expected_patch if isinstance(expected_patch, str) else ""):
+            consistent_predictions += 1
+        if not result.get("artifact_error"):
+            parsed_artifacts += 1
+        if result.get("review_incomplete_after_fixup"):
+            metrics["review_incomplete_after_fixup_count"] += 1
+            detail = result.get("review_incomplete_stage")
+            if isinstance(detail, dict):
+                node_id = detail.get("node_id")
+                if isinstance(node_id, str) and node_id:
+                    counts = metrics["review_incomplete_stage_counts"]
+                    counts[node_id] = counts.get(node_id, 0) + 1
+        if result.get("fabro_wait_timed_out") and result.get("wait_timeout_incomplete_stage"):
+            metrics["wait_timeout_with_incomplete_stage_count"] += 1
+            detail = result.get("wait_timeout_incomplete_stage")
+            if isinstance(detail, dict):
+                node_id = detail.get("node_id")
+                if isinstance(node_id, str) and node_id:
+                    counts = metrics["latest_incomplete_stage_counts"]
+                    counts[node_id] = counts.get(node_id, 0) + 1
+        if result.get("stale_review_artifact_pairing") or stale_review_artifact_pairing(result):
+            metrics["stale_review_artifact_pairing_count"] += 1
+        if result.get("fabro_wait_timed_out"):
+            metrics["workflow_continued_after_wait_timeout_count"] += 1
+        if result.get("continuation_attempted"):
+            metrics["continuation_wait_attempt_count"] += 1
+            if result.get("continuation_wait_timed_out"):
+                metrics["continuation_wait_timeout_count"] += 1
+            elif not result.get("continuation_error"):
+                metrics["continuation_wait_completed_count"] += 1
+            if result.get("review_incomplete_after_fixup"):
+                metrics["review_incomplete_after_continuation_count"] += 1
+            else:
+                metrics["continuation_cleared_incomplete_review_count"] += 1
+            if result.get("status") == "completed" and eligible:
+                metrics["continuation_recovered_count"] += 1
+        if current_open_review_block(result):
+            metrics["current_open_review_block_count"] += 1
+    metrics["prediction_patch_consistency"] = round(consistent_predictions / len(results), 3)
+    metrics["artifact_parse_success_rate"] = round(parsed_artifacts / len(results), 3)
+    return metrics
+
+
+def current_open_review_block(result: dict) -> bool:
+    gate = result.get("review_accountability_gate")
+    if not isinstance(gate, dict):
+        return False
+    return (
+        result.get("error") == "open_review_rows"
+        and bool(gate.get("open_rows"))
+        and not result.get("review_incomplete_after_fixup")
+        and review_artifacts_reconciled(result)
+    )
+
+
+def stale_review_artifact_pairing(result: dict) -> bool:
+    return bool(
+        result.get("review_incomplete_after_fixup")
+        and any(
+            isinstance(result.get(key), dict)
+            for key in (
+                "adversarial_review",
+                "moderator_filter",
+                "review_materialization",
+                "review_accountability_gate",
+            )
+        )
+    )
 
 
 def review_artifacts_reconciled(result: dict) -> bool:
@@ -166,6 +386,203 @@ def review_artifacts_reconciled(result: dict) -> bool:
             and isinstance(result.get("moderator_filter"), dict)
         )
     )
+
+
+def collect_workflow_records(
+    result: dict,
+    *,
+    workflow_profile: str,
+    fabro_run_dir: Path | None,
+    dumped: Path | None,
+    preserve_incomplete_review: bool = False,
+) -> dict | None:
+    verify = None
+    if workflow_profile in STRUCTURED_WORKFLOW_PROFILES:
+        verify = find_verify_record(fabro_run_dir) if fabro_run_dir else None
+        if not verify and dumped:
+            verify = find_verify_record(dumped)
+        result["verify"] = verify
+        audit = find_audit_record(fabro_run_dir) if fabro_run_dir else None
+        if not audit and dumped:
+            audit = find_audit_record(dumped)
+        result["audit"] = audit
+        if workflow_profile in GATED_WORKFLOW_PROFILES:
+            test_evidence_gate = (
+                find_test_evidence_gate_record(fabro_run_dir)
+                if fabro_run_dir
+                else None
+            )
+            if not test_evidence_gate and dumped:
+                test_evidence_gate = find_test_evidence_gate_record(dumped)
+            result["test_evidence_gate"] = test_evidence_gate
+        if workflow_profile == STRUCTURED_MODERATED_PROFILE:
+            if dumped is None and preserve_incomplete_review:
+                review_incomplete_stage = result.get("review_incomplete_stage")
+                review_incomplete_after_fixup = bool(
+                    result.get("review_incomplete_after_fixup")
+                )
+            else:
+                review_incomplete_stage = latest_incomplete_review_stage(dumped)
+                review_incomplete_after_fixup = bool(review_incomplete_stage)
+                result["review_incomplete_after_fixup"] = review_incomplete_after_fixup
+                result["review_incomplete_stage"] = review_incomplete_stage
+
+            adversarial_review = (
+                find_json_stage_record(fabro_run_dir, "adversarial_review")
+                if fabro_run_dir
+                else None
+            )
+            if not adversarial_review and dumped and not review_incomplete_after_fixup:
+                adversarial_review = find_json_stage_record(
+                    dumped,
+                    "adversarial_review",
+                )
+            result["adversarial_review"] = adversarial_review
+
+            moderator_filter = (
+                find_json_stage_record(fabro_run_dir, "moderator_filter")
+                if fabro_run_dir
+                else None
+            )
+            if not moderator_filter and dumped and not review_incomplete_after_fixup:
+                moderator_filter = find_json_stage_record(
+                    dumped,
+                    "moderator_filter",
+                )
+            result["moderator_filter"] = moderator_filter
+
+            review_materialization = (
+                find_json_stage_record(
+                    fabro_run_dir,
+                    "materialize_review_artifacts",
+                )
+                if fabro_run_dir
+                else None
+            )
+            if not review_materialization and dumped and not review_incomplete_after_fixup:
+                review_materialization = find_json_stage_record(
+                    dumped,
+                    "materialize_review_artifacts",
+                )
+            result["review_materialization"] = review_materialization
+            if isinstance(review_materialization, dict):
+                materialized = review_materialization.get("artifacts")
+                if isinstance(materialized, dict):
+                    if not isinstance(result.get("adversarial_review"), dict):
+                        result["adversarial_review"] = materialized.get("adversarial_review")
+                    if not isinstance(result.get("moderator_filter"), dict):
+                        result["moderator_filter"] = materialized.get("moderator_filter")
+
+            review_accountability_gate = (
+                find_json_stage_record(
+                    fabro_run_dir,
+                    "review_accountability_gate",
+                )
+                if fabro_run_dir
+                else None
+            )
+            if not review_accountability_gate and dumped and not review_incomplete_after_fixup:
+                review_accountability_gate = find_json_stage_record(
+                    dumped,
+                    "review_accountability_gate",
+                )
+            result["review_accountability_gate"] = review_accountability_gate
+        review = find_review_record(fabro_run_dir) if fabro_run_dir else None
+        if not review and dumped:
+            review = find_review_record(dumped)
+        result["review"] = review
+    return verify
+
+
+def latest_stage_incomplete(run_dir: Path | None, node_id: str) -> bool:
+    """Return true when the latest visit for a stage started but did not finish.
+
+    Fabro dumps keep every visit. If a run times out while a re-review visit is
+    in progress, older completed review artifacts may still exist. Treating
+    those older artifacts as current pairs a fresh patch with stale review
+    state, which is worse than explicitly reporting an incomplete re-review.
+    """
+    if run_dir is None:
+        return False
+    for stage_dir in _stage_dirs_newest_first(run_dir):
+        if not _stage_dir_matches(stage_dir, node_id):
+            continue
+        return not any(
+            (stage_dir / name).exists()
+            for name in ("status.json", "stdout.log", "output.log", "response.md")
+        )
+    return False
+
+
+def latest_incomplete_stage(run_dir: Path | None) -> dict | None:
+    for stage_dir in _stage_dirs_newest_first(run_dir) if run_dir else []:
+        if _stage_incomplete(stage_dir):
+            return {
+                "node_id": _stage_node_id(stage_dir),
+                "stage_dir": stage_dir.name,
+                "visit": _stage_visit(stage_dir),
+            }
+    return None
+
+
+def latest_incomplete_review_stage(run_dir: Path | None) -> dict | None:
+    for stage_dir in _stage_dirs_newest_first(run_dir) if run_dir else []:
+        for node_id in (
+            "adversarial_review",
+            "moderator_filter",
+            "materialize_review_artifacts",
+            "review_accountability_gate",
+        ):
+            if _stage_dir_matches(stage_dir, node_id) and _stage_incomplete(stage_dir):
+                return {
+                    "node_id": node_id,
+                    "stage_dir": stage_dir.name,
+                    "visit": _stage_visit(stage_dir),
+                }
+    return None
+
+
+def _stage_incomplete(stage_dir: Path) -> bool:
+    return not any(
+        (stage_dir / name).exists()
+        for name in ("status.json", "stdout.log", "output.log", "response.md")
+    )
+
+
+def _stage_visit(path: Path) -> int | None:
+    match = re.search(r"@(\d+)$", path.name)
+    return int(match.group(1)) if match else None
+
+
+def _stage_node_id(path: Path) -> str:
+    match = re.match(r"^\d+-(.+)@\d+$", path.name)
+    if match:
+        return match.group(1)
+    return path.name.split("@", 1)[0]
+
+
+def _stage_dirs_newest_first(run_dir: Path) -> list[Path]:
+    candidates: list[Path] = []
+    for root_name in ("nodes", "stages"):
+        root = run_dir / root_name
+        if root.exists():
+            candidates.extend(path for path in root.iterdir() if path.is_dir())
+    return sorted(candidates, key=_stage_sort_key, reverse=True)
+
+
+def _stage_sort_key(path: Path) -> tuple[int, int, str]:
+    match = re.search(r"(\d+)-.*@(\d+)$", path.name)
+    if match:
+        return int(match.group(2)), int(match.group(1)), path.name
+    match = re.search(r"(\d+)", path.name)
+    return (0, int(match.group(1)), path.name) if match else (0, 0, path.name)
+
+
+def _stage_dir_matches(path: Path, node_id: str) -> bool:
+    name = path.name
+    if name == node_id or name.startswith(f"{node_id}@"):
+        return True
+    return bool(re.match(rf"^\d+-{re.escape(node_id)}@", name))
 
 
 def load_instances(instance_ids: list[str] | None = None) -> list[dict]:
@@ -359,6 +776,8 @@ def run_instance(
     fabro_bin: str,
     workflow_profile: str,
     verify_mode: str,
+    continuation_timeout: int = 0,
+    fabro_env: dict[str, str] | None = None,
 ) -> dict:
     """Run Fabro agent on a single SWE-bench instance."""
     instance_id = instance["instance_id"]
@@ -385,6 +804,16 @@ def run_instance(
         "review_materialization": None,
         "review_accountability_gate": None,
         "artifacts": {},
+        "fabro_wait_timed_out": False,
+        "continuation_attempted": False,
+        "continuation_wait_timed_out": False,
+        "continuation_error": None,
+        "continuation_reason": None,
+        "latest_incomplete_stage": None,
+        "wait_timeout_incomplete_stage": None,
+        "review_incomplete_after_fixup": False,
+        "review_incomplete_stage": None,
+        "stale_review_artifact_pairing": False,
     }
 
     start_time = time.time()
@@ -427,6 +856,7 @@ def run_instance(
             timeout=120,
             capture_output=True,
             text=True,
+            env=fabro_env,
         )
 
         run_id = parse_run_id_json(launch_proc.stdout)
@@ -460,20 +890,32 @@ def run_instance(
             timeout=timeout + 30,
             capture_output=True,
             text=True,
+            env=fabro_env,
         )
+        final_wait_returncode = wait_proc.returncode
         wait_result = parse_json_object(wait_proc.stdout) or {}
         wait_status = wait_result.get("status")
         if isinstance(wait_result, dict):
             result["fabro_wait"] = wait_result
 
-        events_path = write_events_jsonl(fabro_bin, run_id, config_dir, timeout=120)
+        events_path = write_events_jsonl(
+            fabro_bin,
+            run_id,
+            config_dir,
+            timeout=120,
+            env=fabro_env,
+        )
         if events_path:
             result["events_path"] = str(events_path)
             trajectory_path = write_trajectory_from_events(events_path)
             if trajectory_path:
                 result["trajectory_path"] = str(trajectory_path)
 
-        dumped = dump_run(fabro_bin, run_id, config_dir, timeout=120) if run_id else None
+        dumped = (
+            dump_run(fabro_bin, run_id, config_dir, timeout=120, env=fabro_env)
+            if run_id
+            else None
+        )
         if dumped:
             result["fabro_dump_dir"] = str(dumped)
             if not result.get("events_path"):
@@ -485,6 +927,7 @@ def run_instance(
                         result["trajectory_path"] = str(trajectory_path)
 
         if wait_proc.returncode != 0:
+            result["fabro_wait_timed_out"] = "Timed out after" in wait_proc.stderr
             result["error"] = (
                 f"fabro wait exited with code {wait_proc.returncode}"
                 if not wait_status
@@ -497,93 +940,85 @@ def run_instance(
         else:
             result["status"] = "completed"
 
-        verify = None
-        if workflow_profile in STRUCTURED_WORKFLOW_PROFILES:
-            verify = find_verify_record(fabro_run_dir) if fabro_run_dir else None
-            if not verify and dumped:
-                verify = find_verify_record(dumped)
-            result["verify"] = verify
-            audit = find_audit_record(fabro_run_dir) if fabro_run_dir else None
-            if not audit and dumped:
-                audit = find_audit_record(dumped)
-            result["audit"] = audit
-            if workflow_profile in GATED_WORKFLOW_PROFILES:
-                test_evidence_gate = (
-                    find_test_evidence_gate_record(fabro_run_dir)
-                    if fabro_run_dir
-                    else None
-                )
-                if not test_evidence_gate and dumped:
-                    test_evidence_gate = find_test_evidence_gate_record(dumped)
-                result["test_evidence_gate"] = test_evidence_gate
-            if workflow_profile == STRUCTURED_MODERATED_PROFILE:
-                adversarial_review = (
-                    find_json_stage_record(fabro_run_dir, "adversarial_review")
-                    if fabro_run_dir
-                    else None
-                )
-                if not adversarial_review and dumped:
-                    adversarial_review = find_json_stage_record(
-                        dumped,
-                        "adversarial_review",
-                    )
-                result["adversarial_review"] = adversarial_review
+        verify = collect_workflow_records(
+            result,
+            workflow_profile=workflow_profile,
+            fabro_run_dir=fabro_run_dir,
+            dumped=dumped,
+        )
+        result["latest_incomplete_stage"] = latest_incomplete_stage(dumped)
+        if result.get("fabro_wait_timed_out"):
+            result["wait_timeout_incomplete_stage"] = result["latest_incomplete_stage"]
 
-                moderator_filter = (
-                    find_json_stage_record(fabro_run_dir, "moderator_filter")
-                    if fabro_run_dir
-                    else None
+        if (
+            continuation_timeout > 0
+            and result.get("fabro_wait_timed_out")
+            and result.get("wait_timeout_incomplete_stage")
+        ):
+            result["continuation_attempted"] = True
+            result["continuation_reason"] = (
+                "review_incomplete_after_fixup"
+                if result.get("review_incomplete_after_fixup")
+                else "latest_incomplete_stage"
+            )
+            continuation_cmd = [
+                fabro_bin,
+                "--json",
+                "wait",
+                run_id,
+                "--timeout",
+                str(continuation_timeout),
+            ]
+            result["continuation_wait_command"] = continuation_cmd
+            continuation_proc = subprocess.run(
+                continuation_cmd,
+                cwd="/tmp",
+                timeout=continuation_timeout + 30,
+                capture_output=True,
+                text=True,
+                env=fabro_env,
+            )
+            final_wait_returncode = continuation_proc.returncode
+            continuation_result = parse_json_object(continuation_proc.stdout) or {}
+            if isinstance(continuation_result, dict):
+                result["continuation_wait"] = continuation_result
+            if continuation_proc.returncode != 0:
+                result["continuation_wait_timed_out"] = (
+                    "Timed out after" in continuation_proc.stderr
                 )
-                if not moderator_filter and dumped:
-                    moderator_filter = find_json_stage_record(
-                        dumped,
-                        "moderator_filter",
-                    )
-                result["moderator_filter"] = moderator_filter
+                result["continuation_error"] = (
+                    f"fabro continuation wait exited with code {continuation_proc.returncode}"
+                )
+            else:
+                result["status"] = "completed"
+                result["error"] = None
 
-                review_materialization = (
-                    find_json_stage_record(
-                        fabro_run_dir,
-                        "materialize_review_artifacts",
-                    )
-                    if fabro_run_dir
-                    else None
-                )
-                if not review_materialization and dumped:
-                    review_materialization = find_json_stage_record(
-                        dumped,
-                        "materialize_review_artifacts",
-                    )
-                result["review_materialization"] = review_materialization
-                if isinstance(review_materialization, dict):
-                    materialized = review_materialization.get("artifacts")
-                    if isinstance(materialized, dict):
-                        if not isinstance(result.get("adversarial_review"), dict):
-                            result["adversarial_review"] = materialized.get("adversarial_review")
-                        if not isinstance(result.get("moderator_filter"), dict):
-                            result["moderator_filter"] = materialized.get("moderator_filter")
-
-                review_accountability_gate = (
-                    find_json_stage_record(
-                        fabro_run_dir,
-                        "review_accountability_gate",
-                    )
-                    if fabro_run_dir
-                    else None
-                )
-                if not review_accountability_gate and dumped:
-                    review_accountability_gate = find_json_stage_record(
-                        dumped,
-                        "review_accountability_gate",
-                    )
-                result["review_accountability_gate"] = review_accountability_gate
-            review = find_review_record(fabro_run_dir) if fabro_run_dir else None
-            if not review and dumped:
-                review = find_review_record(dumped)
-            result["review"] = review
+            events_path = write_events_jsonl(
+                fabro_bin,
+                run_id,
+                config_dir,
+                timeout=120,
+                env=fabro_env,
+            )
+            if events_path:
+                result["events_path"] = str(events_path)
+                trajectory_path = write_trajectory_from_events(events_path)
+                if trajectory_path:
+                    result["trajectory_path"] = str(trajectory_path)
+            dumped = dump_run(fabro_bin, run_id, config_dir, timeout=120, env=fabro_env)
+            if dumped:
+                result["fabro_dump_dir"] = str(dumped)
+            verify = collect_workflow_records(
+                result,
+                workflow_profile=workflow_profile,
+                fabro_run_dir=fabro_run_dir,
+                dumped=dumped,
+                preserve_incomplete_review=True,
+            )
+            result["latest_incomplete_stage"] = latest_incomplete_stage(dumped)
 
         # Prefer Fabro's canonical run diff, then fall back to workflow stage output.
-        patch = fetch_run_diff(fabro_bin, run_id)
+        patch = fetch_run_diff(fabro_bin, run_id, env=fabro_env)
         if not patch:
             patch = find_patch(fabro_run_dir) if fabro_run_dir else None
         if not patch and dumped:
@@ -609,6 +1044,12 @@ def run_instance(
                 )
             elif (
                 workflow_profile == STRUCTURED_MODERATED_PROFILE
+                and result.get("review_incomplete_after_fixup")
+            ):
+                result["status"] = "failed"
+                result["error"] = "review_incomplete_after_fixup"
+            elif (
+                workflow_profile == STRUCTURED_MODERATED_PROFILE
                 and result.get("review_accountability_gate")
                 and result["review_accountability_gate"].get("status") != "passed"
             ):
@@ -617,7 +1058,7 @@ def run_instance(
                     result["review_accountability_gate"].get("failure_reason")
                     or "Review accountability gate blocked export"
                 )
-            elif wait_proc.returncode == 0:
+            elif final_wait_returncode == 0:
                 result["status"] = "completed"
             if (
                 workflow_profile == STRUCTURED_MODERATED_PROFILE
@@ -640,7 +1081,7 @@ def run_instance(
     except subprocess.TimeoutExpired:
         result["status"] = "timeout"
         result["error"] = f"Timed out after {timeout}s"
-        _cleanup_sandbox(instance_id, sandbox_provider, fabro_bin)
+        _cleanup_sandbox(instance_id, sandbox_provider, fabro_bin, env=fabro_env)
     except Exception as e:
         result["error"] = str(e)
         log.debug(f"[{instance_id}] Exception: {e}")
@@ -668,7 +1109,12 @@ def run_instance(
     return result
 
 
-def _cleanup_sandbox(label_value: str, sandbox_provider: str, fabro_bin: str):
+def _cleanup_sandbox(
+    label_value: str,
+    sandbox_provider: str,
+    fabro_bin: str,
+    env: dict[str, str] | None = None,
+):
     """Best-effort delete of orphaned Daytona sandbox after timeout.
 
     Finds the sandbox via `fabro ps --label --json` to get the run ID,
@@ -679,7 +1125,7 @@ def _cleanup_sandbox(label_value: str, sandbox_provider: str, fabro_bin: str):
     try:
         ps = subprocess.run(
             [fabro_bin, "ps", "--label", f"swe-bench={label_value}", "--json"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=10, env=env,
         )
         runs = json.loads(ps.stdout) if ps.stdout.strip() else []
         for run in runs:
@@ -748,6 +1194,24 @@ def preflight_docker():
     print("Preflight OK: Docker daemon reachable")
 
 
+def preflight_disk_space(path: Path, min_free_gb: float):
+    """Check that the output filesystem has enough free space before running."""
+    if min_free_gb <= 0:
+        return
+
+    usage = shutil.disk_usage(path)
+    free_gb = usage.free / (1024 ** 3)
+    if free_gb < min_free_gb:
+        print(
+            f"Preflight FAILED: {path} has {free_gb:.1f} GiB free, "
+            f"below --min-free-gb {min_free_gb:.1f}"
+        )
+        print("  Free disk space or lower --max-workers before starting this eval.")
+        sys.exit(1)
+
+    print(f"Preflight OK: {free_gb:.1f} GiB free at {path}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run SWE-bench evaluation with Fabro"
@@ -779,6 +1243,36 @@ def main():
     parser.add_argument(
         "--timeout", type=int, default=1200,
         help="Timeout per instance in seconds",
+    )
+    parser.add_argument(
+        "--continuation-timeout", type=int, default=0,
+        help=(
+            "Optional second wait in seconds for runs that timed out while a "
+            "moderated review stage was still incomplete"
+        ),
+    )
+    parser.add_argument(
+        "--credential-bridge",
+        choices=SUPPORTED_CREDENTIAL_BRIDGES,
+        default="off",
+        help="Copy selected model credentials into isolated SWE-bench Fabro storage.",
+    )
+    parser.add_argument(
+        "--auth-storage-dir",
+        type=Path,
+        default=None,
+        help="Source Fabro storage root for --credential-bridge openai-codex.",
+    )
+    parser.add_argument(
+        "--credential-preflight",
+        action="store_true",
+        help="Run fabro model test before starting instances when credentials are bridged.",
+    )
+    parser.add_argument(
+        "--min-free-gb",
+        type=float,
+        default=20.0,
+        help="Minimum free GiB required on the output filesystem before starting.",
     )
     parser.add_argument(
         "--output-dir", type=Path,
@@ -822,8 +1316,18 @@ def main():
     args.output_dir = args.output_dir.resolve()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(args.output_dir)
+    fabro_env = prepare_fabro_env(
+        output_dir=args.output_dir,
+        fabro_bin=args.fabro_bin,
+        credential_bridge=args.credential_bridge,
+        auth_storage_dir=args.auth_storage_dir,
+        credential_preflight=args.credential_preflight,
+        provider=args.provider,
+        model=args.model,
+    )
 
     # --- Preflight --------------------------------------------------------
+    preflight_disk_space(args.output_dir, args.min_free_gb)
     if args.sandbox_provider == "daytona":
         preflight_daytona(args.max_workers, sandbox_cpu=4)
     else:
@@ -838,6 +1342,9 @@ def main():
     log.info(f"  Sandbox:     {args.sandbox_provider}")
     log.info(f"  Fabro bin:   {args.fabro_bin}")
     log.info(f"  Timeout:     {args.timeout}s")
+    if args.continuation_timeout:
+        log.info(f"  Continue wait:{args.continuation_timeout:4d}s")
+    log.info(f"  Cred bridge: {args.credential_bridge}")
     log.info(f"  Workflow:    {args.workflow_profile}")
     log.info(f"  Verify:      {args.verify_mode}")
     log.info(f"  Output:      {args.output_dir}")
@@ -883,6 +1390,8 @@ def main():
                 args.output_dir, args.timeout, args.sandbox_provider,
                 args.fabro_bin, args.workflow_profile,
                 args.verify_mode,
+                args.continuation_timeout,
+                fabro_env,
             ): inst
             for inst in instances
         }

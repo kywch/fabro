@@ -265,21 +265,21 @@ Use the issue, /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH},
 {DIFF_AUDIT_PATH}, {TEST_EVIDENCE_GATE_PATH}, git diff, and touched files.
 Current diff facts and machine-observed test evidence outrank validation or research claims. Do not open or escalate a row by contradicting verified test evidence unless the current diff/artifacts show the command could not have tested the claimed issue behavior. Test/process proof-only concerns must be minor or checked risks; escalate them to major/blocker only when they make the actual issue behavior unverifiable. If current source behavior is directly verified for the issue, broken or missing regression-test proof is still a minor proof concern, not a major/blocker issue.
 Suppress proof-only rows only when current diff facts directly satisfy the issue behavior and the finding is solely weak or missing proof. This does not suppress code or scope rows for broad semantic rewrites, manual formatters/parsers, runtime-state reuse, replaced expectations, or issue-contract gaps.
-Generate plausible issue-scoped findings as rows first. Prefer root-cause rows over symptom rows: name the changed implementation path and issue-contract boundary when required behavior is missing, bypassed, or over-broadened. Only make a tests row when no stronger code or scope row describes the same concrete gap. Do not hide plausible unresolved findings in checked_risks or counterexample_checks; those fields are only for risks directly falsified or fully answered by concrete evidence.
-Before filling checked_risks, enumerate the issue and acceptance-criteria clauses/examples mentally. If a clause or named example is closed only by a substituted test shape, broad source reasoning, documentation change, or default-path inference, make it a row. checked_risks may close only exact changed-code paths directly falsified by current diff facts and observed runtime evidence.
+Generate plausible issue-scoped findings as rows first. Prefer root-cause rows over symptom rows: name the changed implementation path and issue-contract boundary when required behavior is missing, bypassed, or over-broadened. Only make a tests row when no stronger code or scope row describes the same concrete gap. Never put live possibility language in checked_risks: if the risk text still says might/could/may/missing/unresolved/regress/break, it is a row, not a checked risk.
+Before filling checked_risks, enumerate the issue and acceptance-criteria clauses/examples mentally. If a clause or named example is closed only by a substituted test shape, broad source reasoning, documentation change, or default-path inference, make it a row. checked_risks may close only exact changed-code paths directly falsified by current diff facts and observed runtime evidence, and each risk string must be phrased as a falsified or fully answered concern.
 Broad semantic rewrites, replaced existing expectations, manual formatters/parsers, runtime-state reuse, and issue-shape test gaps require a row unless current diff facts or machine-observed tests directly cover the changed behavior matrix. Do not park these risks in checked_risks or residual_risk.
 For broad helper or option-matrix gaps, open a row only when you can name the changed helper path and a specific unproven branch; dtype/fill behavior, coordinate compatibility, laziness/materialization, and opt-in/default semantics need branch-by-branch diff proof, but do not expand into adjacent paths unless the issue contract names them.
 Passing tests/docs close only the exact behavior they execute or document; if an issue-named implementation path remains uninspected or unexercised, make that unresolved path a code/scope row, not a checked risk or minor test-only concern.
 Unresolved changed-code reachability, import/name binding, exception-order, or historically divergent branch questions must be rows unless current diff facts or observed runtime evidence prove that exact path is closed.
-If validation_contract.expected_review_rows exists, include those rows with the same ids unless current evidence explicitly falsifies them. expected_review_rows cannot be satisfied via checked_risks except for directly falsified risks.
+If validation_contract.expected_review_rows exists, emit those rows with same ids first; include closure evidence in the row/falsifiable_check for moderator disposition. expected_review_rows cannot be satisfied via checked_risks.
 
 Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON object:
 {
   "schema_version": 1,
   "stage": "adversarial_review",
   "summary": "<one sentence>",
-  "checked_risks": [{"risk": "<non-finding risk directly falsified or fully answered>", "evidence": ["<changed source path, diff fact, or artifact field>"], "counterexample_check": "<why current evidence directly answers it>"}],
-  "counterexample_checks": ["<optional concrete read-only checks against changed source paths>"],
+  "checked_risks": [{"risk": "Falsified risk: <concern directly disproven or fully answered>", "evidence": ["<changed source path, diff fact, or artifact field>"], "counterexample_check": "<why current evidence directly answers it>"}],
+  "counterexample_checks": ["Falsified check: <completed concrete check against changed source paths and why no row remains>"],
   "scope_assessment": {
     "literal_issue_fixed": true,
     "scope_narrowed_reason": "<required only when literal_issue_fixed is false>",
@@ -304,7 +304,7 @@ Use a file-writing tool to write {ADVERSARIAL_REVIEW_PATH} with a single JSON ob
 }
 
 Artifact contract:
-- Unresolved plausible risks must be rows; checked_risks and counterexample_checks are for concrete falsification/answers, not parking lots.
+- Unresolved plausible risks must be rows; checked_risks and counterexample_checks are for completed concrete falsification/answers, not parking lots. A checked_risks item or counterexample_checks entry that reads like remaining work is malformed.
 - If rows is empty for a nontrivial source diff, checked_risks or counterexample_checks must cite exact changed source paths or diff facts and the concrete reason no row is justified.
 - If rows is empty, include scope_assessment. When literal_issue_fixed is false, scope_narrowed_reason must explain the narrow interpretation. When broad_semantic_change is true, option_matrix must list the considered implementation options.
 - You must write the JSON object to {ADVERSARIAL_REVIEW_PATH} using a file-writing tool; a final answer that only prints JSON is ignored and fails the workflow.
@@ -382,7 +382,7 @@ def _fixup_prompt(simple: bool = False) -> str:
     if simple:
         return """A quality gate failed. Do not ask questions. Re-read the original goal,
 /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH}, {DIFF_AUDIT_PATH}, and when
-present {REVIEW_ACCOUNTABILITY_GATE_PATH}. Create the minimal required diff; if patch_nonempty=false, edit the required file because validation-only changes and test runs are ignored. For test-only tasks, edit only the required test file; if it already covers one input, add one small additional assertion or test method, and do not change forbidden source files. Address open/fixup rows with concrete changed
+present {REVIEW_ACCOUNTABILITY_GATE_PATH}. Create the minimal required diff; if patch_nonempty=false, edit the required file because validation-only changes and test runs are ignored. For test-only tasks, edit only the required test file; if it already covers one input, add one small additional assertion or test method, and do not change forbidden source files. Treat open/fixup rows as a row ledger: either patch+test the closure_check now or cite concrete evidence to reject/downgrade it. Address rows with concrete changed
 files and a focused machine-observed test command. Update validation with changed_files, tests_added, commands_run, residual_risks, and final_claims; each
 commands_run entry needs id, command, status, exit_code when known, and is_test_command. If review asks for runtime_tests or existing tests, run the concrete repo test module or `python3 -m unittest discover -s tests`, not direct smoke or bare zero-test discovery. Keep the gate closed if the issue contract remains broken.""".replace(
             "{VALIDATION_CONTRACT_PATH}", VALIDATION_CONTRACT_PATH
@@ -395,7 +395,7 @@ commands_run entry needs id, command, status, exit_code when known, and is_test_
 /tmp/fabro-research.md, {VALIDATION_CONTRACT_PATH}, {DIFF_AUDIT_PATH}, and when
 present {REVIEW_ACCOUNTABILITY_GATE_PATH}. Repair the whole patch, not only the
 latest critic row. Metadata rows are not optional; keep one canonical release/changelog note. Testable behavior rows need changed regression tests in git diff; runtime-only evidence is not enough. Compatibility rows need representative tests with real fields/behavior, not only default or proxy-only paths. Inspect changed files for unrelated hunks. Address every
-		fixup_required_rows and malformed_artifacts item; treat open rows as a checklist: edit required_files, run the closure_check/falsifiable_check when present, and cite the command. When an artifact names a
+		fixup_required_rows and malformed_artifacts item; treat open rows as a row ledger: edit required_files and run the closure_check/falsifiable_check now, or cite concrete evidence to reject/downgrade the row. When an artifact names a
 		path/check, repair that exact diff hunk before arguing it is stale; if the failed artifact is under .fabro/issue-to-pr, the next review stage must write that exact JSON file and read it back from disk, not only print JSON. Revert broad generated hunks first. For Django docs/ref/settings.txt, verify the nearby section heading before changing a Default line and revert unrelated hunks such as cache OPTIONS. Then update
 the validation contract with reviewer_objections, changed_files, commands_run,
 residual_risks, and final_claims. Every commands_run entry must include stable id, command, status, exit_code when known, and is_test_command. Every changed test file must appear in tests_added or be reverted; commands_run alone is not enough. Ensure `git diff --name-only` lists every claimed changed file; for Python repos with stdlib `unittest` tests and no pytest configuration, prefer `python3 -m unittest <module>` or `python3 -m unittest discover -s tests`, never bare `python3 -m unittest`. For Django tests, use tracked files under `tests/`. Prefer focused single-process tests over broad
